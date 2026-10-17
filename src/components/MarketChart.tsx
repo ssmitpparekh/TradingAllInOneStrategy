@@ -1017,8 +1017,8 @@ export default function MarketChart({
     const updateBars = () => {
       const hostWidth = host.clientWidth;
       const maxPaneHeight = Math.max(
-        64,
-        Math.min(118, Math.round(host.clientHeight * 0.2))
+        48,
+        Math.min(100, Math.round(host.clientHeight * 0.18))
       );
 
       const visible = orderFlowBuckets
