@@ -290,6 +290,27 @@ function tradePieBackground(stats: ReturnType<typeof summarizeTrades>) {
   };
 }
 
+function mergeLiveCandle(
+  base: ChartCandle[],
+  live: ChartCandle | null
+) {
+  if (!live) return base;
+
+  const last = base[base.length - 1];
+
+  if (!last) return [live];
+
+  if (last.time === live.time) {
+    return [...base.slice(0, -1), live];
+  }
+
+  if (live.time > last.time) {
+    return [...base, live];
+  }
+
+  return base;
+}
+
 export default function Home() {
   const [connected, setConnected] = useState<boolean | null>(null);
   const [selected, setSelected] = useState<Instrument>(DEFAULT_INSTRUMENT);
@@ -349,6 +370,10 @@ export default function Home() {
   const orderFlowPartialBucketRef = useRef<number | null>(null);
 
   const selectedIsKraken = selected.market === "KRAKEN";
+  const liveAnalysisCandles = useMemo(
+    () => mergeLiveCandle(candles, liveCandle),
+    [candles, liveCandle]
+  );
   const latestOrderFlow =
     orderFlowBuckets[orderFlowBuckets.length - 1] ?? null;
   const latestOrderFlowStats = latestOrderFlow
@@ -386,8 +411,8 @@ export default function Home() {
     [candles]
   );
   const imbalance = useMemo(
-    () => buildImbalanceLiquiditySnapshot(candles),
-    [candles]
+    () => buildImbalanceLiquiditySnapshot(liveAnalysisCandles),
+    [liveAnalysisCandles]
   );
   const orderBlocks = useMemo(
     () => buildOrderBlockSnapshot(candles),
@@ -395,15 +420,15 @@ export default function Home() {
   );
   const volumeAnalytics = useMemo(
     () =>
-      buildVolumeAnalytics(candles, {
+      buildVolumeAnalytics(liveAnalysisCandles, {
         timeZone: selectedIsKraken ? "UTC" : "Asia/Kolkata",
         anchorTime: fibonacci.anchorA?.time ?? null
       }),
-    [candles, selectedIsKraken, fibonacci.anchorA?.time]
+    [liveAnalysisCandles, selectedIsKraken, fibonacci.anchorA?.time]
   );
   const technicalContext = useMemo(
-    () => buildTechnicalContext(candles),
-    [candles]
+    () => buildTechnicalContext(liveAnalysisCandles),
+    [liveAnalysisCandles]
   );
   const closedContext1m = useMemo(() => {
     const now = Math.floor(Date.now() / 1000);
@@ -479,9 +504,26 @@ export default function Home() {
       }),
     [planContext1h, selectedIsKraken, htfFib.anchorA?.time]
   );
+  const liveContext15m = useMemo(() => {
+    const canUseSelectedLive =
+      resolution === "15" &&
+      selected.symbol === primaryAnalysisSymbol &&
+      liveCandle !== null;
+
+    return canUseSelectedLive
+      ? mergeLiveCandle(context15m, liveCandle)
+      : context15m;
+  }, [
+    context15m,
+    liveCandle,
+    primaryAnalysisSymbol,
+    resolution,
+    selected.symbol
+  ]);
+
   const confirmation15m = useMemo(
-    () => buildMarketStructure(context15m),
-    [context15m]
+    () => buildMarketStructure(liveContext15m),
+    [liveContext15m]
   );
   const structure5m = useMemo(
     () => buildMarketStructure(closedContext5m, { confirmationBars: 2 }),
@@ -2577,7 +2619,7 @@ export default function Home() {
             <strong>{imbalance.activeFvgs.length}</strong>
           </div>
           <div>
-            <span>LATEST SWEEP</span>
+            <span>LATEST SWEEP · LIVE</span>
             <strong
               className={
                 imbalance.latestSweep
