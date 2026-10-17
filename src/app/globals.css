@@ -3634,3 +3634,57 @@ html[data-theme="light"] .scannerDerivativeIdeas button:hover {
     padding-inline: 11px;
   }
 }
+
+
+.derivativeWatchSection {
+  border-top: 1px solid #202937;
+}
+
+.derivativeWatchTitle {
+  padding: 9px 12px;
+  color: #66758a;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.derivativeWatchCard {
+  padding: 11px 12px;
+  border-top: 1px solid #182232;
+}
+
+.derivativeFutureButton {
+  width: 100%;
+  margin-top: 8px;
+  padding: 7px 8px;
+  border: 1px solid #263143;
+  border-radius: 7px;
+  background: #090e15;
+  color: #93a0b4;
+  text-align: left;
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.derivativeFutureButton:hover {
+  border-color: #4d6bff;
+  background: #111a28;
+  color: #dce5f2;
+}
+
+html[data-theme="light"] .derivativeWatchSection,
+html[data-theme="light"] .derivativeWatchCard {
+  border-color: #e2e8f0;
+}
+
+html[data-theme="light"] .derivativeFutureButton {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+}
+
+html[data-theme="light"] .derivativeFutureButton:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
