@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import MarketChart, { type ChartCandle } from "@/components/MarketChart";
-import { buildFibonacciSetup } from "@/lib/analysis/market-structure";
+import {
+  buildFibonacciSetup,
+  buildMarketStructure
+} from "@/lib/analysis/market-structure";
 
 type Quote = {
   symbol: string;
@@ -151,11 +154,16 @@ export default function Home() {
   const [liveCandle, setLiveCandle] = useState<ChartCandle | null>(null);
   const [showFib, setShowFib] = useState(true);
   const [showTrendFib, setShowTrendFib] = useState(true);
+  const [showStructure, setShowStructure] = useState(true);
   const historyRequestId = useRef(0);
 
   const selectedIsKraken = selected.market === "KRAKEN";
   const fibonacci = useMemo(
     () => buildFibonacciSetup(candles),
+    [candles]
+  );
+  const structure = useMemo(
+    () => buildMarketStructure(candles),
     [candles]
   );
 
@@ -823,8 +831,10 @@ export default function Home() {
           fitNonce={fitNonce}
           rangeKey={range}
           fibonacci={fibonacci}
+          structure={structure}
           showFib={showFib}
           showTrendFib={showTrendFib}
+          showStructure={showStructure}
         />
 
         {quote ? (
@@ -868,6 +878,55 @@ export default function Home() {
             >
               Trend Fib {showTrendFib ? "ON" : "OFF"}
             </button>
+            <button
+              className={
+                showStructure
+                  ? "analysisToggle active"
+                  : "analysisToggle"
+              }
+              onClick={() => setShowStructure((value) => !value)}
+            >
+              Structure {showStructure ? "ON" : "OFF"}
+            </button>
+          </div>
+        </div>
+
+        <div className="structureStrip">
+          <div>
+            <span>STRUCTURE TREND</span>
+            <strong className={`structureTrend ${structure.trend}`}>
+              {structure.trend.toUpperCase()}
+            </strong>
+          </div>
+          <div>
+            <span>LATEST EVENT</span>
+            <strong>
+              {structure.latestEvent
+                ? `${structure.latestEvent.type} ${structure.latestEvent.direction === "bullish" ? "↑" : "↓"}`
+                : "—"}
+            </strong>
+          </div>
+          <div>
+            <span>BROKEN LEVEL</span>
+            <strong>
+              {structure.latestEvent
+                ? structure.latestEvent.brokenLevel.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })
+                : "—"}
+            </strong>
+          </div>
+          <div>
+            <span>ACTIVE STRUCTURE</span>
+            <strong>
+              {structure.activeSwingLow && structure.activeSwingHigh
+                ? `${structure.activeSwingLow.price.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })} ↔ ${structure.activeSwingHigh.price.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })}`
+                : "—"}
+            </strong>
           </div>
         </div>
 
@@ -1016,6 +1075,29 @@ export default function Home() {
             be selected.
           </p>
         )}
+
+        {structure.recentEvents.length ? (
+          <div className="structureEvents">
+            <span className="toolbarLabel">RECENT BOS / CHoCH EVENTS</span>
+            <div className="eventChips">
+              {structure.recentEvents
+                .slice()
+                .reverse()
+                .map((event) => (
+                  <span
+                    className={`eventChip ${event.direction}`}
+                    key={`${event.time}-${event.type}-${event.direction}`}
+                  >
+                    {event.type}{" "}
+                    {event.direction === "bullish" ? "↑" : "↓"}{" "}
+                    {event.brokenLevel.toLocaleString("en-IN", {
+                      maximumFractionDigits: 2
+                    })}
+                  </span>
+                ))}
+            </div>
+          </div>
+        ) : null}
 
         {fibonacci.recentSwings.length ? (
           <div className="recentSwings">
