@@ -15,6 +15,7 @@ import {
 } from "lightweight-charts";
 import type {
   FibonacciSetup,
+  ImbalanceLiquiditySnapshot,
   MarketStructureSnapshot
 } from "@/lib/analysis/market-structure";
 
@@ -35,9 +36,12 @@ type Props = {
   rangeKey?: "1D" | "5D" | "1M" | "3M" | "6M" | "1Y" | "5Y" | "MAX";
   fibonacci?: FibonacciSetup | null;
   structure?: MarketStructureSnapshot | null;
+  imbalance?: ImbalanceLiquiditySnapshot | null;
   showFib?: boolean;
   showTrendFib?: boolean;
   showStructure?: boolean;
+  showFvg?: boolean;
+  showLiquidity?: boolean;
 };
 
 function formatIst(timestamp: number) {
@@ -71,9 +75,12 @@ export default function MarketChart({
   rangeKey = "1M",
   fibonacci = null,
   structure = null,
+  imbalance = null,
   showFib = true,
   showTrendFib = true,
-  showStructure = true
+  showStructure = true,
+  showFvg = true,
+  showLiquidity = true
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -339,6 +346,55 @@ export default function MarketChart({
       }
     }
 
+    if (showFvg && imbalance) {
+      const visibleGaps = imbalance.activeFvgs.slice(-3);
+
+      for (const gap of visibleGaps) {
+        const color =
+          gap.direction === "bullish" ? "#3fbf7f" : "#e66c70";
+        const prefix =
+          gap.direction === "bullish" ? "Bull FVG" : "Bear FVG";
+
+        analysisLinesRef.current.push(
+          series.createPriceLine({
+            price: gap.lower,
+            color,
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: false,
+            title: `${prefix} L`
+          })
+        );
+
+        analysisLinesRef.current.push(
+          series.createPriceLine({
+            price: gap.upper,
+            color,
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: false,
+            title: `${prefix} H`
+          })
+        );
+      }
+    }
+
+    if (showLiquidity && imbalance?.latestSweep) {
+      analysisLinesRef.current.push(
+        series.createPriceLine({
+          price: imbalance.latestSweep.level,
+          color:
+            imbalance.latestSweep.direction === "bullish"
+              ? "#69d6c5"
+              : "#ff9b6a",
+          lineWidth: 2,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: `Sweep ${imbalance.latestSweep.direction === "bullish" ? "↑" : "↓"}`
+        })
+      );
+    }
+
     if (!fibonacci) return;
 
     if (showFib) {
@@ -394,9 +450,12 @@ export default function MarketChart({
   }, [
     fibonacci,
     structure,
+    imbalance,
     showFib,
     showTrendFib,
-    showStructure
+    showStructure,
+    showFvg,
+    showLiquidity
   ]);
 
   useEffect(() => {
