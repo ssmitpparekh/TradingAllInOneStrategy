@@ -460,16 +460,58 @@ export default function Home() {
     }
 
     setSearching(true);
+
     const timer = window.setTimeout(() => {
-      void fetch(
-        `/api/fyers/instruments?q=${encodeURIComponent(query)}&market=${encodeURIComponent(marketFilter)}&type=${encodeURIComponent(typeFilter)}`,
-        { cache: "no-store" }
-      )
-        .then((response) => response.json())
-        .then((data) => {
-          setSearchResults(data.ok ? data.instruments : []);
+      const wantsKraken =
+        (marketFilter === "ALL" || marketFilter === "KRAKEN") &&
+        (typeFilter === "ALL" || typeFilter === "CRYPTO");
+
+      const wantsFyers =
+        marketFilter !== "KRAKEN" &&
+        typeFilter !== "CRYPTO";
+
+      const requests: Promise<Instrument[]>[] = [];
+
+      if (wantsFyers) {
+        const fyersMarket =
+          marketFilter === "ALL" ? "ALL" : marketFilter;
+        requests.push(
+          fetch(
+            `/api/fyers/instruments?q=${encodeURIComponent(query)}&market=${encodeURIComponent(fyersMarket)}&type=${encodeURIComponent(typeFilter)}`,
+            { cache: "no-store" }
+          )
+            .then((response) => response.json())
+            .then((data) => (data.ok ? data.instruments : []))
+            .catch(() => [])
+        );
+      }
+
+      if (wantsKraken) {
+        requests.push(
+          fetch(
+            `/api/kraken/instruments?q=${encodeURIComponent(query)}`,
+            { cache: "no-store" }
+          )
+            .then((response) => response.json())
+            .then((data) => (data.ok ? data.instruments : []))
+            .catch(() => [])
+        );
+      }
+
+      void Promise.all(requests)
+        .then((groups) => {
+          const merged = groups.flat();
+          const unique = [
+            ...new Map(
+              merged.map((item) => [
+                `${item.market}:${item.symbol}`,
+                item
+              ])
+            ).values()
+          ].slice(0, 100);
+
+          setSearchResults(unique);
         })
-        .catch(() => setSearchResults([]))
         .finally(() => setSearching(false));
     }, 250);
 
@@ -489,7 +531,7 @@ export default function Home() {
           <div>
             <h1>ALLINONEVIEW</h1>
             <p className="lead">
-              Read-only analysis across supported NSE, BSE and MCX instruments.
+              Read-only analysis across Indian markets and connected global data providers.
             </p>
           </div>
           <div className="connectionStack">
@@ -499,13 +541,19 @@ export default function Home() {
             </div>
             <div className={streamConnected ? "connectionPill online" : "connectionPill"}>
               <span className="dot" />
-              {streamConnected ? "LIVE SOCKET" : "SOCKET WAITING"}
+              {streamConnected
+                ? selectedIsKraken
+                  ? "KRAKEN LIVE"
+                  : "LIVE SOCKET"
+                : selectedIsKraken
+                  ? "KRAKEN WAITING"
+                  : "SOCKET WAITING"}
             </div>
           </div>
         </div>
       </section>
 
-      {!connected ? (
+      {!connected && !selectedIsKraken ? (
         <section className="card">
           <div className="row">
             <div>
@@ -527,7 +575,7 @@ export default function Home() {
             <input
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search NIFTY, Reliance, Gold, Crude, expiry, strike…"
+              placeholder="Search NIFTY, Reliance, Gold, Crude, BTC/USD, ETH/USD…"
               autoComplete="off"
             />
             {searching ? <span className="searching">Searching…</span> : null}
@@ -631,7 +679,9 @@ export default function Home() {
             </button>
             <button
               className="button secondary compactButton"
-              onClick={() => void fetchQuote()}
+              onClick={() =>
+                void fetchQuote(false, selected.symbol, selected.market)
+              }
               disabled={loadingQuote}
             >
               {loadingQuote ? "Refreshing…" : "Refresh"}
@@ -648,6 +698,16 @@ export default function Home() {
                   key={item.value}
                   className={resolution === item.value ? "timeframe active" : "timeframe"}
                   onClick={() => setResolution(item.value)}
+                  disabled={
+                    selectedIsKraken &&
+                    !KRAKEN_RESOLUTIONS.has(item.value)
+                  }
+                  title={
+                    selectedIsKraken &&
+                    !KRAKEN_RESOLUTIONS.has(item.value)
+                      ? "Kraken does not stream this candle interval."
+                      : undefined
+                  }
                 >
                   {item.label}
                 </button>
@@ -687,7 +747,12 @@ export default function Home() {
         ) : null}
         {historyMeta.note ? <div className="historyNotice">{historyMeta.note}</div> : null}
 
-        <MarketChart candles={candles} fitNonce={fitNonce} rangeKey={range} />
+        <MarketChart
+          candles={candles}
+          liveCandle={liveCandle}
+          fitNonce={fitNonce}
+          rangeKey={range}
+        />
 
         {quote ? (
           <div className="ohlcStrip">
@@ -701,7 +766,7 @@ export default function Home() {
         ) : null}
       </section>
 
-      {connected && !streamConnected && socketDiagnostic ? (
+      {!selectedIsKraken && connected && !streamConnected && socketDiagnostic ? (
         <section className="card">
           <p className="label">Safe socket diagnostic</p>
           <div className="quoteGrid">
