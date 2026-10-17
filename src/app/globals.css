@@ -348,3 +348,18 @@ h2 {
     margin-left: 0;
   }
 }
+
+
+.connectionStack {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 760px) {
+  .connectionStack {
+    justify-content: flex-start;
+  }
+}
