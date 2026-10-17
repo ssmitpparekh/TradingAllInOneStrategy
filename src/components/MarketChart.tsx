@@ -37,6 +37,15 @@ export type ChartCandle = {
   oi?: number;
 };
 
+export type TradeChartMarker = {
+  id: string;
+  time: number;
+  price: number;
+  direction: "long" | "short";
+  status: "OPEN" | "CLOSED";
+  outcome?: string;
+};
+
 type Props = {
   candles: ChartCandle[];
   liveCandle?: ChartCandle | null;
@@ -62,6 +71,7 @@ type Props = {
   showSessionBreaks?: boolean;
   orderFlowBuckets?: OrderFlowBucket[];
   showOrderFlow?: boolean;
+  tradeMarkers?: TradeChartMarker[];
 };
 
 function formatIst(timestamp: number) {
@@ -148,7 +158,8 @@ export default function MarketChart({
   resolution = "15",
   showSessionBreaks = true,
   orderFlowBuckets = [],
-  showOrderFlow = true
+  showOrderFlow = true,
+  tradeMarkers = []
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -173,6 +184,9 @@ export default function MarketChart({
       sellHeight: number;
       partial: boolean;
     }>
+  >([]);
+  const [tradeMarkerPositions, setTradeMarkerPositions] = useState<
+    Array<TradeChartMarker & { x: number; y: number }>
   >([]);
 
   const orderFlowByTime = useMemo(
@@ -526,6 +540,57 @@ export default function MarketChart({
       window.removeEventListener("resize", updatePositions);
     };
   }, [sessionBreakTimes, showSessionBreaks]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const host = hostRef.current;
+    const series = seriesRef.current;
+
+    if (!chart || !host || !series || tradeMarkers.length === 0) {
+      setTradeMarkerPositions([]);
+      return;
+    }
+
+    const updateMarkers = () => {
+      const width = host.clientWidth;
+      const height = host.clientHeight;
+
+      setTradeMarkerPositions(
+        tradeMarkers.flatMap((marker) => {
+          const x = chart.timeScale().timeToCoordinate(marker.time as Time);
+          const y = series.priceToCoordinate(marker.price);
+
+          if (
+            x === null ||
+            y === null ||
+            Number(x) < -40 ||
+            Number(x) > width + 40 ||
+            Number(y) < -40 ||
+            Number(y) > height + 40
+          ) {
+            return [];
+          }
+
+          return [
+            {
+              ...marker,
+              x: Number(x),
+              y: Number(y)
+            }
+          ];
+        })
+      );
+    };
+
+    updateMarkers();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(updateMarkers);
+    window.addEventListener("resize", updateMarkers);
+
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateMarkers);
+      window.removeEventListener("resize", updateMarkers);
+    };
+  }, [tradeMarkers, candles, liveCandle]);
 
   useEffect(() => {
     if (!liveCandle || !seriesRef.current) return;
@@ -992,6 +1057,35 @@ export default function MarketChart({
               </span>
             </>
           ) : null}
+        </div>
+      ) : null}
+      {tradeMarkerPositions.length ? (
+        <div className="tradeMarkerLayer" aria-hidden="true">
+          {tradeMarkerPositions.map((marker) => (
+            <div
+              className={
+                "tradeMarker " +
+                marker.direction +
+                " " +
+                marker.status.toLowerCase()
+              }
+              key={marker.id}
+              style={{
+                left: marker.x,
+                top: marker.y
+              }}
+            >
+              <span className="tradeMarkerArrow">
+                {marker.direction === "long" ? "▲" : "▼"}
+              </span>
+              <span className="tradeMarkerLabel">
+                {marker.direction === "long" ? "LONG" : "SHORT"}
+                {marker.status === "CLOSED" && marker.outcome
+                  ? " · " + marker.outcome
+                  : ""}
+              </span>
+            </div>
+          ))}
         </div>
       ) : null}
       {showOrderFlow && orderFlowBarPositions.length ? (
