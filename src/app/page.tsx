@@ -820,6 +820,7 @@ export default function Home() {
 
     return () => controller.abort();
   }, [
+    viewReady,
     connected,
     selected.symbol,
     selected.market,
@@ -1078,6 +1079,7 @@ export default function Home() {
       setLiveCandle(null);
     };
   }, [
+    viewReady,
     connected,
     selected.symbol,
     selected.market,
@@ -1086,7 +1088,7 @@ export default function Home() {
   ]);
 
   useEffect(() => {
-    if (selectedIsKraken || !connected) {
+    if (!viewReady || selectedIsKraken || !connected) {
       setDerivatives(null);
       return;
     }
@@ -1104,6 +1106,7 @@ export default function Home() {
       window.clearInterval(timer);
     };
   }, [
+    viewReady,
     connected,
     selectedIsKraken,
     selected.symbol,
@@ -1130,6 +1133,7 @@ export default function Home() {
       window.clearInterval(timer);
     };
   }, [
+    viewReady,
     connected,
     selectedIsKraken,
     primaryAnalysisSymbol
