@@ -5549,3 +5549,133 @@ html[data-theme="light"] .bestOptionSelectorHeader small {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Multifunctional per-candle order-flow footprint */
+.exactVolumeLayer {
+  height: 168px;
+}
+
+.exactVolumeBar {
+  overflow: hidden;
+  justify-content: flex-end;
+  opacity: 0.92;
+}
+
+.exactVolumeStack {
+  display: flex;
+  width: 100%;
+  flex: 0 0 auto;
+  overflow: hidden;
+  flex-direction: column;
+  justify-content: flex-end;
+  border-radius: 3px 3px 0 0;
+}
+
+.exactVolumeBuy,
+.exactVolumeSell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.exactVolumeSegmentLabel {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  padding: 1px;
+  color: #ffffff;
+  font-size: 7px;
+  font-weight: 950;
+  line-height: 1.05;
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.72);
+  white-space: nowrap;
+}
+
+.exactVolumeSegmentLabel b,
+.exactVolumeSegmentLabel small {
+  display: block;
+}
+
+.exactVolumeSegmentLabel b {
+  font-size: 8px;
+}
+
+.exactVolumeSegmentLabel small {
+  margin-top: 1px;
+  font-size: 6px;
+  font-weight: 850;
+  opacity: 0.9;
+}
+
+.exactVolumeMeta {
+  display: grid;
+  width: 100%;
+  min-height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  align-content: center;
+  overflow: hidden;
+  color: #aeb8c8;
+  font-size: 6px;
+  font-weight: 850;
+  line-height: 1.05;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.exactVolumeMeta b,
+.exactVolumeMeta small {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: clip;
+}
+
+.exactVolumeMeta b {
+  color: #e9eef5;
+  font-size: 7px;
+}
+
+.exactVolumeMeta small {
+  margin-top: 1px;
+  font-size: 6px;
+}
+
+.exactVolumeBar.partial .exactVolumeMeta::after {
+  margin-top: 1px;
+  color: #f5b942;
+  content: "LIVE";
+  font-size: 5px;
+  font-weight: 950;
+  letter-spacing: 0.05em;
+}
+
+html[data-theme="light"] .exactVolumeMeta {
+  color: #64748b;
+}
+
+html[data-theme="light"] .exactVolumeMeta b {
+  color: #0f172a;
+}
+
+@media (max-width: 700px) {
+  .exactVolumeLayer {
+    height: 136px;
+  }
+
+  .exactVolumeSegmentLabel b {
+    font-size: 7px;
+  }
+
+  .exactVolumeMeta {
+    min-height: 24px;
+    flex-basis: 24px;
+  }
+}
