@@ -244,7 +244,7 @@ function parseXPost(
 
   const authorId = String(post.author_id ?? "");
   const user = users.get(authorId);
-  const username = String(user?.username ?? authorId || "X");
+  const username = String((user?.username ?? authorId) || "X");
   const displayName = String(user?.name ?? username);
   const createdAt = Date.parse(String(post.created_at ?? ""));
   const region: NewsImpactEvent["region"] =
