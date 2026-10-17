@@ -12,7 +12,8 @@ declare module "fyers-api-v3" {
     subscribe(symbols: string[], marketDepth?: boolean): void;
     unsubscribe(symbols: string[], marketDepth?: boolean): void;
     mode(mode: unknown): void;
-    autoreconnect(retryCount?: number): void;
+    autoReconnect?(retryCount?: number): void;
+    autoreconnect?(retryCount?: number): void;
     setQueueProcessInterval?(intervalMs: number): void;
     connect(): void;
     close(): void;
