@@ -214,58 +214,6 @@ function opportunityPriority(
   );
 }
 
-function newsMappedInstrument(
-  event: NewsImpactEvent,
-  universe: UniverseResponse | null
-) {
-  if (!universe) return null;
-  const all = [...universe.fyers, ...universe.kraken];
-
-  for (const symbol of event.symbols) {
-    const exact = all.find((item) => item.symbol === symbol);
-    if (exact) return exact;
-  }
-
-  if (event.tags.includes("BTC")) {
-    return all.find((item) => item.symbol === "BTC/USD") ?? null;
-  }
-  if (event.tags.includes("ETH")) {
-    return all.find((item) => item.symbol === "ETH/USD") ?? null;
-  }
-  if (event.tags.includes("BANKNIFTY")) {
-    return (
-      all.find((item) => item.symbol === "NSE:NIFTYBANK-INDEX") ??
-      null
-    );
-  }
-  if (event.tags.includes("NIFTY") || event.tags.includes("INDIA")) {
-    return (
-      all.find((item) => item.symbol === "NSE:NIFTY50-INDEX") ??
-      null
-    );
-  }
-  if (event.tags.includes("OIL")) {
-    return (
-      all.find(
-        (item) =>
-          item.market === "MCX" &&
-          /CRUDE/i.test(item.name + item.symbol)
-      ) ?? null
-    );
-  }
-  if (event.tags.includes("GOLD")) {
-    return (
-      all.find(
-        (item) =>
-          item.market === "MCX" &&
-          /GOLD/i.test(item.name + item.symbol)
-      ) ?? null
-    );
-  }
-
-  return null;
-}
-
 async function fetchLotSize(symbol: string) {
   const market = symbol.startsWith("BSE:") ? "BSE" : "NSE";
   const response = await fetch(
@@ -385,7 +333,6 @@ export default function OpportunityScanner({
   const [scannerLive, setScannerLive] = useState(false);
   const [lastTickAt, setLastTickAt] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
-  const [capitalInput, setCapitalInput] = useState("");
   const [derivativeIdeas, setDerivativeIdeas] = useState<
     Record<string, DerivativeIdea>
   >({});
@@ -400,7 +347,7 @@ export default function OpportunityScanner({
   const derivativeFetchRef = useRef(new Map<string, number>());
   const krakenSourcesRef = useRef<EventSource[]>([]);
 
-  const capital = Math.max(0, Number(capitalInput || 0));
+  const capital = 0;
 
   const totalUniverse =
     (universe?.fyers.length ?? 0) + (universe?.kraken.length ?? 0);
@@ -1052,30 +999,46 @@ export default function OpportunityScanner({
     };
   }, [universe, fyersConnected, capital]);
 
-  const activePriorityNews = useMemo(
+  const actionableOpportunities = useMemo(
     () =>
-      newsEvents
-        .filter(
-          (event) =>
-            event.expiresAt > Date.now() &&
-            event.severity >= 70
-        )
-        .sort((a, b) => {
-          if (b.severity !== a.severity) {
-            return b.severity - a.severity;
-          }
-          return b.receivedAt - a.receivedAt;
+      opportunities
+        .filter((opportunity) => {
+          if (opportunity.state !== "STRONG") return false;
+
+          const gate = buildNewsGate({
+            events: newsEvents,
+            symbol: opportunity.instrument.symbol,
+            market: opportunity.instrument.market
+          });
+          const conflict =
+            gate.riskLevel === "HIGH" &&
+            gate.confidence >= 75 &&
+            gate.direction !== "unknown" &&
+            gate.direction !== opportunity.direction;
+
+          return !gate.blocked && !conflict;
         })
-        .slice(0, 6),
-    [newsEvents]
+        .sort((a, b) => {
+          const aDerivative = derivativeWatches.some(
+            (watch) =>
+              watch.instrument.symbol === a.instrument.symbol &&
+              watch.direction === a.direction
+          );
+          const bDerivative = derivativeWatches.some(
+            (watch) =>
+              watch.instrument.symbol === b.instrument.symbol &&
+              watch.direction === b.direction
+          );
+
+          const aRank = a.score + (aDerivative ? 8 : 0);
+          const bRank = b.score + (bDerivative ? 8 : 0);
+          return bRank - aRank;
+        })
+        .slice(0, 12),
+    [opportunities, newsEvents, derivativeWatches]
   );
 
-  const strongCount = useMemo(
-    () =>
-      opportunities.filter((item) => item.state === "STRONG")
-        .length,
-    [opportunities]
-  );
+  const strongCount = actionableOpportunities.length;
 
   const openOption = (
     sizing: OptionSizing,
@@ -1106,7 +1069,7 @@ export default function OpportunityScanner({
       <div className="scannerHeader">
         <div>
           <span>LIVE OPPORTUNITY SCANNER</span>
-          <strong>{strongCount} strong now</strong>
+          <strong>{strongCount} confirmed strong now</strong>
         </div>
         <div
           className={
@@ -1135,81 +1098,16 @@ export default function OpportunityScanner({
         ) : null}
       </div>
 
-      <label className="scannerCapital">
-        <span>OPTION CAPITAL · OPTIONAL</span>
-        <div>
-          <b>₹</b>
-          <input
-            inputMode="decimal"
-            value={capitalInput}
-            onChange={(event) =>
-              setCapitalInput(
-                event.target.value.replace(/[^0-9.]/g, "")
-              )
-            }
-            placeholder="e.g. 100000"
-          />
-        </div>
-        <small>
-          Buy sizing uses exact premium × lot size. Sell sizing uses
-          FYERS margin calculator where available.
-        </small>
-      </label>
-
-      {activePriorityNews.length ? (
-        <div className="scannerNewsSection">
-          <div className="scannerNewsTitle">
-            NEWS-FIRST MARKET RISK
-          </div>
-          {activePriorityNews.map((event) => {
-            const mapped = newsMappedInstrument(event, universe);
-            return (
-              <button
-                type="button"
-                className={
-                  "scannerNewsItem " +
-                  event.severityClass.toLowerCase()
-                }
-                key={event.id}
-                onClick={() => {
-                  if (mapped) onOpen(toOpenInstrument(mapped));
-                }}
-                disabled={!mapped}
-              >
-                <div>
-                  <span>
-                    {event.severityClass} · {event.source}
-                  </span>
-                  <strong>{event.headline}</strong>
-                </div>
-                <small>
-                  {event.bias.replaceAll("_", " ")} ·{" "}
-                  {event.confidence}% confidence · WAIT FOR PRICE
-                  CONFIRMATION
-                </small>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-
       <div className="scannerList">
-        {opportunities.length ? (
-          opportunities.map((opportunity) => {
+        {actionableOpportunities.length ? (
+          actionableOpportunities.map((opportunity, index) => {
             const idea =
               derivativeIdeas[opportunity.instrument.symbol];
-            const newsGate = buildNewsGate({
-              events: newsEvents,
-              symbol: opportunity.instrument.symbol,
-              market: opportunity.instrument.market
-            });
-            const newsConflict =
-              newsGate.riskLevel === "HIGH" &&
-              newsGate.confidence >= 75 &&
-              newsGate.direction !== "unknown" &&
-              newsGate.direction !== opportunity.direction;
-            const newsBlocked =
-              newsGate.blocked || newsConflict;
+            const derivativeConfirm = derivativeWatches.some(
+              (watch) =>
+                watch.instrument.symbol === opportunity.instrument.symbol &&
+                watch.direction === opportunity.direction
+            );
             const age = Math.max(
               0,
               Math.floor(
@@ -1220,13 +1118,8 @@ export default function OpportunityScanner({
             return (
               <article
                 className={
-                  "scannerOpportunity " +
-                  opportunity.state.toLowerCase().replace(" ", "-") +
-                  (newsBlocked ? " news-hold" : "") +
-                  (newsGate.riskLevel === "HIGH" ||
-                  newsGate.riskLevel === "CRITICAL"
-                    ? " news-priority"
-                    : "")
+                  "scannerOpportunity strong" +
+                  (index === 0 ? " best-trade" : "")
                 }
                 key={
                   opportunity.instrument.market +
@@ -1234,6 +1127,11 @@ export default function OpportunityScanner({
                   opportunity.instrument.symbol
                 }
               >
+                <div className="bestTradeRank">
+                  {index === 0
+                    ? "BEST TRADE NOW"
+                    : "CONFIRMED TRADE #" + (index + 1)}
+                </div>
                 <button
                   type="button"
                   className="scannerOpportunityMain"
@@ -1259,35 +1157,24 @@ export default function OpportunityScanner({
                         opportunity.direction
                       }
                     >
-                      {newsBlocked
-                        ? "NEWS HOLD"
-                        : opportunity.direction === "bullish"
-                          ? "LONG"
-                          : "SHORT"}
+                      {opportunity.direction === "bullish"
+                        ? "LONG"
+                        : "SHORT"}
                     </div>
                   </div>
 
                   <div className="scannerScoreRow">
                     <span className="scannerState">
-                      {newsBlocked
-                        ? "NEWS HOLD"
-                        : newsGate.riskLevel === "HIGH" &&
-                            newsGate.direction === opportunity.direction
-                          ? "NEWS + " + opportunity.state
-                          : opportunity.state}
+                      CONFIRMED STRONG
                     </span>
                     <b>{opportunity.score}/100</b>
+                    {derivativeConfirm ? (
+                      <span>DERIVATIVES CONFIRM</span>
+                    ) : null}
                     <span>{formatPrice(opportunity.price)}</span>
                     <small>{age}s</small>
                   </div>
 
-                  {newsGate.event &&
-                  (newsGate.riskLevel === "HIGH" ||
-                    newsGate.riskLevel === "CRITICAL") ? (
-                    <p className="scannerNewsTrigger">
-                      {newsGate.event.headline}
-                    </p>
-                  ) : null}
                   <p>{opportunity.trigger}</p>
                   {opportunity.zone ? (
                     <small>
@@ -1354,138 +1241,15 @@ export default function OpportunityScanner({
             <strong>
               {warming
                 ? "Warming real market context…"
-                : "No strong current opportunity"}
+                : "No confirmed strong trade right now"}
             </strong>
             <p>
-              The panel stays empty rather than manufacturing a setup.
-              Live sweeps and confluence will appear automatically.
+              Only confirmed strong setups appear here. WATCH and news-only
+              items stay out of the way until they become real trades.
             </p>
           </div>
         )}
       </div>
-
-      {derivativeWatches.length ? (
-        <div className="derivativeWatchSection">
-          <div className="derivativeWatchTitle">
-            DERIVATIVES WATCH · OPTIONS / FUTURES
-          </div>
-          {derivativeWatches.map((watch) => (
-            <article
-              className="derivativeWatchCard"
-              key={watch.instrument.symbol}
-            >
-              <div className="scannerOpportunityTop">
-                <div>
-                  <strong>{watch.instrument.name}</strong>
-                  <span>{watch.reason}</span>
-                </div>
-                <div
-                  className={
-                    "scannerDirection " + watch.direction
-                  }
-                >
-                  {watch.direction === "bullish"
-                    ? "BULLISH"
-                    : "BEARISH"}
-                </div>
-              </div>
-              <div className="scannerScoreRow">
-                <span className="scannerState">DERIVATIVES WATCH</span>
-                <b>{watch.score}/80</b>
-                {watch.pcr !== null ? (
-                  <span>PCR {watch.pcr.toFixed(2)}</span>
-                ) : null}
-              </div>
-
-              {watch.futureSymbol ? (
-                <button
-                  type="button"
-                  className="derivativeFutureButton"
-                  onClick={() =>
-                    onOpen({
-                      symbol: watch.futureSymbol!,
-                      name: watch.instrument.name + " FUTURE",
-                      market: watch.instrument.market,
-                      segment: "F&O",
-                      type: "FUTURE",
-                      underlying: watch.instrument.underlying,
-                      expiry: null,
-                      strike: null,
-                      optionType: null
-                    })
-                  }
-                >
-                  FUTURE · {watch.futureSymbol}
-                  {watch.futurePrice
-                    ? " · " + formatPrice(watch.futurePrice)
-                    : ""}
-                </button>
-              ) : null}
-
-              {watch.idea ? (
-                <div className="scannerDerivativeIdeas">
-                  {[watch.idea.buy, watch.idea.sell]
-                    .filter(Boolean)
-                    .map((sizing) => {
-                      const item = sizing as OptionSizing;
-                      const fakeOpportunity: ScannerOpportunity = {
-                        instrument: watch.instrument,
-                        direction: watch.direction,
-                        state: "WATCH",
-                        score: watch.score,
-                        price: watch.futurePrice ?? 0,
-                        trigger: "Derivatives watch",
-                        reason: watch.reason,
-                        zone: null,
-                        observedSweep: false,
-                        updatedAt: watch.updatedAt
-                      };
-
-                      return (
-                        <button
-                          type="button"
-                          key={item.symbol + item.action}
-                          onClick={() =>
-                            openOption(item, fakeOpportunity)
-                          }
-                        >
-                          <span>{item.action}</span>
-                          <strong>
-                            {item.strike} {item.optionType}
-                          </strong>
-                          <small>
-                            ₹{formatPrice(item.ltp)} · lot{" "}
-                            {item.lotSize ?? "?"}
-                          </small>
-                          <small>
-                            {item.perLotCapital
-                              ? (item.source === "FYERS_MARGIN"
-                                  ? "Margin"
-                                  : "1 lot") +
-                                " ₹" +
-                                Math.round(
-                                  item.perLotCapital
-                                ).toLocaleString("en-IN")
-                              : "Capital requirement unavailable"}
-                          </small>
-                          {capital > 0 ? (
-                            <small>
-                              {item.maxLots !== null
-                                ? item.maxLots +
-                                  " lot(s) · qty " +
-                                  (item.maxQuantity ?? 0)
-                                : "Capital insufficient / unavailable"}
-                            </small>
-                          ) : null}
-                        </button>
-                      );
-                    })}
-                </div>
-              ) : null}
-            </article>
-          ))}
-        </div>
-      ) : null}
 
       <div className="scannerFooter">
         <span>Ranks every 1s · India refresh ~20s</span>
