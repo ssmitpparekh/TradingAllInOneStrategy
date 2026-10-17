@@ -1,9 +1,46 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import PwaRegister from "@/components/PwaRegister";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ALLINONEVIEW",
-  description: "Read-only real-time market analysis platform"
+  title: {
+    default: "ALLINONEVIEW",
+    template: "%s · ALLINONEVIEW"
+  },
+  applicationName: "ALLINONEVIEW",
+  description: "Read-only real-time multi-market analysis platform",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [
+      {
+        url: "/allinoneview-icon.svg",
+        type: "image/svg+xml"
+      }
+    ],
+    apple: [
+      {
+        url: "/allinoneview-icon.svg",
+        type: "image/svg+xml"
+      }
+    ]
+  },
+  appleWebApp: {
+    capable: true,
+    title: "ALLINONEVIEW",
+    statusBarStyle: "black-translucent"
+  },
+  formatDetection: {
+    telephone: false
+  }
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover",
+  themeColor: "#080c12",
+  colorScheme: "dark"
 };
 
 export default function RootLayout({
@@ -13,7 +50,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <PwaRegister />
+        {children}
+      </body>
     </html>
   );
 }
