@@ -232,6 +232,7 @@ const TYPE_FILTERS = ["ALL", "INDEX", "EQUITY", "ETF", "SGB", "MF", "FUTURE", "O
 const LAST_VIEW_KEY = "allinoneview:last-view:v1";
 const TRADE_JOURNAL_KEY = "allinoneview:trade-journal:v1";
 const THEME_KEY = "allinoneview:theme:v1";
+const ORDER_FLOW_LOCAL_KEY = "allinoneview:order-flow:v2";
 
 const KRAKEN_RESOLUTIONS = new Set<Resolution>([
   "1", "5", "15", "30", "60", "240", "1D", "1W"
@@ -352,6 +353,43 @@ function tradePieBackground(stats: ReturnType<typeof summarizeTrades>) {
       stop5 +
       "% 100%)"
   };
+}
+
+function orderFlowLocalKey(
+  symbol: string,
+  resolution: string
+) {
+  return (
+    ORDER_FLOW_LOCAL_KEY +
+    ":" +
+    encodeURIComponent(symbol) +
+    ":" +
+    resolution
+  );
+}
+
+function mergeOrderFlowHistory(
+  ...groups: OrderFlowBucket[][]
+) {
+  const byTime = new Map<number, OrderFlowBucket>();
+
+  for (const group of groups) {
+    for (const bucket of group) {
+      const previous = byTime.get(bucket.time);
+
+      if (
+        !previous ||
+        (previous.partial && !bucket.partial) ||
+        bucket.trades > previous.trades
+      ) {
+        byTime.set(bucket.time, bucket);
+      }
+    }
+  }
+
+  return [...byTime.values()]
+    .sort((a, b) => a.time - b.time)
+    .slice(-4000);
 }
 
 function mergeLiveCandle(
@@ -1262,7 +1300,9 @@ export default function Home() {
     setQuote(null);
     setCandles([]);
     setLiveCandle(null);
-    setOrderFlowBuckets([]);
+    if (!selectedIsKraken) {
+      setOrderFlowBuckets([]);
+    }
     orderFlowNeedsPartialRef.current = true;
     orderFlowPartialBucketRef.current = null;
     setHistoryMeta({ from: null, to: null, note: null });
@@ -1891,6 +1931,114 @@ export default function Home() {
     selectedIsKraken,
     resolution,
     range
+  ]);
+
+  useEffect(() => {
+    if (!viewReady || !selectedIsKraken) {
+      setOrderFlowBuckets([]);
+      return;
+    }
+
+    let cancelled = false;
+    const key = orderFlowLocalKey(selected.symbol, resolution);
+    let localBuckets: OrderFlowBucket[] = [];
+
+    try {
+      const saved = window.localStorage.getItem(key);
+      const parsed = saved ? JSON.parse(saved) : [];
+      localBuckets = Array.isArray(parsed)
+        ? (parsed as OrderFlowBucket[])
+        : [];
+    } catch {
+      localBuckets = [];
+    }
+
+    setOrderFlowBuckets(localBuckets);
+
+    const firstTime =
+      candles[0]?.time ??
+      Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
+    const currentMinute =
+      Math.floor(Date.now() / 60_000) * 60;
+    const to = currentMinute - 1;
+
+    void fetch(
+      "/api/order-flow/history?symbol=" +
+        encodeURIComponent(selected.symbol) +
+        "&market=KRAKEN&resolution=" +
+        encodeURIComponent(resolution) +
+        "&from=" +
+        encodeURIComponent(String(firstTime)) +
+        "&to=" +
+        encodeURIComponent(String(to)),
+      { cache: "no-store" }
+    )
+      .then((response) => response.json())
+      .then((data) => {
+        if (
+          cancelled ||
+          !data?.ok ||
+          !data.available ||
+          !Array.isArray(data.buckets)
+        ) {
+          return;
+        }
+
+        const persistent = data.buckets as OrderFlowBucket[];
+        setOrderFlowBuckets((current) =>
+          mergeOrderFlowHistory(
+            localBuckets,
+            persistent,
+            current
+          )
+        );
+      })
+      .catch(() => {
+        // Local exact history still remains available.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    viewReady,
+    selectedIsKraken,
+    selected.symbol,
+    resolution,
+    candles[0]?.time
+  ]);
+
+  useEffect(() => {
+    if (!viewReady || !selectedIsKraken) return;
+
+    const currentBucket = orderFlowBucketStart(
+      Math.floor(Date.now() / 1000),
+      resolution
+    );
+
+    const completed = orderFlowBuckets
+      .filter(
+        (bucket) =>
+          !bucket.partial &&
+          (currentBucket === null ||
+            bucket.time < currentBucket)
+      )
+      .slice(-4000);
+
+    try {
+      window.localStorage.setItem(
+        orderFlowLocalKey(selected.symbol, resolution),
+        JSON.stringify(completed)
+      );
+    } catch {
+      // Persistent server history remains the production source.
+    }
+  }, [
+    viewReady,
+    selectedIsKraken,
+    selected.symbol,
+    resolution,
+    orderFlowBuckets
   ]);
 
   useEffect(() => {
