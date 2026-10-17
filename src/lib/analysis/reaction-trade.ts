@@ -21,6 +21,7 @@ export type ReactionTradePlan = {
   }>;
   signalTime: number | null;
   trigger: "LIQUIDITY SWEEP REVERSAL" | null;
+  score: number;
   reason: string;
 };
 
@@ -123,6 +124,7 @@ export function buildReactionTradePlan(input: {
     targets: [],
     signalTime: null,
     trigger: null,
+    score: 0,
     reason
   });
 
@@ -308,6 +310,11 @@ export function buildReactionTradePlan(input: {
     );
   }
 
+  const score = Math.min(
+    90,
+    75 + Math.max(0, Math.floor((finalRr - 2.5) * 4))
+  );
+
   return {
     available: true,
     state: "READY",
@@ -323,6 +330,7 @@ export function buildReactionTradePlan(input: {
     targets,
     signalTime: sweep.time,
     trigger: "LIQUIDITY SWEEP REVERSAL",
+    score,
     reason:
       "Fresh 15m liquidity sweep + reclaim/reversal candle + tight invalidation + " +
       finalRr.toFixed(1) +
