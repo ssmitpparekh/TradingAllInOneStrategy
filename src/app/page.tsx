@@ -17,6 +17,7 @@ import {
 } from "@/lib/analysis/opening-confirmation";
 import {
   makeTradeId,
+  reconcileTradeWithCandles,
   summarizeTrades,
   updateTradeWithPrice,
   type JournalTrade
@@ -254,11 +255,13 @@ function tradePieBackground(stats: ReturnType<typeof summarizeTrades>) {
   const wins = (stats.wins / total) * 100;
   const losses = (stats.losses / total) * 100;
   const breakeven = (stats.breakeven / total) * 100;
+  const ambiguous = (stats.ambiguous / total) * 100;
   const open = (stats.open / total) * 100;
   const stop1 = wins;
   const stop2 = stop1 + losses;
   const stop3 = stop2 + breakeven;
-  const stop4 = stop3 + open;
+  const stop4 = stop3 + ambiguous;
+  const stop5 = stop4 + open;
 
   return {
     background:
@@ -273,12 +276,16 @@ function tradePieBackground(stats: ReturnType<typeof summarizeTrades>) {
       stop2 +
       "% " +
       stop3 +
-      "%, #4d8dff " +
+      "%, #f5b942 " +
       stop3 +
       "% " +
       stop4 +
-      "%, #182230 " +
+      "%, #4d8dff " +
       stop4 +
+      "% " +
+      stop5 +
+      "%, #182230 " +
+      stop5 +
       "% 100%)"
   };
 }
@@ -1053,6 +1060,7 @@ export default function Home() {
         highestTargetHit: 0,
         resultR: null,
         closedTime: null,
+        ambiguityReason: null,
         createdAt: Date.now()
       };
 
@@ -1094,6 +1102,56 @@ export default function Home() {
       return changed ? next : current;
     });
   }, [journalReady, quote?.lp, selected.symbol]);
+
+  useEffect(() => {
+    if (
+      !journalReady ||
+      context1m.length === 0 ||
+      !primaryAnalysisSymbol
+    ) {
+      return;
+    }
+
+    setTradeJournal((current) => {
+      let changed = false;
+
+      const next = current.map((trade) => {
+        if (
+          trade.symbol !== primaryAnalysisSymbol ||
+          trade.status !== "OPEN"
+        ) {
+          return trade;
+        }
+
+        const relevant = context1m.filter(
+          (candle) => candle.time >= trade.signalTime
+        );
+        if (!relevant.length) return trade;
+
+        const updated = reconcileTradeWithCandles(
+          trade,
+          relevant
+        );
+
+        if (
+          updated.status !== trade.status ||
+          updated.highestTargetHit !== trade.highestTargetHit ||
+          updated.currentStop !== trade.currentStop ||
+          updated.outcome !== trade.outcome
+        ) {
+          changed = true;
+        }
+
+        return updated;
+      });
+
+      return changed ? next : current;
+    });
+  }, [
+    journalReady,
+    context1m,
+    primaryAnalysisSymbol
+  ]);
 
   useEffect(() => {
     const clockTimer = window.setInterval(() => {
@@ -2164,7 +2222,8 @@ export default function Home() {
                 </strong>
                 <small>
                   {item.stats.wins} wins · {item.stats.losses} losses ·{" "}
-                  {item.stats.breakeven} BE · {item.stats.open} open
+                  {item.stats.breakeven} BE · {item.stats.ambiguous} ambiguous ·{" "}
+                  {item.stats.open} open
                 </small>
                 <small>
                   Avg {item.stats.averageR.toFixed(2)}R ·{" "}
@@ -2227,7 +2286,9 @@ export default function Home() {
                           maximumFractionDigits: 2
                         })}
                       </td>
-                      <td>{trade.outcome}</td>
+                      <td title={trade.ambiguityReason ?? undefined}>
+                        {trade.outcome}
+                      </td>
                       <td
                         className={
                           (trade.resultR ?? 0) > 0
