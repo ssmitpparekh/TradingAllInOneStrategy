@@ -4382,3 +4382,360 @@ html[data-theme="light"] .optionCapitalGrid strong {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* --------------------------------------------------------------------------
+   Complete high-contrast light theme
+   -------------------------------------------------------------------------- */
+html[data-theme="light"],
+html[data-theme="light"] body,
+html[data-theme="light"] .shell {
+  color: #111827;
+}
+
+html[data-theme="light"] :where(
+  h1,
+  h2,
+  h3,
+  h4,
+  .bigPrice,
+  .status,
+  .priceRow,
+  .marketHeader,
+  .simplePlanHeader,
+  .reactionPlanHeader,
+  .reversalHeader,
+  .analysisHeader,
+  .orderFlowHeader,
+  .performanceHeader,
+  .tradeCapitalHeader,
+  .newsImpactHeader
+) {
+  color: #0f172a;
+}
+
+html[data-theme="light"] :where(
+  .lead,
+  .message,
+  .placeholder,
+  .roadmap p,
+  .symbolLine,
+  .marketChange,
+  .chartStatus,
+  .historyStatus,
+  .feedNote,
+  .emptySearch,
+  .simplePlanHeader p,
+  .simplePlanFooter p,
+  .reactionPlanHeader p,
+  .contextSource,
+  .analysisWaiting,
+  .orderFlowNote,
+  .performanceHeader p,
+  .tradeCapitalHeader p,
+  .tradeCapitalNote,
+  .newsImpactHeader p,
+  .newsImpactFootnote
+) {
+  color: #475569;
+}
+
+html[data-theme="light"] :where(
+  .eyebrow,
+  .label,
+  .toolbarLabel,
+  .scannerHeader > div > span,
+  .scannerMeta,
+  .scannerFooter,
+  .instrumentResult span,
+  .instrumentBadges span,
+  .historyNotice,
+  .simplePlanGrid span,
+  .simplePlanGrid small,
+  .simpleTargets span,
+  .simpleTargets small,
+  .simpleTrend span,
+  .simpleTrend small,
+  .analysisSummary span,
+  .analysisSummary small,
+  .fibTableTitle,
+  .fibRow,
+  .extensionMeta,
+  .orderFlowStats span,
+  .orderFlowStats small,
+  .performanceNumbers span,
+  .performanceNumbers small,
+  .newsFeedMeta,
+  .newsFeedImpact span,
+  .newsGateEvent span,
+  .tradeCapitalGrid span,
+  .tradeCapitalGrid small,
+  .optionCapitalGrid span,
+  .optionCapitalGrid small,
+  .scannerOpportunityTop span,
+  .scannerScoreRow,
+  .scannerScoreRow small,
+  .scannerOpportunityMain > small,
+  .scannerOpportunityMain p,
+  .scannerDerivativeIdeas span,
+  .scannerDerivativeIdeas small,
+  .derivativeWatchTitle,
+  .derivativeFutureButton
+) {
+  color: #64748b;
+}
+
+html[data-theme="light"] :where(
+  .quoteGrid strong,
+  .ohlcStrip strong,
+  .crosshairReadout strong,
+  .simplePlanGrid strong,
+  .simpleTargets strong,
+  .simpleTrend strong,
+  .analysisSummary strong,
+  .fibRow strong,
+  .orderFlowStats strong,
+  .performanceNumbers strong,
+  .performancePie strong,
+  .scannerOpportunityTop strong,
+  .scannerScoreRow b,
+  .scannerDerivativeIdeas strong,
+  .derivativeWatchCard strong,
+  .newsGateEvent strong,
+  .newsFeedItem > strong,
+  .newsFeedItem a,
+  .tradeCapitalGrid strong,
+  .optionCapitalGrid strong
+) {
+  color: #111827;
+}
+
+html[data-theme="light"] :where(
+  .quoteGrid > div,
+  .simpleTrend,
+  .simplePlanGrid > div,
+  .simpleTargets > div,
+  .analysisSummary > div,
+  .fibTable,
+  .orderFlowStats > div,
+  .performancePanel,
+  .newsGateEvent,
+  .newsFeedItem,
+  .tradeCapitalGrid > div,
+  .optionCapitalGrid > div,
+  .scannerDerivativeIdeas button,
+  .derivativeFutureButton
+) {
+  border-color: #d5deea;
+  background: #ffffff;
+}
+
+html[data-theme="light"] :where(
+  .simplePlanCard,
+  .reactionPlanCard,
+  .reversalCard,
+  .analysisCard,
+  .orderFlowCard,
+  .performanceCard,
+  .tradeCapitalPlanner,
+  .newsImpactCard,
+  .roadmap
+) {
+  background-color: rgba(255, 255, 255, 0.98);
+}
+
+html[data-theme="light"] .simplePlanCard {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(59, 130, 246, 0.055),
+      transparent 170px
+    ),
+    #ffffff;
+}
+
+html[data-theme="light"] .reactionPlanCard {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(245, 158, 11, 0.065),
+      transparent 170px
+    ),
+    #ffffff;
+}
+
+html[data-theme="light"] .reactionPlanCard.ready {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(22, 163, 74, 0.055),
+      transparent 170px
+    ),
+    #ffffff;
+}
+
+html[data-theme="light"] .terminalCard:fullscreen {
+  background: #ffffff;
+}
+
+html[data-theme="light"] .ohlcStrip {
+  color: #475569;
+}
+
+html[data-theme="light"] .crosshairReadout,
+html[data-theme="light"] .exactVolumeLegend {
+  background: rgba(255, 255, 255, 0.94);
+  color: #475569;
+}
+
+html[data-theme="light"] .orderFlowMeter {
+  background: #e7edf5;
+}
+
+html[data-theme="light"] .scannerOpportunityMain {
+  color: #111827;
+}
+
+html[data-theme="light"] .scannerOpportunityMain:hover,
+html[data-theme="light"] .scannerDerivativeIdeas button:hover,
+html[data-theme="light"] .derivativeFutureButton:hover {
+  background: #eef3f8;
+}
+
+html[data-theme="light"] .scannerState {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+}
+
+html[data-theme="light"] .bestTradeRank {
+  color: #08783f;
+}
+
+html[data-theme="light"] .scannerOpportunity.best-trade {
+  background:
+    linear-gradient(
+      90deg,
+      rgba(22, 163, 74, 0.08),
+      transparent 64%
+    ),
+    #ffffff;
+}
+
+html[data-theme="light"] .button.secondary,
+html[data-theme="light"] .compactButton {
+  border: 1px solid #cbd5e1;
+  background: #e9eef5;
+  color: #172033;
+}
+
+html[data-theme="light"] .button.secondary:hover,
+html[data-theme="light"] .compactButton:hover {
+  background: #dce5f0;
+}
+
+html[data-theme="light"] .timeframe {
+  color: #475569;
+}
+
+html[data-theme="light"] .timeframe:hover {
+  background: #eef2f7;
+  color: #0f172a;
+}
+
+html[data-theme="light"] .timeframe.active {
+  background: #dce5f0;
+  color: #0f172a;
+}
+
+html[data-theme="light"] .chartResetButton {
+  border-color: #b8c5d6;
+}
+
+html[data-theme="light"] .connectionPill,
+html[data-theme="light"] .filterChip,
+html[data-theme="light"] .liveShortcut,
+html[data-theme="light"] .analysisToggle,
+html[data-theme="light"] .themeControl {
+  color: #475569;
+}
+
+html[data-theme="light"] .analysisToggle.active,
+html[data-theme="light"] .filterChip.active,
+html[data-theme="light"] .liveShortcut.active {
+  color: #0f172a;
+}
+
+html[data-theme="light"] .instrumentBadges span {
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+html[data-theme="light"] .historyNotice {
+  border-color: #f2d59a;
+  background: #fff7e6;
+  color: #9a6100;
+}
+
+html[data-theme="light"] .historyError {
+  border-color: #f3c1c4;
+  background: #fff1f2;
+  color: #b4232a;
+}
+
+/* Preserve semantic market colours with stronger light-mode contrast. */
+html[data-theme="light"] :where(
+  .positive,
+  .status.good,
+  .marketChange.positive,
+  .flowBuy,
+  .simpleTrend.bullish strong,
+  .reactionDirection.bullish strong,
+  .scannerDirection.bullish,
+  .moveClassBadge.major
+) {
+  color: #08783f;
+}
+
+html[data-theme="light"] :where(
+  .negative,
+  .marketChange.negative,
+  .flowSell,
+  .simpleTrend.bearish strong,
+  .reactionDirection.bearish strong,
+  .scannerDirection.bearish
+) {
+  color: #c62832;
+}
+
+html[data-theme="light"] :where(
+  .simplePlanCard.wait_retrace .simplePlanHeader h3,
+  .simplePlanCard.wait_confirmation .simplePlanHeader h3,
+  .moveClassBadge.tactical,
+  .scannerNewsTrigger
+) {
+  color: #9a6100;
+}
+
+html[data-theme="light"] .orderFlowQuality.exact {
+  color: #08783f;
+  border-color: rgba(8, 120, 63, 0.28);
+  background: rgba(8, 120, 63, 0.06);
+}
+
+html[data-theme="light"] .orderFlowQuality.unavailable,
+html[data-theme="light"] .simpleTrend.neutral strong {
+  color: #475569;
+}
+
+html[data-theme="light"] .newsSeverity.critical {
+  color: #b4232a;
+}
+
+html[data-theme="light"] .newsSeverity.high {
+  color: #9a6100;
+}
+
+html[data-theme="light"] .newsSeverity.watch {
+  color: #3157b7;
+}
