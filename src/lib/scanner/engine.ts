@@ -88,7 +88,14 @@ export function scannerBucketStart(
   }
 
   const sessionOpen = Math.floor(
-    Date.UTC(year, month - 1, day, 3, 45, 0) / 1000
+    Date.UTC(
+      year,
+      month - 1,
+      day,
+      market === "MCX" ? 3 : 3,
+      market === "MCX" ? 30 : 45,
+      0
+    ) / 1000
   );
   const elapsed = Math.max(0, timestamp - sessionOpen);
   const size = minutes * 60;
