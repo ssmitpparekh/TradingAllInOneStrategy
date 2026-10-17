@@ -2339,3 +2339,32 @@ button {
     background: rgba(77, 107, 255, 0.12);
   }
 }
+
+
+/* Session breaks */
+.marketChartShell {
+  position: relative;
+}
+
+.sessionBreakLayer {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.sessionBreakLine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 1px dashed rgba(121, 136, 158, 0.34);
+  transform: translateX(-0.5px);
+}
+
+@media (max-width: 700px) {
+  .sessionBreakLine {
+    border-left-color: rgba(121, 136, 158, 0.27);
+  }
+}
