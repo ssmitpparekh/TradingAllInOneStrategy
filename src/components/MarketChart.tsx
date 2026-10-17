@@ -249,6 +249,13 @@ export default function MarketChart({
   useEffect(() => {
     if (!liveCandle || !seriesRef.current) return;
 
+    const latestHistoricalTime =
+      candles.length > 0 ? candles[candles.length - 1].time : 0;
+
+    // Kraken can send a snapshot candle before the REST tail we already loaded.
+    // Lightweight Charts rejects out-of-order update() calls, so ignore those.
+    if (liveCandle.time < latestHistoricalTime) return;
+
     seriesRef.current.update({
       time: liveCandle.time as Time,
       open: liveCandle.open,
@@ -256,7 +263,7 @@ export default function MarketChart({
       low: liveCandle.low,
       close: liveCandle.close
     });
-  }, [liveCandle]);
+  }, [liveCandle, candles]);
 
   useEffect(() => {
     if (fitNonce > 0) {
