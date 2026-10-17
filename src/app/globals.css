@@ -922,3 +922,86 @@ h2 {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Phase 3b: BOS / CHoCH */
+.structureStrip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.structureStrip > div {
+  padding: 12px;
+  border: 1px solid #202937;
+  border-radius: 11px;
+  background: #090e15;
+}
+
+.structureStrip span {
+  display: block;
+  margin-bottom: 6px;
+  color: #66758b;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.structureStrip strong {
+  color: #e8eef7;
+  font-size: 14px;
+}
+
+.structureTrend.bullish {
+  color: #74e39b;
+}
+
+.structureTrend.bearish {
+  color: #ff8587;
+}
+
+.structureTrend.neutral {
+  color: #8a97aa;
+}
+
+.structureEvents {
+  margin-top: 14px;
+}
+
+.eventChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.eventChip {
+  padding: 6px 9px;
+  border: 1px solid #273142;
+  border-radius: 999px;
+  background: #0b111a;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.eventChip.bullish {
+  color: #74e39b;
+  border-color: rgba(116, 227, 155, 0.28);
+}
+
+.eventChip.bearish {
+  color: #ff8587;
+  border-color: rgba(255, 133, 135, 0.28);
+}
+
+@media (max-width: 900px) {
+  .structureStrip {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .structureStrip {
+    grid-template-columns: 1fr;
+  }
+}
