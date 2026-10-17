@@ -268,7 +268,6 @@ export default function Home() {
   const [showFvg, setShowFvg] = useState(false);
   const [showLiquidity, setShowLiquidity] = useState(false);
   const [showOrderBlocks, setShowOrderBlocks] = useState(false);
-  const [showVolume, setShowVolume] = useState(false);
   const [showVwap, setShowVwap] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showEma, setShowEma] = useState(false);
@@ -1496,7 +1495,6 @@ export default function Home() {
           showFvg={showFvg}
           showLiquidity={showLiquidity}
           showOrderBlocks={showOrderBlocks}
-          showVolume={showVolume}
           showVwap={showVwap}
           showProfile={showProfile}
           showEma={showEma}
@@ -1866,15 +1864,6 @@ export default function Home() {
             </button>
             <button
               className={
-                showVolume ? "analysisToggle active" : "analysisToggle"
-              }
-              onClick={() => setShowVolume((value) => !value)}
-              disabled={!volumeAnalytics.available}
-            >
-              Volume {showVolume ? "ON" : "OFF"}
-            </button>
-            <button
-              className={
                 showVwap ? "analysisToggle active" : "analysisToggle"
               }
               onClick={() => setShowVwap((value) => !value)}
@@ -1916,7 +1905,7 @@ export default function Home() {
               onClick={() => setShowOrderFlow((value) => !value)}
               disabled={!selectedIsKraken}
             >
-              Order Flow {showOrderFlow ? "ON" : "OFF"}
+              Buy/Sell Vol {showOrderFlow ? "ON" : "OFF"}
             </button>
           </div>
         </div>
