@@ -7,11 +7,16 @@ import MarketChart, {
 } from "@/components/MarketChart";
 import PwaInstallButton from "@/components/PwaInstallButton";
 import OpportunityScanner from "@/components/OpportunityScanner";
+import NewsImpactPanel from "@/components/NewsImpactPanel";
 import { buildTechnicalContext } from "@/lib/analysis/indicators";
 import { buildVolumeAnalytics } from "@/lib/analysis/volume";
 import { buildReversalEngine } from "@/lib/analysis/confluence";
 import { buildSimpleTradePlan } from "@/lib/analysis/trade-plan";
 import { buildReactionTradePlan } from "@/lib/analysis/reaction-trade";
+import {
+  buildNewsGate,
+  type NewsImpactEvent
+} from "@/lib/news/impact";
 import {
   buildOpeningConfirmation,
   indianSessionOpenEpoch,
@@ -373,6 +378,10 @@ export default function Home() {
   const [clockNow, setClockNow] = useState(Date.now());
   const [themeMode, setThemeMode] = useState<ThemeMode>("system");
   const [resolvedTheme, setResolvedTheme] = useState<"dark" | "light">("dark");
+  const [newsEvents, setNewsEvents] = useState<NewsImpactEvent[]>([]);
+  const [newsConnected, setNewsConnected] = useState(false);
+  const [newsXConfigured, setNewsXConfigured] = useState(false);
+  const [newsXStreaming, setNewsXStreaming] = useState(false);
   const historyRequestId = useRef(0);
   const orderFlowNeedsPartialRef = useRef(true);
   const orderFlowPartialBucketRef = useRef<number | null>(null);
@@ -705,6 +714,35 @@ export default function Home() {
       reactionFib15m.atr14
     ]
   );
+
+  const newsGate = useMemo(
+    () =>
+      buildNewsGate({
+        events: newsEvents,
+        symbol: primaryAnalysisSymbol,
+        market: selected.market
+      }),
+    [newsEvents, primaryAnalysisSymbol, selected.market]
+  );
+
+  const newsDirectionConflictsPrimary =
+    newsGate.direction !== "unknown" &&
+    simpleTradePlan.trend !== "neutral" &&
+    newsGate.direction !== simpleTradePlan.trend;
+
+  const primaryNewsBlocked =
+    newsGate.blocked ||
+    (newsGate.riskLevel === "HIGH" &&
+      newsGate.confidence >= 75 &&
+      newsDirectionConflictsPrimary);
+
+  const reactionNewsBlocked =
+    newsGate.blocked ||
+    (newsGate.riskLevel === "HIGH" &&
+      newsGate.confidence >= 75 &&
+      reactionTradePlan.direction !== null &&
+      newsGate.direction !== "unknown" &&
+      newsGate.direction !== reactionTradePlan.direction);
 
   const analysisTrades = useMemo(
     () =>
@@ -1156,6 +1194,7 @@ export default function Home() {
   useEffect(() => {
     if (
       !journalReady ||
+      primaryNewsBlocked ||
       simpleTradePlan.state !== "READY" ||
       simpleTradePlan.signalTime === null ||
       simpleTradePlan.confirmationTimeframe === null ||
@@ -1225,6 +1264,7 @@ export default function Home() {
     });
   }, [
     journalReady,
+    primaryNewsBlocked,
     simpleTradePlan,
     selected.market,
     selected.name,
@@ -1235,6 +1275,7 @@ export default function Home() {
   useEffect(() => {
     if (
       !journalReady ||
+      reactionNewsBlocked ||
       reactionTradePlan.state !== "READY" ||
       reactionTradePlan.direction === null ||
       reactionTradePlan.signalTime === null ||
@@ -1298,6 +1339,7 @@ export default function Home() {
     });
   }, [
     journalReady,
+    reactionNewsBlocked,
     reactionTradePlan,
     selected.market,
     selected.name,
@@ -1382,6 +1424,65 @@ export default function Home() {
     closedContext1m,
     primaryAnalysisSymbol
   ]);
+
+  useEffect(() => {
+    const source = new EventSource("/api/news/stream");
+
+    source.addEventListener("status", (event) => {
+      try {
+        const payload = JSON.parse(
+          (event as MessageEvent<string>).data
+        ) as {
+          connected?: boolean;
+          xConfigured?: boolean;
+          xStreaming?: boolean;
+        };
+
+        setNewsConnected(Boolean(payload.connected));
+        setNewsXConfigured(Boolean(payload.xConfigured));
+        setNewsXStreaming(Boolean(payload.xStreaming));
+      } catch {
+        setNewsConnected(false);
+      }
+    });
+
+    source.addEventListener("news", (event) => {
+      try {
+        const item = JSON.parse(
+          (event as MessageEvent<string>).data
+        ) as NewsImpactEvent;
+
+        if (!item?.id || !item.headline) return;
+
+        setNewsEvents((current) => {
+          const next = [
+            item,
+            ...current.filter(
+              (existing) => existing.id !== item.id
+            )
+          ]
+            .filter(
+              (candidate) =>
+                candidate.expiresAt > Date.now() - 24 * 60 * 60_000
+            )
+            .sort((a, b) => b.receivedAt - a.receivedAt)
+            .slice(0, 250);
+
+          return next;
+        });
+      } catch {
+        // Ignore malformed external news events.
+      }
+    });
+
+    source.onerror = () => {
+      setNewsConnected(false);
+    };
+
+    return () => {
+      source.close();
+    };
+  }, []);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(THEME_KEY);
@@ -2055,6 +2156,7 @@ export default function Home() {
 
       <OpportunityScanner
         fyersConnected={Boolean(connected)}
+        newsEvents={newsEvents}
         onOpen={(instrument) =>
           void selectInstrument(instrument as Instrument)
         }
@@ -2231,6 +2333,14 @@ export default function Home() {
         ) : null}
       </section>
 
+      <NewsImpactPanel
+        events={newsEvents}
+        gate={newsGate}
+        connected={newsConnected}
+        xConfigured={newsXConfigured}
+        xStreaming={newsXStreaming}
+      />
+
       {reactionTradePlan.state !== "NONE" ? (
         <section
           className={
@@ -2243,7 +2353,11 @@ export default function Home() {
               <p className="label">
                 REACTION TRADE · COUNTER-TREND · 15m LIQUIDITY SWEEP
               </p>
-              <h3>{reactionTradePlan.headline}</h3>
+              <h3>
+                {reactionNewsBlocked
+                  ? "NEWS HOLD — " + reactionTradePlan.headline
+                  : reactionTradePlan.headline}
+              </h3>
               {reactionTradePlan.state === "READY" &&
               reactionTradePlan.moveClass ? (
                 <span
@@ -2279,12 +2393,15 @@ export default function Home() {
             <div>
               <span>ENTRY NOW</span>
               <strong>
-                {reactionTradePlan.state === "READY" &&
+                {!reactionNewsBlocked &&
+                reactionTradePlan.state === "READY" &&
                 reactionTradePlan.entry !== null
                   ? reactionTradePlan.entry.toLocaleString("en-IN", {
                       maximumFractionDigits: 2
                     })
-                  : "WAIT"}
+                  : reactionNewsBlocked
+                    ? "NEWS HOLD"
+                    : "WAIT"}
               </strong>
               <small>
                 {reactionTradePlan.trigger ??
@@ -2363,7 +2480,13 @@ export default function Home() {
             <p className="label">
               SWING TRADE PLAN · 4H/1H CONTEXT · 15m CONFIRMATION · 1m/5m OPENING TRIGGER ONLY
             </p>
-            <h3>{loadingContext ? "Building real-data context…" : simpleTradePlan.headline}</h3>
+            <h3>
+              {loadingContext
+                ? "Building real-data context…"
+                : primaryNewsBlocked
+                  ? "NEWS HOLD — " + simpleTradePlan.headline
+                  : simpleTradePlan.headline}
+            </h3>
             {simpleTradePlan.state === "READY" && simpleTradePlan.moveClass ? (
               <span className={"moveClassBadge " + simpleTradePlan.moveClass.toLowerCase()}>
                 CONFIRMED {simpleTradePlan.moveClass} MOVE
@@ -2393,9 +2516,15 @@ export default function Home() {
           <div>
             <span>ENTRY</span>
             <strong>
-              {simpleTradePlan.state === "READY" && simpleTradePlan.entry !== null
-                ? simpleTradePlan.entry.toLocaleString("en-IN", { maximumFractionDigits: 2 })
-                : "WAIT"}
+              {!primaryNewsBlocked &&
+              simpleTradePlan.state === "READY" &&
+              simpleTradePlan.entry !== null
+                ? simpleTradePlan.entry.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })
+                : primaryNewsBlocked
+                  ? "NEWS HOLD"
+                  : "WAIT"}
             </strong>
             <small>
               {simpleTradePlan.trigger ?? "Needs liquidity sweep / Order Block reaction"}
