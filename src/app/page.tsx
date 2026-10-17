@@ -33,7 +33,9 @@ export default function Home() {
   const [resolution, setResolution] = useState<Resolution>("15");
   const [message, setMessage] = useState("Checking FYERS connection…");
   const [loadingQuote, setLoadingQuote] = useState(false);
-  const [loadingChart, setLoadingChart] = useState(false);\n  const [streamConnected, setStreamConnected] = useState(false);\n  const [streamMessage, setStreamMessage] = useState("Stream waiting…");
+  const [loadingChart, setLoadingChart] = useState(false);
+  const [streamConnected, setStreamConnected] = useState(false);
+  const [streamMessage, setStreamMessage] = useState("Stream waiting…");
 
   async function refreshStatus() {
     try {
