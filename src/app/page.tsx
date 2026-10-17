@@ -31,7 +31,7 @@ type Instrument = {
 
 type Resolution =
   | "1" | "2" | "3" | "5" | "10" | "15" | "20" | "30" | "45"
-  | "60" | "120" | "180" | "240" | "1D" | "1W" | "1M";
+  | "60" | "120" | "240" | "1D" | "1W" | "1M";
 
 type RangeKey = "1D" | "5D" | "1M" | "3M" | "6M" | "1Y" | "5Y" | "MAX";
 
@@ -59,7 +59,6 @@ const RESOLUTIONS: Array<{ value: Resolution; label: string }> = [
   { value: "45", label: "45m" },
   { value: "60", label: "1H" },
   { value: "120", label: "2H" },
-  { value: "180", label: "3H" },
   { value: "240", label: "4H" },
   { value: "1D", label: "1D" },
   { value: "1W", label: "1W" },
@@ -68,7 +67,7 @@ const RESOLUTIONS: Array<{ value: Resolution; label: string }> = [
 
 const RANGES: RangeKey[] = ["1D", "5D", "1M", "3M", "6M", "1Y", "5Y", "MAX"];
 const MARKET_FILTERS = ["ALL", "NSE", "BSE", "MCX"];
-const TYPE_FILTERS = ["ALL", "INDEX", "EQUITY", "FUTURE", "OPTION", "COMMODITY", "CURRENCY"];
+const TYPE_FILTERS = ["ALL", "INDEX", "EQUITY", "ETF", "SGB", "MF", "FUTURE", "OPTION", "COMMODITY", "CURRENCY"];
 
 function formatDate(timestamp: number | null) {
   if (!timestamp) return "—";
