@@ -67,8 +67,12 @@ const RESOLUTIONS: Array<{ value: Resolution; label: string }> = [
 ];
 
 const RANGES: RangeKey[] = ["1D", "5D", "1M", "3M", "6M", "1Y", "5Y", "MAX"];
-const MARKET_FILTERS = ["ALL", "NSE", "BSE", "MCX"];
-const TYPE_FILTERS = ["ALL", "INDEX", "EQUITY", "ETF", "SGB", "MF", "FUTURE", "OPTION", "COMMODITY", "CURRENCY"];
+const MARKET_FILTERS = ["ALL", "NSE", "BSE", "MCX", "KRAKEN"];
+const TYPE_FILTERS = ["ALL", "INDEX", "EQUITY", "ETF", "SGB", "MF", "FUTURE", "OPTION", "COMMODITY", "CURRENCY", "CRYPTO"];
+
+const KRAKEN_RESOLUTIONS = new Set<Resolution>([
+  "1", "5", "15", "30", "60", "240", "1D", "1W"
+]);
 
 function formatDate(timestamp: number | null) {
   if (!timestamp) return "—";
@@ -107,7 +111,10 @@ export default function Home() {
   const [fitNonce, setFitNonce] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [liveCandle, setLiveCandle] = useState<ChartCandle | null>(null);
   const historyRequestId = useRef(0);
+
+  const selectedIsKraken = selected.market === "KRAKEN";
 
   async function refreshStatus() {
     try {
@@ -126,12 +133,21 @@ export default function Home() {
     }
   }
 
-  async function fetchQuote(silent = false, symbol = selected.symbol) {
+  async function fetchQuote(
+    silent = false,
+    symbol = selected.symbol,
+    market = selected.market
+  ) {
     if (!silent) setLoadingQuote(true);
 
     try {
+      const endpoint =
+        market === "KRAKEN"
+          ? "/api/kraken/quote"
+          : "/api/fyers/quote";
+
       const response = await fetch(
-        `/api/fyers/quote?symbol=${encodeURIComponent(symbol)}`,
+        `${endpoint}?symbol=${encodeURIComponent(symbol)}`,
         { cache: "no-store" }
       );
       const data = await response.json();
@@ -156,7 +172,8 @@ export default function Home() {
     nextResolution = resolution,
     nextRange = range,
     symbol = selected.symbol,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    market = selected.market
   ) {
     const requestId = ++historyRequestId.current;
     setLoadingChart(true);
@@ -165,8 +182,13 @@ export default function Home() {
     setHistoryMeta({ from: null, to: null, note: null });
 
     try {
+      const endpoint =
+        market === "KRAKEN"
+          ? "/api/kraken/history"
+          : "/api/fyers/history";
+
       const response = await fetch(
-        `/api/fyers/history?symbol=${encodeURIComponent(symbol)}&resolution=${encodeURIComponent(nextResolution)}&range=${encodeURIComponent(nextRange)}`,
+        `${endpoint}?symbol=${encodeURIComponent(symbol)}&resolution=${encodeURIComponent(nextResolution)}&range=${encodeURIComponent(nextRange)}`,
         { cache: "no-store", signal }
       );
       const data = await response.json();
@@ -181,7 +203,7 @@ export default function Home() {
       setHistoryMeta({
         from: data.candles?.[0]?.time ?? data.from ?? null,
         to: data.candles?.[data.candles.length - 1]?.time ?? data.to ?? null,
-        note: data.appliedLimit ?? null
+        note: data.appliedLimit ?? data.note ?? null
       });
     } catch (error) {
       if (signal?.aborted) return;
@@ -204,7 +226,15 @@ export default function Home() {
     setSearchResults([]);
     setQuote(null);
     setCandles([]);
+    setLiveCandle(null);
     setHistoryMeta({ from: null, to: null, note: null });
+
+    if (
+      instrument.market === "KRAKEN" &&
+      !KRAKEN_RESOLUTIONS.has(resolution)
+    ) {
+      setResolution("15");
+    }
   }
 
   async function toggleFullscreen() {
