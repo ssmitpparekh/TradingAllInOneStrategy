@@ -4738,3 +4738,158 @@ html[data-theme="light"] .newsSeverity.high {
 html[data-theme="light"] .newsSeverity.watch {
   color: #3157b7;
 }
+
+
+/* Final light-mode hard reset for every dark analysis surface. */
+html[data-theme="light"] :where(
+  .quoteGrid > div,
+  .searchResults,
+  .analysisSummary > div,
+  .fibTable,
+  .structureStrip > div,
+  .eventChip,
+  .imbalanceStrip > div,
+  .imbalancePanel,
+  .orderBlockStrip > div,
+  .orderBlockPanel,
+  .profileStrip > div,
+  .volumeUnavailableNote,
+  .derivativesPanel,
+  .derivativesSummary > div,
+  .oiWallPanel,
+  .scoreBadge,
+  .directionScores > div,
+  .scoreComponent,
+  .targetGrid > div,
+  .candleClock,
+  .technicalStrip > div,
+  .appInstallHint,
+  .orderFlowStats > div,
+  .simpleTrend,
+  .simplePlanGrid > div,
+  .simpleTargets > div,
+  .reactionDirection,
+  .performancePanel,
+  .tradeHistoryTable,
+  .newsGateEvent,
+  .newsFeedItem,
+  .tradeCapitalInputWrap label,
+  .tradeCapitalGrid > div,
+  .optionCapitalGrid > div
+) {
+  border-color: #d6dfeb !important;
+  background: #ffffff !important;
+  color: #111827;
+}
+
+html[data-theme="light"] .directionScore.selected {
+  border-color: #9fb4e9 !important;
+  background: #eef4ff !important;
+}
+
+html[data-theme="light"] .performancePie::after {
+  background: #ffffff !important;
+}
+
+html[data-theme="light"] .orderFlowMeter {
+  background: #e8eef5 !important;
+}
+
+html[data-theme="light"] :where(
+  .profileStrip,
+  .derivativesPanel,
+  .derivativesSummary,
+  .oiWallPanel,
+  .directionScores,
+  .targetGrid,
+  .technicalStrip,
+  .scoreComponent,
+  .volumeUnavailableNote,
+  .candleClock
+) :where(span, small, p) {
+  color: #64748b;
+}
+
+html[data-theme="light"] :where(
+  .profileStrip,
+  .derivativesPanel,
+  .derivativesSummary,
+  .oiWallPanel,
+  .directionScores,
+  .targetGrid,
+  .technicalStrip,
+  .scoreComponent,
+  .candleClock
+) :where(strong, b) {
+  color: #111827;
+}
+
+html[data-theme="light"] .scoreBadge strong {
+  color: #111827;
+}
+
+html[data-theme="light"] .scoreBadge span,
+html[data-theme="light"] .scoreBadge small {
+  color: #64748b;
+}
+
+html[data-theme="light"] .tradeMarkerLabel {
+  border-color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.95);
+  color: #111827;
+}
+
+html[data-theme="light"] .appInstallHint,
+html[data-theme="light"] .volumeUnavailableNote {
+  color: #475569;
+}
+
+html[data-theme="light"] .candleClock {
+  color: #111827;
+}
+
+html[data-theme="light"] .fibRow {
+  border-color: #e6ebf2;
+}
+
+html[data-theme="light"] .fibRow.important {
+  background: #fff8e6 !important;
+  color: #8a5a00;
+}
+
+html[data-theme="light"] .fibRow.extension.important {
+  background: #f5f1ff !important;
+  color: #6f55bd;
+}
+
+/* Scanner trade levels */
+.scannerTradeLevels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.scannerTradeLevels span {
+  padding: 5px 6px;
+  border: 1px solid #263143;
+  border-radius: 6px;
+  color: #68758a;
+  font-size: 7px;
+  font-weight: 800;
+}
+
+.scannerTradeLevels b {
+  margin-left: 3px;
+  color: #e9eef6;
+}
+
+html[data-theme="light"] .scannerTradeLevels span {
+  border-color: #d6dfeb;
+  background: #f8fafc;
+  color: #64748b;
+}
+
+html[data-theme="light"] .scannerTradeLevels b {
+  color: #111827;
+}
