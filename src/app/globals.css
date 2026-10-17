@@ -1212,3 +1212,75 @@ h2 {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Phase 4: volume / VWAP / profile */
+.volumeStrip,
+.profileStrip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.volumeStrip > div,
+.profileStrip > div {
+  padding: 12px;
+  border: 1px solid #202937;
+  border-radius: 11px;
+  background: #090e15;
+}
+
+.volumeStrip span,
+.profileStrip span {
+  display: block;
+  margin-bottom: 6px;
+  color: #66758b;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.volumeStrip strong,
+.profileStrip strong {
+  color: #e8eef7;
+  font-size: 14px;
+}
+
+.volumeStrip strong.available {
+  color: #74e39b;
+}
+
+.volumeStrip strong.unavailable {
+  color: #8a97aa;
+}
+
+.volumeUnavailableNote {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #2a3445;
+  border-radius: 9px;
+  background: #0a1018;
+  color: #78869a;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.analysisToggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+@media (max-width: 900px) {
+  .volumeStrip,
+  .profileStrip {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .volumeStrip,
+  .profileStrip {
+    grid-template-columns: 1fr;
+  }
+}
