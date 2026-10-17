@@ -328,7 +328,7 @@ export default function Home() {
   const [showProfile, setShowProfile] = useState(false);
   const [showEma, setShowEma] = useState(false);
   const [showSessionBreaks, setShowSessionBreaks] = useState(false);
-  const [showOrderFlow, setShowOrderFlow] = useState(false);
+  const [showOrderFlow, setShowOrderFlow] = useState(true);
   const [showAdvancedAnalysis, setShowAdvancedAnalysis] = useState(false);
   const [viewReady, setViewReady] = useState(false);
   const [orderFlowBuckets, setOrderFlowBuckets] = useState<OrderFlowBucket[]>([]);
@@ -973,7 +973,7 @@ export default function Home() {
     setShowProfile(false);
     setShowEma(false);
     setShowSessionBreaks(false);
-    setShowOrderFlow(false);
+    setShowOrderFlow(true);
     setShowAdvancedAnalysis(false);
     setFitNonce((value) => value + 1);
     setMessage("Chart reset to the clean default view.");
