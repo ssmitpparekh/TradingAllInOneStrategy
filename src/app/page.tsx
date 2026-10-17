@@ -36,6 +36,7 @@ export default function Home() {
   const [loadingChart, setLoadingChart] = useState(false);
   const [streamConnected, setStreamConnected] = useState(false);
   const [streamMessage, setStreamMessage] = useState("Stream waiting…");
+  const [socketDiagnostic, setSocketDiagnostic] = useState<Record<string, unknown> | null>(null);
 
   async function refreshStatus() {
     try {
@@ -116,6 +117,11 @@ export default function Home() {
 
   useEffect(() => {
     if (!connected) return;
+
+    void fetch("/api/fyers/socket-diagnostic", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((data) => setSocketDiagnostic(data))
+      .catch(() => setSocketDiagnostic({ ok: false, problem: "Diagnostic request failed." }));
 
     const source = new EventSource("/api/fyers/stream");
 
@@ -317,6 +323,38 @@ export default function Home() {
           </div>
         ) : null}
       </section>
+
+      {connected && !streamConnected && socketDiagnostic ? (
+        <section className="card">
+          <p className="label">Safe socket diagnostic</p>
+          <div className="quoteGrid">
+            <div>
+              <span>SDK loaded</span>
+              <strong>{socketDiagnostic.sdkLoaded ? "Yes" : "No"}</strong>
+            </div>
+            <div>
+              <span>Data Socket found</span>
+              <strong>{socketDiagnostic.sdkHasDataSocket ? "Yes" : "No"}</strong>
+            </div>
+            <div>
+              <span>getInstance found</span>
+              <strong>{socketDiagnostic.sdkHasGetInstance ? "Yes" : "No"}</strong>
+            </div>
+            <div>
+              <span>Token is JWT</span>
+              <strong>{socketDiagnostic.tokenLooksLikeJwt ? "Yes" : "No"}</strong>
+            </div>
+            <div>
+              <span>Token has hsm_key</span>
+              <strong>{socketDiagnostic.tokenHasHsmKey ? "Yes" : "No"}</strong>
+            </div>
+            <div>
+              <span>SDK error</span>
+              <strong>{String(socketDiagnostic.sdkError || "None")}</strong>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="card roadmap">
         <p className="label">Analysis engine coming onto this chart</p>
