@@ -1118,7 +1118,15 @@ export default function OpportunityScanner({
           }
         >
           <i />
-          {scannerLive ? "LIVE" : warming ? "WARMING" : "WAITING"}
+          {fyersLive
+            ? krakenLive
+              ? "ALL LIVE"
+              : "INDIA LIVE"
+            : krakenLive
+              ? "CRYPTO LIVE"
+              : warming
+                ? "WARMING"
+                : "WAITING"}
         </div>
       </div>
 
