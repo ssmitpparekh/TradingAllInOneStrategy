@@ -120,6 +120,59 @@ type DerivativesData = {
   } | null;
 };
 
+type OptionSelectorCandidate = {
+  symbol: string;
+  optionType: "CE" | "PE";
+  strike: number;
+  ltp: number;
+  bid: number;
+  ask: number;
+  volume: number;
+  oi: number;
+  oiChange: number;
+  oiChangePercent: number;
+  greeks: {
+    delta: number;
+    gamma: number;
+    theta: number;
+    vega: number;
+    iv: number;
+  } | null;
+  lotSize: number | null;
+  buyCostPerLot: number | null;
+  sellMarginPerLot: number | null;
+  maxLots: number | null;
+  maxQuantity: number | null;
+  affordable: boolean;
+  depth: {
+    totalBuyQty: number;
+    totalSellQty: number;
+    imbalancePercent: number | null;
+  } | null;
+  exactTakerOrderFlowAvailable: boolean;
+  score: number;
+};
+
+type OptionSelectorData = {
+  available: boolean;
+  reason?: string;
+  direction?: "bullish" | "bearish";
+  capital?: number;
+  underlying?: string;
+  expiry?: { date: string; expiry: number } | null;
+  indiaVix?: number | null;
+  pcr?: number | null;
+  buyAction?: string;
+  sellAction?: string;
+  bestBuy?: OptionSelectorCandidate | null;
+  bestSell?: OptionSelectorCandidate | null;
+  alternatives?: {
+    buy: OptionSelectorCandidate[];
+    sell: OptionSelectorCandidate[];
+  };
+  orderFlowNote?: string;
+};
+
 type Instrument = {
   symbol: string;
   name: string;
@@ -179,6 +232,7 @@ const TYPE_FILTERS = ["ALL", "INDEX", "EQUITY", "ETF", "SGB", "MF", "FUTURE", "O
 const LAST_VIEW_KEY = "allinoneview:last-view:v1";
 const TRADE_JOURNAL_KEY = "allinoneview:trade-journal:v1";
 const THEME_KEY = "allinoneview:theme:v1";
+const ORDER_FLOW_LOCAL_KEY = "allinoneview:order-flow:v2";
 
 const KRAKEN_RESOLUTIONS = new Set<Resolution>([
   "1", "5", "15", "30", "60", "240", "1D", "1W"
@@ -301,6 +355,48 @@ function tradePieBackground(stats: ReturnType<typeof summarizeTrades>) {
   };
 }
 
+function orderFlowLocalKey(
+  symbol: string,
+  resolution: string
+) {
+  return (
+    ORDER_FLOW_LOCAL_KEY +
+    ":" +
+    encodeURIComponent(symbol) +
+    ":" +
+    resolution
+  );
+}
+
+function mergeOrderFlowHistory(
+  ...groups: OrderFlowBucket[][]
+) {
+  const byTime = new Map<number, OrderFlowBucket>();
+
+  for (const group of groups) {
+    for (const bucket of group) {
+      const normalized = {
+        ...bucket,
+        buyTrades: Number(bucket.buyTrades ?? 0),
+        sellTrades: Number(bucket.sellTrades ?? 0)
+      };
+      const previous = byTime.get(normalized.time);
+
+      if (
+        !previous ||
+        (previous.partial && !normalized.partial) ||
+        normalized.trades > previous.trades
+      ) {
+        byTime.set(normalized.time, normalized);
+      }
+    }
+  }
+
+  return [...byTime.values()]
+    .sort((a, b) => a.time - b.time)
+    .slice(-10000);
+}
+
 function mergeLiveCandle(
   base: ChartCandle[],
   live: ChartCandle | null
@@ -385,6 +481,12 @@ export default function Home() {
   const [tradeCapitalInput, setTradeCapitalInput] = useState("");
   const [selectedMarginPerLot, setSelectedMarginPerLot] =
     useState<number | null>(null);
+  const [optionSelection, setOptionSelection] =
+    useState<OptionSelectorData | null>(null);
+  const [optionSelectionLoading, setOptionSelectionLoading] =
+    useState(false);
+  const [optionSelectionError, setOptionSelectionError] =
+    useState<string | null>(null);
   const historyRequestId = useRef(0);
   const orderFlowNeedsPartialRef = useRef(true);
   const orderFlowPartialBucketRef = useRef<number | null>(null);
@@ -1203,7 +1305,9 @@ export default function Home() {
     setQuote(null);
     setCandles([]);
     setLiveCandle(null);
-    setOrderFlowBuckets([]);
+    if (!selectedIsKraken) {
+      setOrderFlowBuckets([]);
+    }
     orderFlowNeedsPartialRef.current = true;
     orderFlowPartialBucketRef.current = null;
     setHistoryMeta({ from: null, to: null, note: null });
@@ -1559,6 +1663,87 @@ export default function Home() {
   ]);
 
   useEffect(() => {
+    setOptionSelection(null);
+    setOptionSelectionError(null);
+
+    if (
+      !connected ||
+      !activePlannerPlan ||
+      activePlannerPlan.direction === null ||
+      (selected.market !== "NSE" && selected.market !== "BSE") ||
+      selected.type === "OPTION" ||
+      selected.type === "FUTURE"
+    ) {
+      setOptionSelectionLoading(false);
+      return;
+    }
+
+    const optionDirection = activePlannerPlan.direction;
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const load = async () => {
+      if (cancelled) return;
+      setOptionSelectionLoading(true);
+
+      try {
+        const response = await fetch(
+          "/api/fyers/option-selector?symbol=" +
+            encodeURIComponent(primaryAnalysisSymbol) +
+            "&market=" +
+            encodeURIComponent(selected.market) +
+            "&direction=" +
+            encodeURIComponent(optionDirection) +
+            "&capital=" +
+            encodeURIComponent(String(tradeCapital)),
+          { cache: "no-store" }
+        );
+        const data = (await response.json()) as OptionSelectorData & {
+          ok?: boolean;
+          error?: string;
+        };
+
+        if (cancelled) return;
+
+        if (!response.ok || data.ok === false) {
+          setOptionSelection(null);
+          setOptionSelectionError(
+            data.error ?? "Unable to rank live option contracts."
+          );
+          return;
+        }
+
+        setOptionSelection(data);
+        setOptionSelectionError(null);
+      } catch {
+        if (!cancelled) {
+          setOptionSelection(null);
+          setOptionSelectionError(
+            "Unable to rank live option contracts."
+          );
+        }
+      } finally {
+        if (!cancelled) setOptionSelectionLoading(false);
+      }
+    };
+
+    void load();
+    timer = window.setInterval(load, 30_000);
+
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearInterval(timer);
+    };
+  }, [
+    connected,
+    activePlannerPlan,
+    primaryAnalysisSymbol,
+    selected.market,
+    selected.type,
+    tradeCapital
+  ]);
+
+  useEffect(() => {
     setSelectedMarginPerLot(null);
 
     if (
@@ -1756,6 +1941,119 @@ export default function Home() {
   ]);
 
   useEffect(() => {
+    if (!viewReady || !selectedIsKraken) {
+      setOrderFlowBuckets([]);
+      return;
+    }
+
+    let cancelled = false;
+    const key = orderFlowLocalKey(selected.symbol, resolution);
+    let localBuckets: OrderFlowBucket[] = [];
+
+    try {
+      const saved = window.localStorage.getItem(key);
+      const parsed = saved ? JSON.parse(saved) : [];
+      localBuckets = Array.isArray(parsed)
+        ? (parsed as OrderFlowBucket[]).map((bucket) => ({
+            ...bucket,
+            buyTrades: Number(bucket.buyTrades ?? 0),
+            sellTrades: Number(bucket.sellTrades ?? 0)
+          }))
+        : [];
+    } catch {
+      localBuckets = [];
+    }
+
+    setOrderFlowBuckets((current) =>
+      mergeOrderFlowHistory(localBuckets, current)
+    );
+
+    const firstTime =
+      candles[0]?.time ??
+      Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
+    const currentMinute =
+      Math.floor(Date.now() / 60_000) * 60;
+    const to = currentMinute - 1;
+
+    void fetch(
+      "/api/order-flow/history?symbol=" +
+        encodeURIComponent(selected.symbol) +
+        "&market=KRAKEN&resolution=" +
+        encodeURIComponent(resolution) +
+        "&from=" +
+        encodeURIComponent(String(firstTime)) +
+        "&to=" +
+        encodeURIComponent(String(to)),
+      { cache: "no-store" }
+    )
+      .then((response) => response.json())
+      .then((data) => {
+        if (
+          cancelled ||
+          !data?.ok ||
+          !data.available ||
+          !Array.isArray(data.buckets)
+        ) {
+          return;
+        }
+
+        setOrderFlowBuckets((current) =>
+          mergeOrderFlowHistory(
+            localBuckets,
+            data.buckets as OrderFlowBucket[],
+            current
+          )
+        );
+      })
+      .catch(() => {
+        // Local exact history remains available.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    viewReady,
+    selectedIsKraken,
+    selected.symbol,
+    resolution,
+    candles
+  ]);
+
+  useEffect(() => {
+    if (!viewReady || !selectedIsKraken) return;
+
+    const currentBucket = orderFlowBucketStart(
+      Math.floor(Date.now() / 1000),
+      resolution
+    );
+
+    const completed = orderFlowBuckets
+      .filter(
+        (bucket) =>
+          !bucket.partial &&
+          (currentBucket === null ||
+            bucket.time < currentBucket)
+      )
+      .slice(-10000);
+
+    try {
+      window.localStorage.setItem(
+        orderFlowLocalKey(selected.symbol, resolution),
+        JSON.stringify(completed)
+      );
+    } catch {
+      // Server persistence remains the production source.
+    }
+  }, [
+    viewReady,
+    selectedIsKraken,
+    selected.symbol,
+    resolution,
+    orderFlowBuckets
+  ]);
+
+  useEffect(() => {
     if (!viewReady || (!selectedIsKraken && !connected)) return;
 
     setLiveCandle(null);
@@ -1928,6 +2226,12 @@ export default function Home() {
                 existing.sellVolume +
                 (trade.side === "sell" ? qty : 0),
               trades: existing.trades + 1,
+              buyTrades:
+                (existing.buyTrades ?? 0) +
+                (trade.side === "buy" ? 1 : 0),
+              sellTrades:
+                (existing.sellTrades ?? 0) +
+                (trade.side === "sell" ? 1 : 0),
               partial: existing.partial || isPartial
             };
           } else {
@@ -1936,6 +2240,8 @@ export default function Home() {
               buyVolume: trade.side === "buy" ? qty : 0,
               sellVolume: trade.side === "sell" ? qty : 0,
               trades: 1,
+              buyTrades: trade.side === "buy" ? 1 : 0,
+              sellTrades: trade.side === "sell" ? 1 : 0,
               partial: isPartial,
               quality: "exact",
               source: "Kraken taker-side trades"
@@ -1943,7 +2249,7 @@ export default function Home() {
           }
 
           next.sort((a, b) => a.time - b.time);
-          return next.slice(-240);
+          return next.slice(-10000);
         });
 
         if (
@@ -2804,7 +3110,7 @@ export default function Home() {
             <small>
               {activePlannerPlan?.direction
                 ? activePlannerPlan.direction.toUpperCase()
-                : "No confirmed trade yet"}
+                : "Waiting for a confirmed trade — capital is saved for the next valid setup"}
             </small>
           </div>
           <div>
@@ -3034,6 +3340,153 @@ export default function Home() {
             </>
           )}
         </div>
+
+        {activePlannerPlan &&
+        selected.type !== "OPTION" &&
+        selected.type !== "FUTURE" &&
+        (selected.market === "NSE" || selected.market === "BSE") ? (
+          <div className="bestOptionSelector">
+            <div className="bestOptionSelectorHeader">
+              <div>
+                <span>BEST LIVE OPTION FOR THIS CONFIRMED TRADE</span>
+                <strong>
+                  {optionSelectionLoading
+                    ? "Ranking live chain…"
+                    : optionSelection?.available
+                      ? "Real-time contract ranking"
+                      : "No suitable contract available"}
+                </strong>
+              </div>
+              <small>
+                {tradeCapital > 0
+                  ? "Capital-aware ranking · ₹" +
+                    tradeCapital.toLocaleString("en-IN")
+                  : "Best-quality ranking · no capital filter"}
+              </small>
+            </div>
+
+            {optionSelectionError ? (
+              <p className="optionSelectorError">
+                {optionSelectionError}
+              </p>
+            ) : null}
+
+            {optionSelection?.available ? (
+              <div className="bestOptionGrid">
+                {[
+                  {
+                    action: optionSelection.buyAction ?? "BUY OPTION",
+                    candidate: optionSelection.bestBuy
+                  },
+                  {
+                    action: optionSelection.sellAction ?? "SELL OPTION",
+                    candidate: optionSelection.bestSell
+                  }
+                ].map(({ action, candidate }) =>
+                  candidate ? (
+                    <button
+                      type="button"
+                      className="bestOptionCard"
+                      key={action + candidate.symbol}
+                      onClick={() =>
+                        void selectInstrument({
+                          symbol: candidate.symbol,
+                          name:
+                            selected.underlying +
+                            " " +
+                            candidate.strike +
+                            " " +
+                            candidate.optionType,
+                          market: selected.market,
+                          segment: "F&O",
+                          type: "OPTION",
+                          underlying:
+                            selected.underlying ||
+                            primaryAnalysisSymbol,
+                          expiry:
+                            optionSelection.expiry?.date ?? null,
+                          strike: candidate.strike,
+                          optionType: candidate.optionType,
+                          lotSize: candidate.lotSize,
+                          tickSize: null
+                        })
+                      }
+                    >
+                      <div className="bestOptionTop">
+                        <span>{action}</span>
+                        <b>{candidate.score}/100</b>
+                      </div>
+                      <strong>
+                        {candidate.strike.toLocaleString("en-IN")}{" "}
+                        {candidate.optionType}
+                      </strong>
+                      <small>
+                        LTP ₹
+                        {candidate.ltp.toLocaleString("en-IN", {
+                          maximumFractionDigits: 2
+                        })} · lot {candidate.lotSize ?? "?"}
+                      </small>
+                      <small>
+                        Δ {candidate.greeks?.delta?.toFixed(3) ?? "—"} · IV{" "}
+                        {candidate.greeks?.iv?.toFixed(1) ?? "—"} · OI{" "}
+                        {candidate.oi.toLocaleString("en-IN")} · ΔOI{" "}
+                        {candidate.oiChange.toLocaleString("en-IN")}
+                      </small>
+                      <small>
+                        Vol {candidate.volume.toLocaleString("en-IN")} · spread{" "}
+                        {candidate.bid > 0 && candidate.ask > 0
+                          ? "₹" + (candidate.ask - candidate.bid).toFixed(2)
+                          : "—"}
+                        {candidate.depth?.imbalancePercent !== null &&
+                        candidate.depth?.imbalancePercent !== undefined
+                          ? " · depth Δ " +
+                            candidate.depth.imbalancePercent.toFixed(1) +
+                            "%"
+                          : ""}
+                      </small>
+                      <small>
+                        {action.startsWith("BUY")
+                          ? candidate.buyCostPerLot
+                            ? "1 lot ₹" +
+                              Math.round(
+                                candidate.buyCostPerLot
+                              ).toLocaleString("en-IN")
+                            : "Buy cost unavailable"
+                          : candidate.sellMarginPerLot
+                            ? "FYERS margin/lot ₹" +
+                              Math.round(
+                                candidate.sellMarginPerLot
+                              ).toLocaleString("en-IN")
+                            : "FYERS margin unavailable"}
+                        {tradeCapital > 0
+                          ? candidate.affordable &&
+                            candidate.maxLots !== null
+                            ? " · fits " +
+                              candidate.maxLots +
+                              " lot(s)"
+                            : " · not affordable"
+                          : ""}
+                      </small>
+                    </button>
+                  ) : null
+                )}
+              </div>
+            ) : (
+              <p className="tradeCapitalNote">
+                {optionSelectionLoading
+                  ? "Checking Greeks, OI, ΔOI, volume, spread and market depth…"
+                  : optionSelection?.reason ??
+                    "A confirmed Indian trade is required before an option is ranked."}
+              </p>
+            )}
+
+            {optionSelection?.orderFlowNote ? (
+              <p className="tradeCapitalNote">
+                {optionSelection.orderFlowNote}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         {selected.type === "OPTION" ? (
           <div className="optionCapitalGrid">
@@ -3309,17 +3762,11 @@ export default function Home() {
         )}
       </section>
 
-      <section
-        className={
-          showAdvancedAnalysis
-            ? "card performanceCard"
-            : "card performanceCard advancedHidden"
-        }
-      >
+      <section className="card performanceCard">
         <div className="performanceHeader">
           <div>
-            <p className="label">PLATFORM TRADE JOURNAL · REAL SIGNAL HISTORY</p>
-            <h3>P/L analytics in R-multiples</h3>
+            <p className="label">TRADE HISTORY & RESULTS · REAL SIGNAL RECORD</p>
+            <h3>Every confirmed platform trade</h3>
             <p>
               Signals are stored locally and remain on the chart after refresh.
               No account size or position size is assumed.

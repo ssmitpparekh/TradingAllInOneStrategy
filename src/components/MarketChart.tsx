@@ -210,6 +210,18 @@ export default function MarketChart({
       buyHeight: number;
       sellHeight: number;
       partial: boolean;
+      buyPercent: number;
+      sellPercent: number;
+      buyTrades: number;
+      sellTrades: number;
+      delta: number;
+      deltaPercent: number;
+      cumulativeDelta: number;
+      oi: number | null;
+      oiChange: number | null;
+      showPercent: boolean;
+      showCounts: boolean;
+      showMeta: boolean;
     }>
   >([]);
   const [tradeMarkerPositions, setTradeMarkerPositions] = useState<
@@ -247,6 +259,20 @@ export default function MarketChart({
     () => new Map(orderFlowBuckets.map((bucket) => [bucket.time, bucket])),
     [orderFlowBuckets]
   );
+
+  const cumulativeDeltaByTime = useMemo(() => {
+    let cumulative = 0;
+    const map = new Map<number, number>();
+
+    for (const bucket of [...orderFlowBuckets].sort(
+      (a, b) => a.time - b.time
+    )) {
+      cumulative += bucket.buyVolume - bucket.sellVolume;
+      map.set(bucket.time, cumulative);
+    }
+
+    return map;
+  }, [orderFlowBuckets]);
 
   const latest = useMemo(
     () => liveCandle ?? (candles.length ? candles[candles.length - 1] : null),
@@ -991,8 +1017,8 @@ export default function MarketChart({
     const updateBars = () => {
       const hostWidth = host.clientWidth;
       const maxPaneHeight = Math.max(
-        64,
-        Math.min(118, Math.round(host.clientHeight * 0.2))
+        48,
+        Math.min(100, Math.round(host.clientHeight * 0.18))
       );
 
       const visible = orderFlowBuckets
@@ -1034,7 +1060,7 @@ export default function MarketChart({
       const spacing = spacings.length
         ? Math.min(...spacings)
         : Math.max(6, chart.timeScale().options().barSpacing ?? 8);
-      const width = Math.max(3, Math.min(20, spacing * 0.72));
+      const width = Math.max(3, Math.min(52, spacing * 0.78));
 
       setOrderFlowBarPositions(
         visible.map(({ bucket, x }) => {
@@ -1043,9 +1069,18 @@ export default function MarketChart({
             maxTotal > 0
               ? Math.max(3, (total / maxTotal) * maxPaneHeight)
               : 0;
+          const buyPercent =
+            total > 0 ? (bucket.buyVolume / total) * 100 : 0;
+          const sellPercent =
+            total > 0 ? (bucket.sellVolume / total) * 100 : 0;
+          const delta = bucket.buyVolume - bucket.sellVolume;
+          const deltaPercent =
+            total > 0 ? (delta / total) * 100 : 0;
           const buyHeight =
             total > 0 ? totalHeight * (bucket.buyVolume / total) : 0;
           const sellHeight = Math.max(0, totalHeight - buyHeight);
+          const cumulativeDelta =
+            cumulativeDeltaByTime.get(bucket.time) ?? delta;
 
           return {
             time: bucket.time,
@@ -1054,7 +1089,19 @@ export default function MarketChart({
             totalHeight,
             buyHeight,
             sellHeight,
-            partial: bucket.partial
+            partial: bucket.partial,
+            buyPercent,
+            sellPercent,
+            buyTrades: bucket.buyTrades,
+            sellTrades: bucket.sellTrades,
+            delta,
+            deltaPercent,
+            cumulativeDelta,
+            oi: bucket.oi ?? null,
+            oiChange: bucket.oiChange ?? null,
+            showPercent: width >= 22,
+            showCounts: width >= 34,
+            showMeta: width >= 40
           };
         })
       );
@@ -1068,7 +1115,7 @@ export default function MarketChart({
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateBars);
       window.removeEventListener("resize", updateBars);
     };
-  }, [orderFlowBuckets, showOrderFlow]);
+  }, [orderFlowBuckets, showOrderFlow, cumulativeDeltaByTime]);
 
   useEffect(() => {
     const sessionSeries = sessionVwapSeriesRef.current;
@@ -1247,6 +1294,9 @@ export default function MarketChart({
   const readoutOrderFlowStats = readoutOrderFlow
     ? orderFlowPercentages(readoutOrderFlow)
     : null;
+  const readoutCumulativeDelta = readout
+    ? cumulativeDeltaByTime.get(readout.time) ?? null
+    : null;
 
   return (
     <div className="marketChartShell">
@@ -1266,8 +1316,31 @@ export default function MarketChart({
                 SELL <strong>{readoutOrderFlowStats.sellPercent.toFixed(1)}%</strong>
               </span>
               <span>
+                B# <strong>{readoutOrderFlow.buyTrades}</strong>
+              </span>
+              <span>
+                S# <strong>{readoutOrderFlow.sellTrades}</strong>
+              </span>
+              <span>
                 Δ <strong>{readoutOrderFlowStats.deltaPercent >= 0 ? "+" : ""}{readoutOrderFlowStats.deltaPercent.toFixed(1)}%</strong>
               </span>
+              {readoutCumulativeDelta !== null ? (
+                <span>
+                  CΔ <strong>{readoutCumulativeDelta >= 0 ? "+" : ""}{readoutCumulativeDelta.toFixed(4)}</strong>
+                </span>
+              ) : null}
+              {readoutOrderFlow.oi !== null &&
+              readoutOrderFlow.oi !== undefined ? (
+                <span>
+                  OI <strong>{readoutOrderFlow.oi.toLocaleString("en-IN")}</strong>
+                </span>
+              ) : null}
+              {readoutOrderFlow.oiChange !== null &&
+              readoutOrderFlow.oiChange !== undefined ? (
+                <span>
+                  ΔOI <strong>{readoutOrderFlow.oiChange.toLocaleString("en-IN")}</strong>
+                </span>
+              ) : null}
               <span>
                 {readoutOrderFlow.partial ? "PARTIAL" : readoutOrderFlow.quality.toUpperCase()}
               </span>
@@ -1462,10 +1535,6 @@ export default function MarketChart({
       ) : null}
       {showOrderFlow && orderFlowBarPositions.length ? (
         <div className="exactVolumeLayer" aria-hidden="true">
-          <div className="exactVolumeLegend">
-            <span className="buyKey" /> BUY
-            <span className="sellKey" /> SELL
-          </div>
           {orderFlowBarPositions.map((bar) => (
             <div
               className={
@@ -1477,17 +1546,65 @@ export default function MarketChart({
               style={{
                 left: bar.x - bar.width / 2,
                 width: bar.width,
-                height: bar.totalHeight
+                height:
+                  bar.totalHeight +
+                  (bar.showMeta ? 30 : 0)
               }}
             >
+              {bar.showMeta ? (
+                <span className="exactVolumeMeta">
+                  <b>
+                    Δ{bar.deltaPercent >= 0 ? "+" : ""}
+                    {bar.deltaPercent.toFixed(0)}%
+                  </b>
+                  <small>
+                    CΔ{bar.cumulativeDelta >= 0 ? "+" : ""}
+                    {Math.abs(bar.cumulativeDelta) >= 1000
+                      ? (bar.cumulativeDelta / 1000).toFixed(1) + "k"
+                      : bar.cumulativeDelta.toFixed(1)}
+                  </small>
+                  {bar.oi !== null ? (
+                    <small>
+                      OI {bar.oi.toLocaleString("en-IN")}
+                      {bar.oiChange !== null
+                        ? " · Δ" +
+                          bar.oiChange.toLocaleString("en-IN")
+                        : ""}
+                    </small>
+                  ) : null}
+                </span>
+              ) : null}
               <span
-                className="exactVolumeBuy"
-                style={{ height: bar.buyHeight }}
-              />
-              <span
-                className="exactVolumeSell"
-                style={{ height: bar.sellHeight }}
-              />
+                className="exactVolumeStack"
+                style={{ height: bar.totalHeight }}
+              >
+                <span
+                  className="exactVolumeBuy"
+                  style={{ height: bar.buyHeight }}
+                >
+                  {bar.showPercent && bar.buyHeight >= 16 ? (
+                    <span className="exactVolumeSegmentLabel">
+                      <b>{bar.buyPercent.toFixed(0)}%</b>
+                      {bar.showCounts && bar.buyHeight >= 28 ? (
+                        <small>B#{bar.buyTrades}</small>
+                      ) : null}
+                    </span>
+                  ) : null}
+                </span>
+                <span
+                  className="exactVolumeSell"
+                  style={{ height: bar.sellHeight }}
+                >
+                  {bar.showPercent && bar.sellHeight >= 16 ? (
+                    <span className="exactVolumeSegmentLabel">
+                      <b>{bar.sellPercent.toFixed(0)}%</b>
+                      {bar.showCounts && bar.sellHeight >= 28 ? (
+                        <small>S#{bar.sellTrades}</small>
+                      ) : null}
+                    </span>
+                  ) : null}
+                </span>
+              </span>
             </div>
           ))}
         </div>
