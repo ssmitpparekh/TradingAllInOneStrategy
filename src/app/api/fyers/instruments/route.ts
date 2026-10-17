@@ -13,6 +13,8 @@ type Instrument = {
   expiry: string | null;
   strike: number | null;
   optionType: string | null;
+  lotSize: number | null;
+  tickSize: number | null;
 };
 
 const MASTER_FILES = [
@@ -26,13 +28,13 @@ const MASTER_FILES = [
 ] as const;
 
 const CURATED_INDICES: Instrument[] = [
-  { symbol: "NSE:NIFTY50-INDEX", name: "NIFTY 50", market: "NSE", segment: "INDEX", type: "INDEX", underlying: "NIFTY50", expiry: null, strike: null, optionType: null },
-  { symbol: "NSE:NIFTYBANK-INDEX", name: "NIFTY BANK", market: "NSE", segment: "INDEX", type: "INDEX", underlying: "NIFTYBANK", expiry: null, strike: null, optionType: null },
-  { symbol: "NSE:FINNIFTY-INDEX", name: "NIFTY FINANCIAL SERVICES", market: "NSE", segment: "INDEX", type: "INDEX", underlying: "FINNIFTY", expiry: null, strike: null, optionType: null },
-  { symbol: "NSE:NIFTYIT-INDEX", name: "NIFTY IT", market: "NSE", segment: "INDEX", type: "INDEX", underlying: "NIFTYIT", expiry: null, strike: null, optionType: null },
-  { symbol: "NSE:NIFTYMIDCAP50-INDEX", name: "NIFTY MIDCAP 50", market: "NSE", segment: "INDEX", type: "INDEX", underlying: "NIFTYMIDCAP50", expiry: null, strike: null, optionType: null },
-  { symbol: "NSE:INDIAVIX-INDEX", name: "INDIA VIX", market: "NSE", segment: "INDEX", type: "INDEX", underlying: "INDIAVIX", expiry: null, strike: null, optionType: null },
-  { symbol: "BSE:SENSEX-INDEX", name: "SENSEX", market: "BSE", segment: "INDEX", type: "INDEX", underlying: "SENSEX", expiry: null, strike: null, optionType: null }
+  { symbol: "NSE:NIFTY50-INDEX", name: "NIFTY 50", market: "NSE", segment: "INDEX", type: "INDEX", underlying: "NIFTY50", expiry: null, strike: null, optionType: null, lotSize: null, tickSize: null },
+  { symbol: "NSE:NIFTYBANK-INDEX", name: "NIFTY BANK", market: "NSE", segment: "INDEX", type: "INDEX", underlying: "NIFTYBANK", expiry: null, strike: null, optionType: null, lotSize: null, tickSize: null },
+  { symbol: "NSE:FINNIFTY-INDEX", name: "NIFTY FINANCIAL SERVICES", market: "NSE", segment: "INDEX", type: "INDEX", underlying: "FINNIFTY", expiry: null, strike: null, optionType: null, lotSize: null, tickSize: null },
+  { symbol: "NSE:NIFTYIT-INDEX", name: "NIFTY IT", market: "NSE", segment: "INDEX", type: "INDEX", underlying: "NIFTYIT", expiry: null, strike: null, optionType: null, lotSize: null, tickSize: null },
+  { symbol: "NSE:NIFTYMIDCAP50-INDEX", name: "NIFTY MIDCAP 50", market: "NSE", segment: "INDEX", type: "INDEX", underlying: "NIFTYMIDCAP50", expiry: null, strike: null, optionType: null, lotSize: null, tickSize: null },
+  { symbol: "NSE:INDIAVIX-INDEX", name: "INDIA VIX", market: "NSE", segment: "INDEX", type: "INDEX", underlying: "INDIAVIX", expiry: null, strike: null, optionType: null, lotSize: null, tickSize: null },
+  { symbol: "BSE:SENSEX-INDEX", name: "SENSEX", market: "BSE", segment: "INDEX", type: "INDEX", underlying: "SENSEX", expiry: null, strike: null, optionType: null, lotSize: null, tickSize: null }
 ];
 
 const cache = new Map<string, { fetchedAt: number; instruments: Instrument[] }>();
@@ -115,7 +117,16 @@ async function loadMaster(entry: (typeof MASTER_FILES)[number]): Promise<Instrum
         underlying: row[13]?.trim() || "",
         expiry: normalizeExpiry(row[8]?.trim() || ""),
         strike: Number.isFinite(strikeRaw) && strikeRaw >= 0 ? strikeRaw : null,
-        optionType: optionType === "CE" || optionType === "PE" ? optionType : null
+        optionType:
+          optionType === "CE" || optionType === "PE" ? optionType : null,
+        lotSize:
+          Number.isFinite(Number(row[3])) && Number(row[3]) > 0
+            ? Number(row[3])
+            : null,
+        tickSize:
+          Number.isFinite(Number(row[4])) && Number(row[4]) > 0
+            ? Number(row[4])
+            : null
       };
     });
 
