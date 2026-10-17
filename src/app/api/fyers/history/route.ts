@@ -84,7 +84,8 @@ export async function GET(request: NextRequest) {
         symbol,
         resolution,
         from: part.from,
-        to: part.to
+        to: part.to,
+        includeOi: /(?:FUT|CE|PE)$/.test(symbol)
       });
       allCandles.push(...candles);
     }
