@@ -82,6 +82,19 @@ type DerivativeIdea = {
   fetchedAt: number;
 };
 
+type DerivativeWatch = {
+  instrument: ScannerInstrument;
+  direction: "bullish" | "bearish";
+  score: number;
+  pcr: number | null;
+  futureSymbol: string | null;
+  futurePrice: number | null;
+  futureOiChange: number | null;
+  reason: string;
+  idea: DerivativeIdea | null;
+  updatedAt: number;
+};
+
 type LiveRuntime = ScannerLiveState & {
   bucket: number;
 };
@@ -292,6 +305,9 @@ export default function OpportunityScanner({
   const [derivativeIdeas, setDerivativeIdeas] = useState<
     Record<string, DerivativeIdea>
   >({});
+  const [derivativeWatches, setDerivativeWatches] = useState<
+    DerivativeWatch[]
+  >([]);
 
   const contextsRef = useRef(
     new Map<string, ScannerStaticContext>()
@@ -637,6 +653,52 @@ export default function OpportunityScanner({
     };
   }, [universe]);
 
+  const buildDerivativeIdea = async (
+    instrument: ScannerInstrument,
+    direction: "bullish" | "bearish",
+    price: number,
+    data: any
+  ): Promise<DerivativeIdea | null> => {
+    const atm = data.options?.atm;
+    if (!atm) return null;
+
+    const bullish = direction === "bullish";
+    const buyLeg: OptionLeg | null = bullish ? atm.call : atm.put;
+    const sellLeg: OptionLeg | null = bullish ? atm.put : atm.call;
+
+    const [buyLotSize, sellLotSize] = await Promise.all([
+      buyLeg ? fetchLotSize(buyLeg.symbol) : Promise.resolve(null),
+      sellLeg ? fetchLotSize(sellLeg.symbol) : Promise.resolve(null)
+    ]);
+
+    const sellMargin =
+      sellLeg && sellLotSize
+        ? await fetchSellMargin(
+            sellLeg.symbol,
+            sellLotSize
+          ).catch(() => null)
+        : null;
+
+    return {
+      underlying: String(data.underlying ?? instrument.symbol),
+      direction,
+      buy: sizeBuyOption(
+        bullish ? "BUY CALL" : "BUY PUT",
+        buyLeg,
+        buyLotSize,
+        capital
+      ),
+      sell: sizeSellOption(
+        bullish ? "SELL PUT" : "SELL CALL",
+        sellLeg,
+        sellLotSize,
+        sellMargin,
+        capital
+      ),
+      fetchedAt: Date.now()
+    };
+  };
+
   useEffect(() => {
     const evaluate = () => {
       void contextsVersion;
@@ -708,52 +770,18 @@ export default function OpportunityScanner({
 
         if (!response.ok || !data.ok || !data.available) return;
 
-        const atm = data.options?.atm;
-        if (!atm) return;
+        const idea = await buildDerivativeIdea(
+          instrument,
+          opportunity.direction,
+          opportunity.price,
+          data
+        );
 
-        const bullish = opportunity.direction === "bullish";
-        const buyLeg: OptionLeg | null = bullish
-          ? atm.call
-          : atm.put;
-        const sellLeg: OptionLeg | null = bullish
-          ? atm.put
-          : atm.call;
-
-        const [buyLotSize, sellLotSize] = await Promise.all([
-          buyLeg ? fetchLotSize(buyLeg.symbol) : Promise.resolve(null),
-          sellLeg ? fetchLotSize(sellLeg.symbol) : Promise.resolve(null)
-        ]);
-
-        const sellMargin =
-          sellLeg && sellLotSize
-            ? await fetchSellMargin(
-                sellLeg.symbol,
-                sellLotSize
-              ).catch(() => null)
-            : null;
-
-        if (cancelled) return;
+        if (cancelled || !idea) return;
 
         setDerivativeIdeas((current) => ({
           ...current,
-          [key]: {
-            underlying: String(data.underlying ?? key),
-            direction: opportunity.direction,
-            buy: sizeBuyOption(
-              bullish ? "BUY CALL" : "BUY PUT",
-              buyLeg,
-              buyLotSize,
-              capital
-            ),
-            sell: sizeSellOption(
-              bullish ? "SELL PUT" : "SELL CALL",
-              sellLeg,
-              sellLotSize,
-              sellMargin,
-              capital
-            ),
-            fetchedAt: Date.now()
-          }
+          [key]: idea
         }));
       } catch {
         // Derivative deep scan is optional; underlying opportunity remains.
@@ -785,6 +813,159 @@ export default function OpportunityScanner({
     lastTickAt === null
       ? null
       : Math.max(0, Math.floor((now - lastTickAt) / 1000));
+
+  useEffect(() => {
+    if (!universe || !fyersConnected) return;
+
+    let cancelled = false;
+
+    const indexSymbols = new Set([
+      "NSE:NIFTY50-INDEX",
+      "NSE:NIFTYBANK-INDEX",
+      "NSE:FINNIFTY-INDEX",
+      "BSE:SENSEX-INDEX"
+    ]);
+
+    const indices = universe.fyers.filter((instrument) =>
+      indexSymbols.has(instrument.symbol)
+    );
+
+    const scan = async () => {
+      const next: DerivativeWatch[] = [];
+
+      for (const instrument of indices) {
+        const live = liveRef.current.get(instrument.symbol);
+        if (!live?.price) continue;
+
+        try {
+          const response = await fetch(
+            "/api/fyers/derivatives?symbol=" +
+              encodeURIComponent(instrument.symbol) +
+              "&market=" +
+              encodeURIComponent(instrument.market) +
+              "&type=INDEX&underlying=" +
+              encodeURIComponent(instrument.underlying) +
+              "&spotPrice=" +
+              encodeURIComponent(String(live.price)),
+            { cache: "no-store" }
+          );
+          const data = await response.json();
+
+          if (!response.ok || !data.ok || !data.available) continue;
+
+          const options = data.options;
+          const future = data.future;
+
+          const callBuild = Array.isArray(options?.callOiBuild)
+            ? options.callOiBuild.reduce(
+                (sum: number, leg: OptionLeg) =>
+                  sum + Math.max(0, Number(leg.oiChange ?? 0)),
+                0
+              )
+            : 0;
+          const putBuild = Array.isArray(options?.putOiBuild)
+            ? options.putOiBuild.reduce(
+                (sum: number, leg: OptionLeg) =>
+                  sum + Math.max(0, Number(leg.oiChange ?? 0)),
+                0
+              )
+            : 0;
+          const pcr =
+            options?.pcr === null || options?.pcr === undefined
+              ? null
+              : Number(options.pcr);
+
+          let bullishPoints = 0;
+          let bearishPoints = 0;
+          const reasonsBull: string[] = [];
+          const reasonsBear: string[] = [];
+
+          if (pcr !== null && pcr >= 1.1) {
+            bullishPoints += 1;
+            reasonsBull.push("PCR " + pcr.toFixed(2));
+          }
+          if (pcr !== null && pcr <= 0.9) {
+            bearishPoints += 1;
+            reasonsBear.push("PCR " + pcr.toFixed(2));
+          }
+
+          if (putBuild > callBuild * 1.15 && putBuild > 0) {
+            bullishPoints += 1;
+            reasonsBull.push("Put OI build");
+          }
+          if (callBuild > putBuild * 1.15 && callBuild > 0) {
+            bearishPoints += 1;
+            reasonsBear.push("Call OI build");
+          }
+
+          const futureChange = Number(future?.change ?? 0);
+          const futureOiChange = Number(future?.oiChange ?? 0);
+
+          if (futureChange > 0 && futureOiChange > 0) {
+            bullishPoints += 1;
+            reasonsBull.push("Futures long build");
+          }
+          if (futureChange < 0 && futureOiChange > 0) {
+            bearishPoints += 1;
+            reasonsBear.push("Futures short build");
+          }
+
+          const direction =
+            bullishPoints > bearishPoints
+              ? "bullish"
+              : bearishPoints > bullishPoints
+                ? "bearish"
+                : null;
+          const points = Math.max(bullishPoints, bearishPoints);
+
+          if (!direction || points < 2) continue;
+
+          const idea = await buildDerivativeIdea(
+            instrument,
+            direction,
+            live.price,
+            data
+          );
+
+          next.push({
+            instrument,
+            direction,
+            score: 50 + points * 10,
+            pcr,
+            futureSymbol: future?.symbol ?? null,
+            futurePrice:
+              Number(future?.price ?? 0) > 0
+                ? Number(future.price)
+                : null,
+            futureOiChange:
+              Number.isFinite(futureOiChange)
+                ? futureOiChange
+                : null,
+            reason:
+              direction === "bullish"
+                ? reasonsBull.join(" · ")
+                : reasonsBear.join(" · "),
+            idea,
+            updatedAt: Date.now()
+          });
+        } catch {
+          // Keep the previous successful derivative watch if this pass fails.
+        }
+      }
+
+      if (!cancelled) {
+        setDerivativeWatches(next);
+      }
+    };
+
+    void scan();
+    const timer = window.setInterval(scan, 5 * 60_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [universe, fyersConnected, capital]);
 
   const strongCount = useMemo(
     () =>
@@ -1011,6 +1192,129 @@ export default function OpportunityScanner({
           </div>
         )}
       </div>
+
+      {derivativeWatches.length ? (
+        <div className="derivativeWatchSection">
+          <div className="derivativeWatchTitle">
+            DERIVATIVES WATCH · OPTIONS / FUTURES
+          </div>
+          {derivativeWatches.map((watch) => (
+            <article
+              className="derivativeWatchCard"
+              key={watch.instrument.symbol}
+            >
+              <div className="scannerOpportunityTop">
+                <div>
+                  <strong>{watch.instrument.name}</strong>
+                  <span>{watch.reason}</span>
+                </div>
+                <div
+                  className={
+                    "scannerDirection " + watch.direction
+                  }
+                >
+                  {watch.direction === "bullish"
+                    ? "BULLISH"
+                    : "BEARISH"}
+                </div>
+              </div>
+              <div className="scannerScoreRow">
+                <span className="scannerState">DERIVATIVES WATCH</span>
+                <b>{watch.score}/80</b>
+                {watch.pcr !== null ? (
+                  <span>PCR {watch.pcr.toFixed(2)}</span>
+                ) : null}
+              </div>
+
+              {watch.futureSymbol ? (
+                <button
+                  type="button"
+                  className="derivativeFutureButton"
+                  onClick={() =>
+                    onOpen({
+                      symbol: watch.futureSymbol!,
+                      name: watch.instrument.name + " FUTURE",
+                      market: watch.instrument.market,
+                      segment: "F&O",
+                      type: "FUTURE",
+                      underlying: watch.instrument.underlying,
+                      expiry: null,
+                      strike: null,
+                      optionType: null
+                    })
+                  }
+                >
+                  FUTURE · {watch.futureSymbol}
+                  {watch.futurePrice
+                    ? " · " + formatPrice(watch.futurePrice)
+                    : ""}
+                </button>
+              ) : null}
+
+              {watch.idea ? (
+                <div className="scannerDerivativeIdeas">
+                  {[watch.idea.buy, watch.idea.sell]
+                    .filter(Boolean)
+                    .map((sizing) => {
+                      const item = sizing as OptionSizing;
+                      const fakeOpportunity: ScannerOpportunity = {
+                        instrument: watch.instrument,
+                        direction: watch.direction,
+                        state: "WATCH",
+                        score: watch.score,
+                        price: watch.futurePrice ?? 0,
+                        trigger: "Derivatives watch",
+                        reason: watch.reason,
+                        zone: null,
+                        observedSweep: false,
+                        updatedAt: watch.updatedAt
+                      };
+
+                      return (
+                        <button
+                          type="button"
+                          key={item.symbol + item.action}
+                          onClick={() =>
+                            openOption(item, fakeOpportunity)
+                          }
+                        >
+                          <span>{item.action}</span>
+                          <strong>
+                            {item.strike} {item.optionType}
+                          </strong>
+                          <small>
+                            ₹{formatPrice(item.ltp)} · lot{" "}
+                            {item.lotSize ?? "?"}
+                          </small>
+                          <small>
+                            {item.perLotCapital
+                              ? (item.source === "FYERS_MARGIN"
+                                  ? "Margin"
+                                  : "1 lot") +
+                                " ₹" +
+                                Math.round(
+                                  item.perLotCapital
+                                ).toLocaleString("en-IN")
+                              : "Capital requirement unavailable"}
+                          </small>
+                          {capital > 0 ? (
+                            <small>
+                              {item.maxLots !== null
+                                ? item.maxLots +
+                                  " lot(s) · qty " +
+                                  (item.maxQuantity ?? 0)
+                                : "Capital insufficient / unavailable"}
+                            </small>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                </div>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      ) : null}
 
       <div className="scannerFooter">
         <span>Ranks every 1s · India refresh ~20s</span>
