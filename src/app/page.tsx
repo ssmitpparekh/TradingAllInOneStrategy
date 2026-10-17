@@ -7,6 +7,11 @@ import { buildTechnicalContext } from "@/lib/analysis/indicators";
 import { buildVolumeAnalytics } from "@/lib/analysis/volume";
 import { buildReversalEngine } from "@/lib/analysis/confluence";
 import {
+  orderFlowBucketStart,
+  orderFlowPercentages,
+  type OrderFlowBucket
+} from "@/lib/analysis/order-flow";
+import {
   calculateCandleClock,
   formatCountdown
 } from "@/lib/market/candle-clock";
@@ -264,6 +269,9 @@ export default function Home() {
   const [showVwap, setShowVwap] = useState(true);
   const [showProfile, setShowProfile] = useState(true);
   const [showEma, setShowEma] = useState(true);
+  const [showSessionBreaks, setShowSessionBreaks] = useState(true);
+  const [showOrderFlow, setShowOrderFlow] = useState(true);
+  const [orderFlowBuckets, setOrderFlowBuckets] = useState<OrderFlowBucket[]>([]);
   const [derivatives, setDerivatives] = useState<DerivativesData | null>(null);
   const [loadingDerivatives, setLoadingDerivatives] = useState(false);
   const [context4h, setContext4h] = useState<ChartCandle[]>([]);
@@ -273,8 +281,15 @@ export default function Home() {
   const [loadingContext, setLoadingContext] = useState(false);
   const [clockNow, setClockNow] = useState(Date.now());
   const historyRequestId = useRef(0);
+  const orderFlowNeedsPartialRef = useRef(true);
+  const orderFlowPartialBucketRef = useRef<number | null>(null);
 
   const selectedIsKraken = selected.market === "KRAKEN";
+  const latestOrderFlow =
+    orderFlowBuckets[orderFlowBuckets.length - 1] ?? null;
+  const latestOrderFlowStats = latestOrderFlow
+    ? orderFlowPercentages(latestOrderFlow)
+    : null;
   const currentCandleStart =
     liveCandle?.time ??
     candles[candles.length - 1]?.time ??
@@ -655,6 +670,9 @@ export default function Home() {
     setQuote(null);
     setCandles([]);
     setLiveCandle(null);
+    setOrderFlowBuckets([]);
+    orderFlowNeedsPartialRef.current = true;
+    orderFlowPartialBucketRef.current = null;
     setHistoryMeta({ from: null, to: null, note: null });
 
     if (
@@ -724,6 +742,9 @@ export default function Home() {
     if (!selectedIsKraken && !connected) return;
 
     setLiveCandle(null);
+    setOrderFlowBuckets([]);
+    orderFlowNeedsPartialRef.current = true;
+    orderFlowPartialBucketRef.current = null;
 
     if (!selectedIsKraken) {
       void fetch("/api/fyers/socket-diagnostic", { cache: "no-store" })
@@ -836,6 +857,89 @@ export default function Home() {
       }
     };
 
+    const onKrakenTrade = (event: MessageEvent<string>) => {
+      try {
+        const trade = JSON.parse(event.data) as {
+          symbol?: string;
+          side?: "buy" | "sell";
+          qty?: number;
+          price?: number;
+          time?: number;
+        };
+
+        if (trade.symbol && trade.symbol !== selected.symbol) return;
+
+        const qty = Number(trade.qty ?? 0);
+        const tradeTime = Number(trade.time ?? 0);
+
+        if (
+          (trade.side !== "buy" && trade.side !== "sell") ||
+          !(qty > 0) ||
+          !Number.isFinite(tradeTime)
+        ) {
+          return;
+        }
+
+        const bucketTime = orderFlowBucketStart(
+          tradeTime,
+          resolution
+        );
+        if (bucketTime === null) return;
+
+        if (orderFlowNeedsPartialRef.current) {
+          orderFlowPartialBucketRef.current = bucketTime;
+          orderFlowNeedsPartialRef.current = false;
+        }
+
+        const isPartial =
+          orderFlowPartialBucketRef.current === bucketTime;
+
+        setOrderFlowBuckets((current) => {
+          const next = [...current];
+          const existingIndex = next.findIndex(
+            (bucket) => bucket.time === bucketTime
+          );
+
+          if (existingIndex >= 0) {
+            const existing = next[existingIndex];
+            next[existingIndex] = {
+              ...existing,
+              buyVolume:
+                existing.buyVolume +
+                (trade.side === "buy" ? qty : 0),
+              sellVolume:
+                existing.sellVolume +
+                (trade.side === "sell" ? qty : 0),
+              trades: existing.trades + 1,
+              partial: existing.partial || isPartial
+            };
+          } else {
+            next.push({
+              time: bucketTime,
+              buyVolume: trade.side === "buy" ? qty : 0,
+              sellVolume: trade.side === "sell" ? qty : 0,
+              trades: 1,
+              partial: isPartial,
+              quality: "exact",
+              source: "Kraken taker-side trades"
+            });
+          }
+
+          next.sort((a, b) => a.time - b.time);
+          return next.slice(-240);
+        });
+
+        if (
+          orderFlowPartialBucketRef.current !== null &&
+          bucketTime > orderFlowPartialBucketRef.current
+        ) {
+          orderFlowPartialBucketRef.current = null;
+        }
+      } catch {
+        // Ignore malformed trade updates.
+      }
+    };
+
     const onKrakenCandle = (event: MessageEvent<string>) => {
       try {
         const candle = JSON.parse(event.data) as ChartCandle & {
@@ -863,11 +967,15 @@ export default function Home() {
     if (selectedIsKraken) {
       source.addEventListener("ticker", onKrakenTicker as EventListener);
       source.addEventListener("candle", onKrakenCandle as EventListener);
+      source.addEventListener("trade", onKrakenTrade as EventListener);
     } else {
       source.addEventListener("tick", onFyersTick as EventListener);
     }
 
     source.onerror = () => {
+      if (selectedIsKraken) {
+        orderFlowNeedsPartialRef.current = true;
+      }
       setStreamConnected(false);
       setStreamMessage(
         `${selectedIsKraken ? "Kraken" : "FYERS"} live stream reconnecting…`
@@ -1287,6 +1395,11 @@ export default function Home() {
           showVwap={showVwap}
           showProfile={showProfile}
           showEma={showEma}
+          market={selected.market}
+          resolution={resolution}
+          showSessionBreaks={showSessionBreaks}
+          orderFlowBuckets={orderFlowBuckets}
+          showOrderFlow={showOrderFlow}
         />
 
         {quote ? (
@@ -1299,6 +1412,89 @@ export default function Home() {
             <span className="feedNote">{streamMessage}</span>
           </div>
         ) : null}
+      </section>
+
+      <section className="card orderFlowCard">
+        <div className="orderFlowHeader">
+          <div>
+            <p className="label">TRUE BUY / SELL ORDER FLOW</p>
+            <h3>
+              {selectedIsKraken
+                ? streamConnected
+                  ? "Exact taker-side volume is live"
+                  : "Waiting for exact live trades"
+                : "Exact order flow unavailable from the current FYERS market feed"}
+            </h3>
+          </div>
+          <span
+            className={
+              selectedIsKraken && streamConnected
+                ? "orderFlowQuality exact"
+                : "orderFlowQuality unavailable"
+            }
+          >
+            {selectedIsKraken
+              ? streamConnected
+                ? "EXACT"
+                : "WAITING"
+              : "NO ESTIMATE"}
+          </span>
+        </div>
+
+        {selectedIsKraken && latestOrderFlow && latestOrderFlowStats ? (
+          <>
+            <div className="orderFlowMeter" aria-label="Buy sell volume split">
+              <div
+                className="orderFlowBuy"
+                style={{ width: `${latestOrderFlowStats.buyPercent}%` }}
+              />
+              <div
+                className="orderFlowSell"
+                style={{ width: `${latestOrderFlowStats.sellPercent}%` }}
+              />
+            </div>
+
+            <div className="orderFlowStats">
+              <div>
+                <span>BUY VOLUME</span>
+                <strong>{latestOrderFlowStats.buyPercent.toFixed(1)}%</strong>
+                <small>{latestOrderFlow.buyVolume.toLocaleString("en-IN", { maximumFractionDigits: 6 })}</small>
+              </div>
+              <div>
+                <span>SELL VOLUME</span>
+                <strong>{latestOrderFlowStats.sellPercent.toFixed(1)}%</strong>
+                <small>{latestOrderFlow.sellVolume.toLocaleString("en-IN", { maximumFractionDigits: 6 })}</small>
+              </div>
+              <div>
+                <span>DELTA</span>
+                <strong className={latestOrderFlowStats.deltaPercent >= 0 ? "positive" : "negative"}>
+                  {latestOrderFlowStats.deltaPercent >= 0 ? "+" : ""}
+                  {latestOrderFlowStats.deltaPercent.toFixed(1)}%
+                </strong>
+                <small>{latestOrderFlowStats.delta.toLocaleString("en-IN", { maximumFractionDigits: 6 })}</small>
+              </div>
+              <div>
+                <span>TRADES SEEN</span>
+                <strong>{latestOrderFlow.trades.toLocaleString("en-IN")}</strong>
+                <small>{latestOrderFlow.partial ? "PARTIAL CURRENT CANDLE" : "COMPLETE FROM CANDLE OPEN"}</small>
+              </div>
+            </div>
+
+            {latestOrderFlow.partial ? (
+              <p className="orderFlowNote">
+                This candle started before ALLINONEVIEW joined the trade stream, so only trades observed after connection are shown. The next full candle will be complete.
+              </p>
+            ) : null}
+          </>
+        ) : selectedIsKraken ? (
+          <p className="orderFlowNote">
+            ALLINONEVIEW will start automatically with the first real trade received from Kraken. No candle-colour or bid/ask estimate is used.
+          </p>
+        ) : (
+          <p className="orderFlowNote">
+            FYERS does not expose an aggressor-side field for every market trade in the current market-data feed. ALLINONEVIEW therefore shows no buyer/seller percentage rather than inventing one. The chart, volume, OI, VWAP and other real data remain available.
+          </p>
+        )}
       </section>
 
       <section className="card reversalCard">
@@ -1521,6 +1717,27 @@ export default function Home() {
               onClick={() => setShowEma((value) => !value)}
             >
               EMA {showEma ? "ON" : "OFF"}
+            </button>
+            <button
+              className={
+                showSessionBreaks
+                  ? "analysisToggle active"
+                  : "analysisToggle"
+              }
+              onClick={() => setShowSessionBreaks((value) => !value)}
+            >
+              Sessions {showSessionBreaks ? "ON" : "OFF"}
+            </button>
+            <button
+              className={
+                showOrderFlow
+                  ? "analysisToggle active"
+                  : "analysisToggle"
+              }
+              onClick={() => setShowOrderFlow((value) => !value)}
+              disabled={!selectedIsKraken}
+            >
+              Order Flow {showOrderFlow ? "ON" : "OFF"}
             </button>
           </div>
         </div>

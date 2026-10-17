@@ -16,6 +16,10 @@ import {
   type Time
 } from "lightweight-charts";
 import type { TechnicalContext } from "@/lib/analysis/indicators";
+import {
+  orderFlowPercentages,
+  type OrderFlowBucket
+} from "@/lib/analysis/order-flow";
 import type { VolumeAnalytics } from "@/lib/analysis/volume";
 import type {
   FibonacciSetup,
@@ -55,6 +59,11 @@ type Props = {
   showVwap?: boolean;
   showProfile?: boolean;
   showEma?: boolean;
+  market?: string;
+  resolution?: string;
+  showSessionBreaks?: boolean;
+  orderFlowBuckets?: OrderFlowBucket[];
+  showOrderFlow?: boolean;
 };
 
 function formatIst(timestamp: number) {
@@ -83,6 +92,26 @@ function chartHeightForHost(host: HTMLDivElement) {
   }
 
   return Math.max(520, host.clientHeight || 560);
+}
+
+function sessionKey(timestamp: number, market: string) {
+  const timeZone = market === "KRAKEN" ? "UTC" : "Asia/Kolkata";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date(timestamp * 1000));
+
+  const year = parts.find((part) => part.type === "year")?.value ?? "";
+  const month = parts.find((part) => part.type === "month")?.value ?? "";
+  const day = parts.find((part) => part.type === "day")?.value ?? "";
+
+  return `${year}-${month}-${day}`;
+}
+
+function isIntradayResolution(resolution: string) {
+  return !["1D", "1W", "1M"].includes(resolution);
 }
 
 function toEpoch(time: Time): number | null {
@@ -117,7 +146,12 @@ export default function MarketChart({
   showVolume = true,
   showVwap = true,
   showProfile = true,
-  showEma = true
+  showEma = true,
+  market = "NSE",
+  resolution = "15",
+  showSessionBreaks = true,
+  orderFlowBuckets = [],
+  showOrderFlow = true
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -128,13 +162,48 @@ export default function MarketChart({
   const ema20SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const ema50SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const ema200SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const buyFlowSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const sellFlowSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const analysisLinesRef = useRef<IPriceLine[]>([]);
   const [hovered, setHovered] = useState<ChartCandle | null>(null);
+  const [sessionBreakPositions, setSessionBreakPositions] = useState<
+    Array<{ time: number; x: number }>
+  >([]);
+
+  const orderFlowByTime = useMemo(
+    () => new Map(orderFlowBuckets.map((bucket) => [bucket.time, bucket])),
+    [orderFlowBuckets]
+  );
 
   const latest = useMemo(
     () => liveCandle ?? (candles.length ? candles[candles.length - 1] : null),
     [candles, liveCandle]
   );
+
+  const sessionBreakTimes = useMemo(() => {
+    if (!showSessionBreaks || !isIntradayResolution(resolution)) return [];
+
+    const source =
+      liveCandle &&
+      (!candles.length || liveCandle.time > candles[candles.length - 1].time)
+        ? [...candles, liveCandle]
+        : candles;
+
+    if (source.length < 2) return [];
+
+    const breaks: number[] = [];
+    let previousSession = sessionKey(source[0].time, market);
+
+    for (let index = 1; index < source.length; index += 1) {
+      const currentSession = sessionKey(source[index].time, market);
+      if (currentSession !== previousSession) {
+        breaks.push(source[index].time);
+        previousSession = currentSession;
+      }
+    }
+
+    return breaks;
+  }, [candles, liveCandle, market, resolution, showSessionBreaks]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -234,9 +303,31 @@ export default function MarketChart({
     });
     chart.priceScale("").applyOptions({
       scaleMargins: {
-        top: 0.82,
+        top: 0.88,
         bottom: 0
       }
+    });
+
+    const buyFlowSeries = chart.addSeries(HistogramSeries, {
+      priceScaleId: "orderFlow",
+      priceFormat: { type: "volume" },
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
+
+    const sellFlowSeries = chart.addSeries(HistogramSeries, {
+      priceScaleId: "orderFlow",
+      priceFormat: { type: "volume" },
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
+
+    chart.priceScale("orderFlow").applyOptions({
+      scaleMargins: {
+        top: 0.68,
+        bottom: 0.13
+      },
+      visible: false
     });
 
     const sessionVwapSeries = chart.addSeries(LineSeries, {
@@ -289,6 +380,8 @@ export default function MarketChart({
     ema20SeriesRef.current = ema20Series;
     ema50SeriesRef.current = ema50Series;
     ema200SeriesRef.current = ema200Series;
+    buyFlowSeriesRef.current = buyFlowSeries;
+    sellFlowSeriesRef.current = sellFlowSeries;
 
     chart.subscribeCrosshairMove((param) => {
       const item = param.seriesData.get(series);
@@ -331,6 +424,8 @@ export default function MarketChart({
       ema20SeriesRef.current = null;
       ema50SeriesRef.current = null;
       ema200SeriesRef.current = null;
+      buyFlowSeriesRef.current = null;
+      sellFlowSeriesRef.current = null;
     };
   }, []);
 
@@ -379,6 +474,54 @@ export default function MarketChart({
       to: lastTime as Time
     });
   }, [candles, rangeKey]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const host = hostRef.current;
+
+    if (
+      !chart ||
+      !host ||
+      !showSessionBreaks ||
+      sessionBreakTimes.length === 0
+    ) {
+      setSessionBreakPositions([]);
+      return;
+    }
+
+    const updatePositions = () => {
+      const width = host.clientWidth;
+      const positions = sessionBreakTimes.flatMap((time) => {
+        const coordinate = chart.timeScale().timeToCoordinate(time as Time);
+
+        if (
+          coordinate === null ||
+          coordinate < 0 ||
+          coordinate > width
+        ) {
+          return [];
+        }
+
+        return [
+          {
+            time,
+            x: Number(coordinate)
+          }
+        ];
+      });
+
+      setSessionBreakPositions(positions);
+    };
+
+    updatePositions();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(updatePositions);
+    window.addEventListener("resize", updatePositions);
+
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updatePositions);
+      window.removeEventListener("resize", updatePositions);
+    };
+  }, [sessionBreakTimes, showSessionBreaks]);
 
   useEffect(() => {
     if (!liveCandle || !seriesRef.current) return;
@@ -663,13 +806,38 @@ export default function MarketChart({
         .map((candle) => ({
           time: candle.time as Time,
           value: Number(candle.volume ?? 0),
-          color:
-            candle.close >= candle.open
-              ? "rgba(40, 199, 111, 0.38)"
-              : "rgba(234, 84, 85, 0.38)"
+          color: "rgba(132, 145, 166, 0.34)"
         }))
     );
   }, [candles, volumeAnalytics, showVolume]);
+
+  useEffect(() => {
+    const buySeries = buyFlowSeriesRef.current;
+    const sellSeries = sellFlowSeriesRef.current;
+    if (!buySeries || !sellSeries) return;
+
+    if (!showOrderFlow || orderFlowBuckets.length === 0) {
+      buySeries.setData([]);
+      sellSeries.setData([]);
+      return;
+    }
+
+    buySeries.setData(
+      orderFlowBuckets.map((bucket) => ({
+        time: bucket.time as Time,
+        value: bucket.buyVolume,
+        color: "rgba(40, 199, 111, 0.76)"
+      }))
+    );
+
+    sellSeries.setData(
+      orderFlowBuckets.map((bucket) => ({
+        time: bucket.time as Time,
+        value: -bucket.sellVolume,
+        color: "rgba(234, 84, 85, 0.76)"
+      }))
+    );
+  }, [orderFlowBuckets, showOrderFlow]);
 
   useEffect(() => {
     const sessionSeries = sessionVwapSeriesRef.current;
@@ -738,6 +906,12 @@ export default function MarketChart({
   }, [fitNonce]);
 
   const readout = hovered ?? latest;
+  const readoutOrderFlow = readout
+    ? orderFlowByTime.get(readout.time) ?? null
+    : null;
+  const readoutOrderFlowStats = readoutOrderFlow
+    ? orderFlowPercentages(readoutOrderFlow)
+    : null;
 
   return (
     <div className="marketChartShell">
@@ -748,6 +922,33 @@ export default function MarketChart({
           <span>H <strong>{readout.high.toLocaleString("en-IN")}</strong></span>
           <span>L <strong>{readout.low.toLocaleString("en-IN")}</strong></span>
           <span>C <strong>{readout.close.toLocaleString("en-IN")}</strong></span>
+          {readoutOrderFlow && readoutOrderFlowStats ? (
+            <>
+              <span className="flowBuy">
+                BUY <strong>{readoutOrderFlowStats.buyPercent.toFixed(1)}%</strong>
+              </span>
+              <span className="flowSell">
+                SELL <strong>{readoutOrderFlowStats.sellPercent.toFixed(1)}%</strong>
+              </span>
+              <span>
+                Δ <strong>{readoutOrderFlowStats.deltaPercent >= 0 ? "+" : ""}{readoutOrderFlowStats.deltaPercent.toFixed(1)}%</strong>
+              </span>
+              <span>
+                {readoutOrderFlow.partial ? "PARTIAL" : readoutOrderFlow.quality.toUpperCase()}
+              </span>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+      {showSessionBreaks ? (
+        <div className="sessionBreakLayer" aria-hidden="true">
+          {sessionBreakPositions.map((item) => (
+            <span
+              className="sessionBreakLine"
+              key={item.time}
+              style={{ left: item.x }}
+            />
+          ))}
         </div>
       ) : null}
       <div ref={hostRef} className="marketChart" />

@@ -41,6 +41,10 @@ The project must not be called finished until these agreed items are implemented
 - Reversal confluence scoring, invalidation, stop-loss logic and targets
 - Provider-aware behavior across Indian and global markets
 - Final regression, performance and data-consistency validation
+- Exact directional order-flow where the provider supplies real aggressor-side trade data
+- Never infer buyer/seller percentages from candle colour, OHLC direction, bid/ask snapshots or total buy/sell queue quantities
+- Closed markets must remain ready and automatically activate live data collection when their exact-capability feed resumes
+- Session-break markers on intraday charts, provider/timezone aware
 - Installable mobile experience on both iOS and Android
 - PWA support (home-screen install / standalone app shell) plus a maintained path to native App Store / Google Play packaging from the same ALLINONEVIEW codebase
 
