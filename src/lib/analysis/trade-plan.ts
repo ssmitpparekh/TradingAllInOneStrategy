@@ -200,6 +200,7 @@ export function buildSimpleTradePlan(input: {
       targets,
       signalTime: null,
       confirmationTimeframe: null,
+      moveClass: null,
       reason:
         reversal.score < requiredScore
           ? "Confirmation threshold not met (" +
