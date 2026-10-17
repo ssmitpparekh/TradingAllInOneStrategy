@@ -115,8 +115,7 @@ const FYERS_STATIC: ScannerInstrument[] = [
     "NESTLEIND",
     "HINDALCO",
     "TATACONSUM",
-    "BAJAJ-AUTO",
-    "CICI"
+    "BAJAJ-AUTO"
   ].map(
     (ticker): ScannerInstrument => ({
       symbol: `NSE:${ticker}-EQ`,
