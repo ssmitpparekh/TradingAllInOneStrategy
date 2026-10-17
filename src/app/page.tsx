@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import MarketChart, { type ChartCandle } from "@/components/MarketChart";
 
 type Quote = {
   symbol: string;
@@ -16,19 +17,32 @@ type Quote = {
   ask: number;
 };
 
+type Resolution = "5" | "15" | "60" | "1D";
+
+const RESOLUTIONS: Array<{ value: Resolution; label: string }> = [
+  { value: "5", label: "5m" },
+  { value: "15", label: "15m" },
+  { value: "60", label: "1H" },
+  { value: "1D", label: "1D" }
+];
+
 export default function Home() {
   const [connected, setConnected] = useState<boolean | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
+  const [candles, setCandles] = useState<ChartCandle[]>([]);
+  const [resolution, setResolution] = useState<Resolution>("15");
   const [message, setMessage] = useState("Checking FYERS connection…");
-  const [loading, setLoading] = useState(false);
+  const [loadingQuote, setLoadingQuote] = useState(false);
+  const [loadingChart, setLoadingChart] = useState(false);
 
   async function refreshStatus() {
     try {
       const response = await fetch("/api/fyers/status", { cache: "no-store" });
       const data = await response.json();
-      setConnected(Boolean(data.connected));
+      const isConnected = Boolean(data.connected);
+      setConnected(isConnected);
       setMessage(
-        data.connected
+        isConnected
           ? "FYERS connected. Market-data access is ready."
           : "FYERS is not connected yet."
       );
@@ -38,9 +52,8 @@ export default function Home() {
     }
   }
 
-  async function testNiftyQuote() {
-    setLoading(true);
-    setMessage("Requesting NIFTY 50 quote from FYERS…");
+  async function fetchQuote(silent = false) {
+    if (!silent) setLoadingQuote(true);
 
     try {
       const response = await fetch("/api/fyers/quote", { cache: "no-store" });
@@ -52,13 +65,39 @@ export default function Home() {
 
       setQuote(data.quote);
       setConnected(true);
-      setMessage("Live FYERS quote received successfully.");
+      if (!silent) setMessage("FYERS quote received successfully.");
+    } catch (error) {
+      if (!silent) {
+        setMessage(
+          error instanceof Error ? error.message : "Unable to fetch the quote."
+        );
+      }
+    } finally {
+      if (!silent) setLoadingQuote(false);
+    }
+  }
+
+  async function fetchHistory(nextResolution = resolution) {
+    setLoadingChart(true);
+
+    try {
+      const response = await fetch(
+        `/api/fyers/history?resolution=${encodeURIComponent(nextResolution)}`,
+        { cache: "no-store" }
+      );
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Historical candle request failed.");
+      }
+
+      setCandles(data.candles);
     } catch (error) {
       setMessage(
-        error instanceof Error ? error.message : "Unable to fetch the quote."
+        error instanceof Error ? error.message : "Unable to load candles."
       );
     } finally {
-      setLoading(false);
+      setLoadingChart(false);
     }
   }
 
@@ -66,96 +105,147 @@ export default function Home() {
     void refreshStatus();
   }, []);
 
-  return (
-    <main className="shell">
-      <section className="hero">
-        <p className="eyebrow">PHASE 1 · DATA FOUNDATION</p>
-        <h1>ALLINONEVIEW</h1>
-        <p className="lead">
-          Read-only market analysis. No order placement. FYERS is used only for
-          permitted market and historical data.
-        </p>
-      </section>
+  useEffect(() => {
+    if (!connected) return;
 
-      <section className="card">
-        <div className="row">
+    void fetchQuote(true);
+    void fetchHistory(resolution);
+
+    const timer = window.setInterval(() => {
+      void fetchQuote(true);
+    }, 5000);
+
+    return () => window.clearInterval(timer);
+  }, [connected, resolution]);
+
+  const changeClass = useMemo(() => {
+    if (!quote) return "";
+    return quote.ch >= 0 ? "positive" : "negative";
+  }, [quote]);
+
+  return (
+    <main className="shell wide">
+      <section className="hero compactHero">
+        <p className="eyebrow">PHASE 2 · LIVE MARKET VIEW</p>
+        <div className="heroRow">
           <div>
-            <p className="label">FYERS connection</p>
-            <p className={connected ? "status good" : "status"}>
-              {connected === null
-                ? "Checking…"
-                : connected
-                  ? "Connected"
-                  : "Not connected"}
+            <h1>ALLINONEVIEW</h1>
+            <p className="lead">
+              Read-only analysis. FYERS market data. No order placement.
             </p>
           </div>
-
-          <a className="button" href="/api/auth/fyers/login">
-            Connect FYERS
-          </a>
+          <div className={connected ? "connectionPill online" : "connectionPill"}>
+            <span className="dot" />
+            {connected ? "FYERS CONNECTED" : "FYERS OFFLINE"}
+          </div>
         </div>
-
-        <p className="message">{message}</p>
       </section>
 
-      <section className="card">
-        <div className="row">
+      {!connected ? (
+        <section className="card">
+          <div className="row">
+            <div>
+              <p className="label">FYERS connection</p>
+              <p className="status">Not connected</p>
+            </div>
+            <a className="button" href="/api/auth/fyers/login">
+              Connect FYERS
+            </a>
+          </div>
+          <p className="message">{message}</p>
+        </section>
+      ) : null}
+
+      <section className="terminalCard">
+        <div className="marketHeader">
           <div>
-            <p className="label">First data test</p>
-            <h2>NIFTY 50</h2>
+            <p className="label">NSE INDEX</p>
+            <div className="priceRow">
+              <h2>NIFTY 50</h2>
+              {quote ? (
+                <>
+                  <strong className="bigPrice">
+                    {quote.lp.toLocaleString("en-IN", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2
+                    })}
+                  </strong>
+                  <span className={`marketChange ${changeClass}`}>
+                    {quote.ch >= 0 ? "+" : ""}
+                    {quote.ch.toFixed(2)} ({quote.chp.toFixed(2)}%)
+                  </span>
+                </>
+              ) : (
+                <span className="marketChange">Loading quote…</span>
+              )}
+            </div>
           </div>
 
           <button
-            className="button secondary"
-            onClick={testNiftyQuote}
-            disabled={loading}
+            className="button secondary compactButton"
+            onClick={() => void fetchQuote()}
+            disabled={loadingQuote}
           >
-            {loading ? "Loading…" : "Test live quote"}
+            {loadingQuote ? "Refreshing…" : "Refresh quote"}
           </button>
         </div>
 
-        {quote ? (
-          <div className="quoteGrid">
-            <div>
-              <span>LTP</span>
-              <strong>{quote.lp.toLocaleString("en-IN")}</strong>
-            </div>
-            <div>
-              <span>Change</span>
-              <strong>
-                {quote.ch.toFixed(2)} ({quote.chp.toFixed(2)}%)
-              </strong>
-            </div>
-            <div>
-              <span>Open</span>
-              <strong>{quote.open.toLocaleString("en-IN")}</strong>
-            </div>
-            <div>
-              <span>High</span>
-              <strong>{quote.high.toLocaleString("en-IN")}</strong>
-            </div>
-            <div>
-              <span>Low</span>
-              <strong>{quote.low.toLocaleString("en-IN")}</strong>
-            </div>
-            <div>
-              <span>Previous close</span>
-              <strong>{quote.previousClose.toLocaleString("en-IN")}</strong>
-            </div>
+        <div className="chartToolbar">
+          <div className="timeframes">
+            {RESOLUTIONS.map((item) => (
+              <button
+                key={item.value}
+                className={
+                  resolution === item.value
+                    ? "timeframe active"
+                    : "timeframe"
+                }
+                onClick={() => {
+                  setResolution(item.value);
+                  void fetchHistory(item.value);
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
-        ) : (
-          <p className="placeholder">
-            Connect FYERS, then press “Test live quote”.
-          </p>
-        )}
+          <span className="chartStatus">
+            {loadingChart
+              ? "Loading candles…"
+              : `${candles.length.toLocaleString()} candles`}
+          </span>
+        </div>
+
+        <MarketChart candles={candles} />
+
+        {quote ? (
+          <div className="ohlcStrip">
+            <span>
+              O <strong>{quote.open.toLocaleString("en-IN")}</strong>
+            </span>
+            <span>
+              H <strong>{quote.high.toLocaleString("en-IN")}</strong>
+            </span>
+            <span>
+              L <strong>{quote.low.toLocaleString("en-IN")}</strong>
+            </span>
+            <span>
+              PC <strong>{quote.previousClose.toLocaleString("en-IN")}</strong>
+            </span>
+            <span className="feedNote">
+              Quote refreshes automatically every 5 seconds. FYERS WebSocket is
+              the next data transport layer.
+            </span>
+          </div>
+        ) : null}
       </section>
 
       <section className="card roadmap">
-        <p className="label">Next after the quote works</p>
+        <p className="label">Analysis engine coming onto this chart</p>
         <p>
-          Historical candles → live WebSocket → chart → Fib / Trend Fib →
-          BOS/CHoCH → Order Blocks/FVG → futures volume/OI → options ΔOI →
-          reversal score.
+          Auto swing detection → Fib / Trend Fib → BOS/CHoCH → Order Blocks/FVG
+          → liquidity → futures VWAP/volume profile → OI/ΔOI → reversal score,
+          invalidation, SL and targets.
         </p>
       </section>
     </main>
