@@ -631,6 +631,7 @@ export default function OpportunityScanner({
                   observedLow: price,
                   observedSince: time,
                   updatedAt: Date.now(),
+                  sourceTime: time,
                   bucket
                 }
               : {
@@ -644,7 +645,8 @@ export default function OpportunityScanner({
                     previous.observedLow,
                     price
                   ),
-                  updatedAt: Date.now()
+                  updatedAt: Date.now(),
+                  sourceTime: time
                 };
 
           liveRef.current.set(instrument.symbol, next);
@@ -688,7 +690,11 @@ export default function OpportunityScanner({
         }
       });
 
-      krakenSourcesRef.current.push(source);
+      source.onerror = () => {
+        setKrakenLive(false);
+      };
+
+            krakenSourcesRef.current.push(source);
     }
 
     return () => {
