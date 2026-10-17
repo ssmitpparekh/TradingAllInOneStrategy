@@ -120,6 +120,59 @@ type DerivativesData = {
   } | null;
 };
 
+type OptionSelectorCandidate = {
+  symbol: string;
+  optionType: "CE" | "PE";
+  strike: number;
+  ltp: number;
+  bid: number;
+  ask: number;
+  volume: number;
+  oi: number;
+  oiChange: number;
+  oiChangePercent: number;
+  greeks: {
+    delta: number;
+    gamma: number;
+    theta: number;
+    vega: number;
+    iv: number;
+  } | null;
+  lotSize: number | null;
+  buyCostPerLot: number | null;
+  sellMarginPerLot: number | null;
+  maxLots: number | null;
+  maxQuantity: number | null;
+  affordable: boolean;
+  depth: {
+    totalBuyQty: number;
+    totalSellQty: number;
+    imbalancePercent: number | null;
+  } | null;
+  exactTakerOrderFlowAvailable: boolean;
+  score: number;
+};
+
+type OptionSelectorData = {
+  available: boolean;
+  reason?: string;
+  direction?: "bullish" | "bearish";
+  capital?: number;
+  underlying?: string;
+  expiry?: { date: string; expiry: number } | null;
+  indiaVix?: number | null;
+  pcr?: number | null;
+  buyAction?: string;
+  sellAction?: string;
+  bestBuy?: OptionSelectorCandidate | null;
+  bestSell?: OptionSelectorCandidate | null;
+  alternatives?: {
+    buy: OptionSelectorCandidate[];
+    sell: OptionSelectorCandidate[];
+  };
+  orderFlowNote?: string;
+};
+
 type Instrument = {
   symbol: string;
   name: string;
@@ -385,6 +438,12 @@ export default function Home() {
   const [tradeCapitalInput, setTradeCapitalInput] = useState("");
   const [selectedMarginPerLot, setSelectedMarginPerLot] =
     useState<number | null>(null);
+  const [optionSelection, setOptionSelection] =
+    useState<OptionSelectorData | null>(null);
+  const [optionSelectionLoading, setOptionSelectionLoading] =
+    useState(false);
+  const [optionSelectionError, setOptionSelectionError] =
+    useState<string | null>(null);
   const historyRequestId = useRef(0);
   const orderFlowNeedsPartialRef = useRef(true);
   const orderFlowPartialBucketRef = useRef<number | null>(null);
@@ -1556,6 +1615,85 @@ export default function Home() {
     journalReady,
     closedContext1m,
     primaryAnalysisSymbol
+  ]);
+
+  useEffect(() => {
+    setOptionSelection(null);
+    setOptionSelectionError(null);
+
+    if (
+      !connected ||
+      !activePlannerPlan ||
+      activePlannerPlan.direction === null ||
+      (selected.market !== "NSE" && selected.market !== "BSE") ||
+      selected.type === "OPTION" ||
+      selected.type === "FUTURE"
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const load = async () => {
+      if (cancelled) return;
+      setOptionSelectionLoading(true);
+
+      try {
+        const response = await fetch(
+          "/api/fyers/option-selector?symbol=" +
+            encodeURIComponent(primaryAnalysisSymbol) +
+            "&market=" +
+            encodeURIComponent(selected.market) +
+            "&direction=" +
+            encodeURIComponent(activePlannerPlan.direction) +
+            "&capital=" +
+            encodeURIComponent(String(tradeCapital)),
+          { cache: "no-store" }
+        );
+        const data = (await response.json()) as OptionSelectorData & {
+          ok?: boolean;
+          error?: string;
+        };
+
+        if (cancelled) return;
+
+        if (!response.ok || data.ok === false) {
+          setOptionSelection(null);
+          setOptionSelectionError(
+            data.error ?? "Unable to rank live option contracts."
+          );
+          return;
+        }
+
+        setOptionSelection(data);
+        setOptionSelectionError(null);
+      } catch {
+        if (!cancelled) {
+          setOptionSelection(null);
+          setOptionSelectionError(
+            "Unable to rank live option contracts."
+          );
+        }
+      } finally {
+        if (!cancelled) setOptionSelectionLoading(false);
+      }
+    };
+
+    void load();
+    timer = window.setInterval(load, 30_000);
+
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearInterval(timer);
+    };
+  }, [
+    connected,
+    activePlannerPlan,
+    primaryAnalysisSymbol,
+    selected.market,
+    selected.type,
+    tradeCapital
   ]);
 
   useEffect(() => {
@@ -3035,6 +3173,156 @@ export default function Home() {
           )}
         </div>
 
+        {activePlannerPlan &&
+        selected.type !== "OPTION" &&
+        selected.type !== "FUTURE" &&
+        (selected.market === "NSE" || selected.market === "BSE") ? (
+          <div className="bestOptionSelector">
+            <div className="bestOptionSelectorHeader">
+              <div>
+                <span>BEST LIVE OPTION FOR THIS CONFIRMED TRADE</span>
+                <strong>
+                  {optionSelectionLoading
+                    ? "Ranking live chain…"
+                    : optionSelection?.available
+                      ? "Real-time contract ranking"
+                      : "No suitable contract available"}
+                </strong>
+              </div>
+              <small>
+                {tradeCapital > 0
+                  ? "Capital-aware ranking · ₹" +
+                    tradeCapital.toLocaleString("en-IN")
+                  : "Best-quality ranking · no capital filter"}
+              </small>
+            </div>
+
+            {optionSelectionError ? (
+              <p className="optionSelectorError">
+                {optionSelectionError}
+              </p>
+            ) : null}
+
+            {optionSelection?.available ? (
+              <div className="bestOptionGrid">
+                {[
+                  {
+                    action: optionSelection.buyAction ?? "BUY OPTION",
+                    candidate: optionSelection.bestBuy
+                  },
+                  {
+                    action: optionSelection.sellAction ?? "SELL OPTION",
+                    candidate: optionSelection.bestSell
+                  }
+                ].map(({ action, candidate }) =>
+                  candidate ? (
+                    <button
+                      type="button"
+                      className="bestOptionCard"
+                      key={action + candidate.symbol}
+                      onClick={() =>
+                        void selectInstrument({
+                          symbol: candidate.symbol,
+                          name:
+                            selected.underlying +
+                            " " +
+                            candidate.strike +
+                            " " +
+                            candidate.optionType,
+                          market: selected.market,
+                          segment: "F&O",
+                          type: "OPTION",
+                          underlying:
+                            selected.underlying ||
+                            primaryAnalysisSymbol,
+                          expiry:
+                            optionSelection.expiry?.date ?? null,
+                          strike: candidate.strike,
+                          optionType: candidate.optionType,
+                          lotSize: candidate.lotSize,
+                          tickSize: null
+                        })
+                      }
+                    >
+                      <div className="bestOptionTop">
+                        <span>{action}</span>
+                        <b>{candidate.score}/100</b>
+                      </div>
+                      <strong>
+                        {candidate.strike.toLocaleString("en-IN")}{" "}
+                        {candidate.optionType}
+                      </strong>
+                      <small>
+                        LTP ₹
+                        {candidate.ltp.toLocaleString("en-IN", {
+                          maximumFractionDigits: 2
+                        })}{" "}
+                        · lot {candidate.lotSize ?? "?"}
+                      </small>
+                      <small>
+                        Δ{" "}
+                        {candidate.greeks?.delta?.toFixed(3) ?? "—"} · IV{" "}
+                        {candidate.greeks?.iv?.toFixed(1) ?? "—"} · OI{" "}
+                        {candidate.oi.toLocaleString("en-IN")} · ΔOI{" "}
+                        {candidate.oiChange.toLocaleString("en-IN")}
+                      </small>
+                      <small>
+                        Vol {candidate.volume.toLocaleString("en-IN")} · spread{" "}
+                        {candidate.bid > 0 && candidate.ask > 0
+                          ? "₹" +
+                            (candidate.ask - candidate.bid).toFixed(2)
+                          : "—"}
+                        {candidate.depth?.imbalancePercent !== null &&
+                        candidate.depth?.imbalancePercent !== undefined
+                          ? " · depth Δ " +
+                            candidate.depth.imbalancePercent.toFixed(1) +
+                            "%"
+                          : ""}
+                      </small>
+                      <small>
+                        {action.startsWith("BUY")
+                          ? candidate.buyCostPerLot
+                            ? "1 lot ₹" +
+                              Math.round(
+                                candidate.buyCostPerLot
+                              ).toLocaleString("en-IN")
+                            : "Buy cost unavailable"
+                          : candidate.sellMarginPerLot
+                            ? "FYERS margin/lot ₹" +
+                              Math.round(
+                                candidate.sellMarginPerLot
+                              ).toLocaleString("en-IN")
+                            : "FYERS margin unavailable"}
+                        {tradeCapital > 0
+                          ? candidate.affordable &&
+                            candidate.maxLots !== null
+                            ? " · fits " +
+                              candidate.maxLots +
+                              " lot(s)"
+                            : " · not affordable"
+                          : ""}
+                      </small>
+                    </button>
+                  ) : null
+                )}
+              </div>
+            ) : (
+              <p className="tradeCapitalNote">
+                {optionSelectionLoading
+                  ? "Checking Greeks, OI, ΔOI, volume, spread and market depth…"
+                  : optionSelection?.reason ??
+                    "A confirmed Indian trade is required before an option is ranked."}
+              </p>
+            )}
+
+            {optionSelection?.orderFlowNote ? (
+              <p className="tradeCapitalNote">
+                {optionSelection.orderFlowNote}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
         {selected.type === "OPTION" ? (
           <div className="optionCapitalGrid">
             <div>
@@ -3309,17 +3597,11 @@ export default function Home() {
         )}
       </section>
 
-      <section
-        className={
-          showAdvancedAnalysis
-            ? "card performanceCard"
-            : "card performanceCard advancedHidden"
-        }
-      >
+      <section className="card performanceCard">
         <div className="performanceHeader">
           <div>
-            <p className="label">PLATFORM TRADE JOURNAL · REAL SIGNAL HISTORY</p>
-            <h3>P/L analytics in R-multiples</h3>
+            <p className="label">TRADE HISTORY & RESULTS · REAL SIGNAL RECORD</p>
+            <h3>Every confirmed platform trade</h3>
             <p>
               Signals are stored locally and remain on the chart after refresh.
               No account size or position size is assumed.
