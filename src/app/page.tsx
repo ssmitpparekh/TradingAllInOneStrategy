@@ -469,7 +469,12 @@ export default function Home() {
         market: selected.market,
         type: selected.type,
         underlying: selected.underlying || "",
-        spotPrice: String(quote?.lp ?? 0)
+        spotPrice: String(
+          contextPrice ??
+            (primaryAnalysisSymbol === selected.symbol
+              ? quote?.lp ?? 0
+              : 0)
+        )
       });
 
       const response = await fetch(
@@ -867,7 +872,9 @@ export default function Home() {
     selected.symbol,
     selected.market,
     selected.type,
-    selected.underlying
+    selected.underlying,
+    contextPrice,
+    primaryAnalysisSymbol
   ]);
 
   useEffect(() => {
