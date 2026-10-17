@@ -25,6 +25,10 @@ const masterCache = new Map<
 >();
 const MASTER_CACHE_MS = 30 * 60_000;
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function clamp(value: number, low = 0, high = 1) {
   return Math.max(low, Math.min(high, value));
 }
@@ -224,76 +228,80 @@ async function enrichCandidates(
   side: StrategySide,
   capital: number
 ) {
-  const shortlist = candidates.slice(0, 3);
+  const shortlist = candidates.slice(0, 2);
+  const enriched = [];
 
-  return Promise.all(
-    shortlist.map(async ({ leg, base }) => {
-      const lotSize = lotSizes.get(leg.symbol)?.lotSize ?? null;
-      let depth: FyersDepth | null = null;
+  for (const { leg, base } of shortlist) {
+    const lotSize = lotSizes.get(leg.symbol)?.lotSize ?? null;
+    let depth: FyersDepth | null = null;
 
-      try {
-        depth = await getMarketDepth(accessToken, leg.symbol);
-      } catch {
-        depth = null;
-      }
+    await sleep(275);
+    try {
+      depth = await getMarketDepth(accessToken, leg.symbol);
+    } catch {
+      depth = null;
+    }
 
-      const depthResult = depthScore(depth, side);
-      const priceForBuy = leg.ask > 0 ? leg.ask : leg.ltp;
-      const buyCostPerLot =
-        lotSize && priceForBuy > 0 ? lotSize * priceForBuy : null;
-      const sellMarginPerLot =
-        side === "SELL" && lotSize
-          ? await marginPerLot(
-              accessToken,
-              leg.symbol,
-              lotSize
-            ).catch(() => null)
-          : null;
+    const depthResult = depthScore(depth, side);
+    const priceForBuy = leg.ask > 0 ? leg.ask : leg.ltp;
+    const buyCostPerLot =
+      lotSize && priceForBuy > 0 ? lotSize * priceForBuy : null;
 
-      const capitalPerLot =
-        side === "BUY" ? buyCostPerLot : sellMarginPerLot;
-      const maxLots =
-        capital > 0 && capitalPerLot && capitalPerLot > 0
-          ? Math.floor(capital / capitalPerLot)
-          : null;
-      const affordable =
-        capital <= 0
-          ? true
-          : maxLots !== null && maxLots > 0;
+    let sellMarginPerLot: number | null = null;
+    if (side === "SELL" && lotSize) {
+      await sleep(275);
+      sellMarginPerLot = await marginPerLot(
+        accessToken,
+        leg.symbol,
+        lotSize
+      ).catch(() => null);
+    }
 
-      return {
-        symbol: leg.symbol,
-        optionType: leg.optionType,
-        strike: leg.strike,
-        ltp: leg.ltp,
-        bid: leg.bid,
-        ask: leg.ask,
-        volume: leg.volume,
-        oi: leg.oi,
-        oiChange: leg.oiChange,
-        oiChangePercent: leg.oiChangePercent,
-        greeks: leg.greeks,
-        lotSize,
-        buyCostPerLot,
-        sellMarginPerLot,
-        maxLots,
-        maxQuantity:
-          maxLots !== null && lotSize ? maxLots * lotSize : null,
-        affordable,
-        depth: depth
-          ? {
-              totalBuyQty: depth.totalBuyQty,
-              totalSellQty: depth.totalSellQty,
-              imbalancePercent: depthResult.imbalancePercent
-            }
-          : null,
-        exactTakerOrderFlowAvailable: false,
-        score: Math.round(
-          Math.max(0, Math.min(100, base + depthResult.points))
-        )
-      };
-    })
-  );
+    const capitalPerLot =
+      side === "BUY" ? buyCostPerLot : sellMarginPerLot;
+    const maxLots =
+      capital > 0 && capitalPerLot && capitalPerLot > 0
+        ? Math.floor(capital / capitalPerLot)
+        : null;
+    const affordable =
+      capital <= 0
+        ? true
+        : maxLots !== null && maxLots > 0;
+
+    enriched.push({
+      symbol: leg.symbol,
+      optionType: leg.optionType,
+      strike: leg.strike,
+      ltp: leg.ltp,
+      bid: leg.bid,
+      ask: leg.ask,
+      volume: leg.volume,
+      oi: leg.oi,
+      oiChange: leg.oiChange,
+      oiChangePercent: leg.oiChangePercent,
+      greeks: leg.greeks,
+      lotSize,
+      buyCostPerLot,
+      sellMarginPerLot,
+      maxLots,
+      maxQuantity:
+        maxLots !== null && lotSize ? maxLots * lotSize : null,
+      affordable,
+      depth: depth
+        ? {
+            totalBuyQty: depth.totalBuyQty,
+            totalSellQty: depth.totalSellQty,
+            imbalancePercent: depthResult.imbalancePercent
+          }
+        : null,
+      exactTakerOrderFlowAvailable: false,
+      score: Math.round(
+        Math.max(0, Math.min(100, base + depthResult.points))
+      )
+    });
+  }
+
+  return enriched;
 }
 
 export async function GET(request: NextRequest) {
@@ -377,22 +385,20 @@ export async function GET(request: NextRequest) {
       .filter((item) => Number.isFinite(item.base))
       .sort((a, b) => b.base - a.base);
 
-    const [buyEnriched, sellEnriched] = await Promise.all([
-      enrichCandidates(
-        session.accessToken,
-        buyCandidates,
-        lotSizes,
-        "BUY",
-        capital
-      ),
-      enrichCandidates(
-        session.accessToken,
-        sellCandidates,
-        lotSizes,
-        "SELL",
-        capital
-      )
-    ]);
+    const buyEnriched = await enrichCandidates(
+      session.accessToken,
+      buyCandidates,
+      lotSizes,
+      "BUY",
+      capital
+    );
+    const sellEnriched = await enrichCandidates(
+      session.accessToken,
+      sellCandidates,
+      lotSizes,
+      "SELL",
+      capital
+    );
 
     const rank = <T extends { score: number; affordable: boolean }>(
       items: T[]
