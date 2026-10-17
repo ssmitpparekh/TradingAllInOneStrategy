@@ -2685,3 +2685,95 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Exact live buyer/seller volume bars */
+.exactVolumeLayer {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  bottom: 22px;
+  left: 0;
+  height: 122px;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.exactVolumeLegend {
+  position: absolute;
+  right: 10px;
+  bottom: 100px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 7px;
+  border: 1px solid rgba(80, 94, 116, 0.35);
+  border-radius: 7px;
+  background: rgba(9, 14, 21, 0.78);
+  color: #8e9bad;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+}
+
+.exactVolumeLegend .buyKey,
+.exactVolumeLegend .sellKey {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+}
+
+.exactVolumeLegend .buyKey {
+  background: #28c76f;
+}
+
+.exactVolumeLegend .sellKey {
+  margin-left: 5px;
+  background: #ea5455;
+}
+
+.exactVolumeBar {
+  position: absolute;
+  bottom: 0;
+  display: flex;
+  min-width: 3px;
+  overflow: hidden;
+  flex-direction: column;
+  justify-content: flex-end;
+  border-radius: 2px 2px 0 0;
+  opacity: 0.82;
+  transform: translateZ(0);
+}
+
+.exactVolumeBar.partial {
+  opacity: 0.48;
+  outline: 1px dashed rgba(255, 255, 255, 0.28);
+  outline-offset: 1px;
+}
+
+.exactVolumeBuy,
+.exactVolumeSell {
+  display: block;
+  width: 100%;
+  flex: 0 0 auto;
+}
+
+.exactVolumeBuy {
+  background: rgba(40, 199, 111, 0.86);
+}
+
+.exactVolumeSell {
+  background: rgba(234, 84, 85, 0.86);
+}
+
+@media (max-width: 700px) {
+  .exactVolumeLayer {
+    bottom: 20px;
+    height: 104px;
+  }
+
+  .exactVolumeLegend {
+    right: 6px;
+    bottom: 84px;
+  }
+}

@@ -5,7 +5,6 @@ import {
   CandlestickSeries,
   ColorType,
   CrosshairMode,
-  HistogramSeries,
   LineSeries,
   createChart,
   type CandlestickData,
@@ -55,7 +54,6 @@ type Props = {
   showFvg?: boolean;
   showLiquidity?: boolean;
   showOrderBlocks?: boolean;
-  showVolume?: boolean;
   showVwap?: boolean;
   showProfile?: boolean;
   showEma?: boolean;
@@ -143,7 +141,6 @@ export default function MarketChart({
   showFvg = true,
   showLiquidity = true,
   showOrderBlocks = true,
-  showVolume = true,
   showVwap = true,
   showProfile = true,
   showEma = true,
@@ -156,18 +153,26 @@ export default function MarketChart({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const sessionVwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const anchoredVwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const ema20SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const ema50SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const ema200SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const buyFlowSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
-  const sellFlowSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const analysisLinesRef = useRef<IPriceLine[]>([]);
   const [hovered, setHovered] = useState<ChartCandle | null>(null);
   const [sessionBreakPositions, setSessionBreakPositions] = useState<
     Array<{ time: number; x: number }>
+  >([]);
+  const [orderFlowBarPositions, setOrderFlowBarPositions] = useState<
+    Array<{
+      time: number;
+      x: number;
+      width: number;
+      totalHeight: number;
+      buyHeight: number;
+      sellHeight: number;
+      partial: boolean;
+    }>
   >([]);
 
   const orderFlowByTime = useMemo(
@@ -295,41 +300,6 @@ export default function MarketChart({
       priceLineVisible: true
     });
 
-    const volumeSeries = chart.addSeries(HistogramSeries, {
-      priceScaleId: "",
-      priceFormat: { type: "volume" },
-      lastValueVisible: false,
-      priceLineVisible: false
-    });
-    chart.priceScale("").applyOptions({
-      scaleMargins: {
-        top: 0.88,
-        bottom: 0
-      }
-    });
-
-    const buyFlowSeries = chart.addSeries(HistogramSeries, {
-      priceScaleId: "orderFlow",
-      priceFormat: { type: "volume" },
-      lastValueVisible: false,
-      priceLineVisible: false
-    });
-
-    const sellFlowSeries = chart.addSeries(HistogramSeries, {
-      priceScaleId: "orderFlow",
-      priceFormat: { type: "volume" },
-      lastValueVisible: false,
-      priceLineVisible: false
-    });
-
-    chart.priceScale("orderFlow").applyOptions({
-      scaleMargins: {
-        top: 0.68,
-        bottom: 0.13
-      },
-      visible: false
-    });
-
     const sessionVwapSeries = chart.addSeries(LineSeries, {
       color: "#4d8dff",
       lineWidth: 2,
@@ -374,14 +344,11 @@ export default function MarketChart({
 
     chartRef.current = chart;
     seriesRef.current = series;
-    volumeSeriesRef.current = volumeSeries;
     sessionVwapSeriesRef.current = sessionVwapSeries;
     anchoredVwapSeriesRef.current = anchoredVwapSeries;
     ema20SeriesRef.current = ema20Series;
     ema50SeriesRef.current = ema50Series;
     ema200SeriesRef.current = ema200Series;
-    buyFlowSeriesRef.current = buyFlowSeries;
-    sellFlowSeriesRef.current = sellFlowSeries;
 
     chart.subscribeCrosshairMove((param) => {
       const item = param.seriesData.get(series);
@@ -458,14 +425,11 @@ export default function MarketChart({
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
-      volumeSeriesRef.current = null;
       sessionVwapSeriesRef.current = null;
       anchoredVwapSeriesRef.current = null;
       ema20SeriesRef.current = null;
       ema50SeriesRef.current = null;
       ema200SeriesRef.current = null;
-      buyFlowSeriesRef.current = null;
-      sellFlowSeriesRef.current = null;
     };
   }, []);
 
@@ -832,51 +796,99 @@ export default function MarketChart({
   ]);
 
   useEffect(() => {
-    const volumeSeries = volumeSeriesRef.current;
-    if (!volumeSeries) return;
+    const chart = chartRef.current;
+    const host = hostRef.current;
 
-    if (!showVolume || !volumeAnalytics?.available) {
-      volumeSeries.setData([]);
+    if (
+      !chart ||
+      !host ||
+      !showOrderFlow ||
+      orderFlowBuckets.length === 0
+    ) {
+      setOrderFlowBarPositions([]);
       return;
     }
 
-    volumeSeries.setData(
-      candles
-        .filter((candle) => Number(candle.volume ?? 0) > 0)
-        .map((candle) => ({
-          time: candle.time as Time,
-          value: Number(candle.volume ?? 0),
-          color: "rgba(132, 145, 166, 0.34)"
+    const updateBars = () => {
+      const hostWidth = host.clientWidth;
+      const maxPaneHeight = Math.max(
+        64,
+        Math.min(118, Math.round(host.clientHeight * 0.2))
+      );
+
+      const visible = orderFlowBuckets
+        .map((bucket) => ({
+          bucket,
+          x: chart.timeScale().timeToCoordinate(bucket.time as Time)
         }))
-    );
-  }, [candles, volumeAnalytics, showVolume]);
+        .filter(
+          (
+            item
+          ): item is {
+            bucket: OrderFlowBucket;
+            x: Exclude<typeof item.x, null>;
+          } =>
+            item.x !== null &&
+            Number(item.x) >= -20 &&
+            Number(item.x) <= hostWidth + 20
+        )
+        .map((item) => ({
+          bucket: item.bucket,
+          x: Number(item.x)
+        }))
+        .sort((a, b) => a.x - b.x);
 
-  useEffect(() => {
-    const buySeries = buyFlowSeriesRef.current;
-    const sellSeries = sellFlowSeriesRef.current;
-    if (!buySeries || !sellSeries) return;
+      if (!visible.length) {
+        setOrderFlowBarPositions([]);
+        return;
+      }
 
-    if (!showOrderFlow || orderFlowBuckets.length === 0) {
-      buySeries.setData([]);
-      sellSeries.setData([]);
-      return;
-    }
+      const totals = visible.map(
+        ({ bucket }) => bucket.buyVolume + bucket.sellVolume
+      );
+      const maxTotal = Math.max(...totals, 0);
 
-    buySeries.setData(
-      orderFlowBuckets.map((bucket) => ({
-        time: bucket.time as Time,
-        value: bucket.buyVolume,
-        color: "rgba(40, 199, 111, 0.76)"
-      }))
-    );
+      const spacings = visible
+        .slice(1)
+        .map((item, index) => item.x - visible[index].x)
+        .filter((spacing) => spacing > 1);
+      const spacing = spacings.length
+        ? Math.min(...spacings)
+        : Math.max(6, chart.timeScale().options().barSpacing ?? 8);
+      const width = Math.max(3, Math.min(20, spacing * 0.72));
 
-    sellSeries.setData(
-      orderFlowBuckets.map((bucket) => ({
-        time: bucket.time as Time,
-        value: -bucket.sellVolume,
-        color: "rgba(234, 84, 85, 0.76)"
-      }))
-    );
+      setOrderFlowBarPositions(
+        visible.map(({ bucket, x }) => {
+          const total = bucket.buyVolume + bucket.sellVolume;
+          const totalHeight =
+            maxTotal > 0
+              ? Math.max(3, (total / maxTotal) * maxPaneHeight)
+              : 0;
+          const buyHeight =
+            total > 0 ? totalHeight * (bucket.buyVolume / total) : 0;
+          const sellHeight = Math.max(0, totalHeight - buyHeight);
+
+          return {
+            time: bucket.time,
+            x,
+            width,
+            totalHeight,
+            buyHeight,
+            sellHeight,
+            partial: bucket.partial
+          };
+        })
+      );
+    };
+
+    updateBars();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(updateBars);
+    window.addEventListener("resize", updateBars);
+
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateBars);
+      window.removeEventListener("resize", updateBars);
+    };
   }, [orderFlowBuckets, showOrderFlow]);
 
   useEffect(() => {
@@ -980,6 +992,38 @@ export default function MarketChart({
               </span>
             </>
           ) : null}
+        </div>
+      ) : null}
+      {showOrderFlow && orderFlowBarPositions.length ? (
+        <div className="exactVolumeLayer" aria-hidden="true">
+          <div className="exactVolumeLegend">
+            <span className="buyKey" /> BUY
+            <span className="sellKey" /> SELL
+          </div>
+          {orderFlowBarPositions.map((bar) => (
+            <div
+              className={
+                bar.partial
+                  ? "exactVolumeBar partial"
+                  : "exactVolumeBar"
+              }
+              key={bar.time}
+              style={{
+                left: bar.x - bar.width / 2,
+                width: bar.width,
+                height: bar.totalHeight
+              }}
+            >
+              <span
+                className="exactVolumeBuy"
+                style={{ height: bar.buyHeight }}
+              />
+              <span
+                className="exactVolumeSell"
+                style={{ height: bar.sellHeight }}
+              />
+            </div>
+          ))}
         </div>
       ) : null}
       {showSessionBreaks ? (
