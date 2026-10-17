@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
 
       try {
         socket = fyersDataSocket.getInstance(websocketToken, "", false);
-        socket.autoReconnect(10);
+        socket.autoreconnect(10);
         socket.setQueueProcessInterval?.(200);
 
         socket.on("connect", () => {
