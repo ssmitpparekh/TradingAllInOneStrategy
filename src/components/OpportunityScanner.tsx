@@ -5,6 +5,7 @@ import {
   buildScannerStaticContext,
   evaluateScannerContext,
   scannerBucketStart,
+  scannerQuoteIsFresh,
   type ScannerInstrument,
   type ScannerLiveState,
   type ScannerOpportunity,
@@ -199,17 +200,9 @@ function opportunityPriority(
     market: opportunity.instrument.market
   });
 
-  const structurePriority =
-    opportunity.state === "STRONG"
-      ? 3
-      : opportunity.state === "LIVE SWEEP"
-        ? 2
-        : 1;
-
   return (
     newsRiskPriority(gate.riskLevel) * 1000 +
     (gate.direction === opportunity.direction ? 100 : 0) +
-    structurePriority * 10 +
     opportunity.score
   );
 }
@@ -330,7 +323,8 @@ export default function OpportunityScanner({
   const [opportunities, setOpportunities] = useState<ScannerOpportunity[]>([]);
   const [warming, setWarming] = useState(false);
   const [warmed, setWarmed] = useState(0);
-  const [scannerLive, setScannerLive] = useState(false);
+  const [fyersLive, setFyersLive] = useState(false);
+  const [krakenLive, setKrakenLive] = useState(false);
   const [lastTickAt, setLastTickAt] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const [derivativeIdeas, setDerivativeIdeas] = useState<
@@ -351,6 +345,7 @@ export default function OpportunityScanner({
 
   const totalUniverse =
     (universe?.fyers.length ?? 0) + (universe?.kraken.length ?? 0);
+  const scannerLive = fyersLive || krakenLive;
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -483,16 +478,23 @@ export default function OpportunityScanner({
       quotes: Array<{ symbol: string; ltp: number; timestamp?: number }>
     ) => {
       const bySymbol = new Map(batch.map((item) => [item.symbol, item]));
+      let freshCount = 0;
 
       for (const quote of quotes) {
         const instrument = bySymbol.get(quote.symbol);
         const price = Number(quote.ltp ?? 0);
         if (!instrument || !(price > 0)) continue;
 
-        const time =
+        const sourceTime =
           Number(quote.timestamp ?? 0) > 1_000_000_000
             ? Number(quote.timestamp)
+            : 0;
+
+        const time =
+          sourceTime > 0
+            ? sourceTime
             : Math.floor(Date.now() / 1000);
+
         const bucket = scannerBucketStart(
           time,
           15,
@@ -508,6 +510,7 @@ export default function OpportunityScanner({
                 observedLow: price,
                 observedSince: time,
                 updatedAt: Date.now(),
+                sourceTime,
                 bucket
               }
             : {
@@ -515,15 +518,26 @@ export default function OpportunityScanner({
                 price,
                 observedHigh: Math.max(previous.observedHigh, price),
                 observedLow: Math.min(previous.observedLow, price),
-                updatedAt: Date.now()
+                updatedAt: Date.now(),
+                sourceTime
               };
 
         liveRef.current.set(quote.symbol, next);
+
+        if (
+          scannerQuoteIsFresh(
+            instrument.market,
+            sourceTime
+          )
+        ) {
+          freshCount += 1;
+        }
       }
 
-      if (quotes.length) {
+      setFyersLive(freshCount > 0);
+
+      if (freshCount > 0) {
         setLastTickAt(Date.now());
-        setScannerLive(true);
       }
     };
 
@@ -548,7 +562,7 @@ export default function OpportunityScanner({
           }
         }
       } catch {
-        setScannerLive(false);
+        setFyersLive(false);
       }
     };
 
@@ -584,7 +598,7 @@ export default function OpportunityScanner({
           const payload = JSON.parse(
             (event as MessageEvent<string>).data
           );
-          if (payload.connected) setScannerLive(true);
+          setKrakenLive(Boolean(payload.connected));
         } catch {
           // no-op
         }
@@ -662,6 +676,7 @@ export default function OpportunityScanner({
             observedLow: candle.low,
             observedSince: candle.time,
             updatedAt: Date.now(),
+            sourceTime: Math.floor(Date.now() / 1000),
             bucket:
               previous?.bucket === bucket
                 ? previous.bucket
@@ -681,6 +696,7 @@ export default function OpportunityScanner({
         source.close();
       }
       krakenSourcesRef.current = [];
+      setKrakenLive(false);
     };
   }, [universe]);
 
@@ -739,12 +755,14 @@ export default function OpportunityScanner({
         const live = liveRef.current.get(symbol);
         if (!live) continue;
 
-        const staleAfter =
-          context.instrument.market === "KRAKEN"
-            ? 30_000
-            : 90_000;
-
-        if (Date.now() - live.updatedAt > staleAfter) continue;
+        if (
+          !scannerQuoteIsFresh(
+            context.instrument.market,
+            live.sourceTime
+          )
+        ) {
+          continue;
+        }
 
         const opportunity = evaluateScannerContext(
           context,
@@ -824,8 +842,7 @@ export default function OpportunityScanner({
       .filter(
         (item) =>
           item.instrument.market !== "KRAKEN" &&
-          (item.state === "STRONG" ||
-            item.state === "LIVE SWEEP")
+          item.state === "STRONG"
       )
       .slice(0, 3);
 
@@ -867,7 +884,15 @@ export default function OpportunityScanner({
 
       for (const instrument of indices) {
         const live = liveRef.current.get(instrument.symbol);
-        if (!live?.price) continue;
+        if (
+          !live?.price ||
+          !scannerQuoteIsFresh(
+            instrument.market,
+            live.sourceTime
+          )
+        ) {
+          continue;
+        }
 
         try {
           const response = await fetch(
@@ -1003,7 +1028,15 @@ export default function OpportunityScanner({
     () =>
       opportunities
         .filter((opportunity) => {
-          if (opportunity.state !== "STRONG") return false;
+          if (
+            opportunity.state !== "STRONG" ||
+            !scannerQuoteIsFresh(
+              opportunity.instrument.market,
+              opportunity.sourceTime
+            )
+          ) {
+            return false;
+          }
 
           const gate = buildNewsGate({
             events: newsEvents,
@@ -1090,6 +1123,8 @@ export default function OpportunityScanner({
         <span>
           {liveAge === null ? "no tick yet" : liveAge + "s ago"}
         </span>
+        <span>{fyersLive ? "INDIA LIVE" : "INDIA CLOSED / STALE"}</span>
+        <span>{krakenLive ? "CRYPTO LIVE" : "CRYPTO WAITING"}</span>
         {universe ? (
           <span>
             FYERS {universe.coverage.fyersSymbols}/
@@ -1111,7 +1146,7 @@ export default function OpportunityScanner({
             const age = Math.max(
               0,
               Math.floor(
-                (now - opportunity.updatedAt) / 1000
+                (now - opportunity.sourceTime * 1000) / 1000
               )
             );
 
@@ -1165,7 +1200,7 @@ export default function OpportunityScanner({
 
                   <div className="scannerScoreRow">
                     <span className="scannerState">
-                      CONFIRMED STRONG
+                      CONFIRMED {opportunity.moveClass}
                     </span>
                     <b>{opportunity.score}/100</b>
                     {derivativeConfirm ? (
@@ -1175,15 +1210,18 @@ export default function OpportunityScanner({
                     <small>{age}s</small>
                   </div>
 
-                  <p>{opportunity.trigger}</p>
-                  {opportunity.zone ? (
-                    <small>
-                      Zone{" "}
-                      {formatPrice(opportunity.zone.low)}
-                      {" – "}
-                      {formatPrice(opportunity.zone.high)}
-                    </small>
-                  ) : null}
+                  <p>{opportunity.trigger} · {opportunity.confirmationTimeframe}</p>
+                  <div className="scannerTradeLevels">
+                    <span>
+                      ENTRY <b>{formatPrice(opportunity.entry)}</b>
+                    </span>
+                    <span>
+                      SL <b>{formatPrice(opportunity.stopLoss)}</b>
+                    </span>
+                    <span>
+                      T1 <b>{formatPrice(opportunity.targets[0].price)}</b>
+                    </span>
+                  </div>
                 </button>
 
                 {idea ? (
@@ -1252,8 +1290,8 @@ export default function OpportunityScanner({
       </div>
 
       <div className="scannerFooter">
-        <span>Ranks every 1s · India refresh ~20s</span>
-        <span>Crypto live · options deep-scan ~5m</span>
+        <span>Only fresh, chart-READY trades are shown</span>
+        <span>Closed/stale markets are excluded</span>
       </div>
     </aside>
   );
