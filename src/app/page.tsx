@@ -24,6 +24,67 @@ type Quote = {
   ask: number;
 };
 
+type DerivativeLeg = {
+  symbol: string;
+  optionType: "CE" | "PE";
+  strike: number;
+  ltp: number;
+  bid: number;
+  ask: number;
+  volume: number;
+  oi: number;
+  oiChange: number;
+  oiChangePercent: number;
+  previousOi: number;
+  greeks: {
+    delta: number;
+    gamma: number;
+    theta: number;
+    vega: number;
+    iv: number;
+  } | null;
+};
+
+type DerivativesData = {
+  available: boolean;
+  reason?: string;
+  underlying?: string;
+  future?: {
+    symbol: string;
+    expiry: number | null;
+    price: number;
+    change: number;
+    changePercent: number;
+    volume: number;
+    oi: number | null;
+    previousOi: number | null;
+    oiChange: number | null;
+    oiChangePercent: number | null;
+    basis: number | null;
+    basisPercent: number | null;
+  } | null;
+  options?: {
+    callOi: number;
+    putOi: number;
+    pcr: number | null;
+    indiaVix: number | null;
+    futuresPrice: number | null;
+    nearestExpiry: { date: string; expiry: number } | null;
+    expiries: Array<{ date: string; expiry: number }>;
+    atm: {
+      strike: number | null;
+      call: DerivativeLeg | null;
+      put: DerivativeLeg | null;
+    };
+    callOiWalls: DerivativeLeg[];
+    putOiWalls: DerivativeLeg[];
+    callOiBuild: DerivativeLeg[];
+    putOiBuild: DerivativeLeg[];
+    callUnwinding: DerivativeLeg[];
+    putUnwinding: DerivativeLeg[];
+  } | null;
+};
+
 type Instrument = {
   symbol: string;
   name: string;
@@ -164,6 +225,8 @@ export default function Home() {
   const [showVolume, setShowVolume] = useState(true);
   const [showVwap, setShowVwap] = useState(true);
   const [showProfile, setShowProfile] = useState(true);
+  const [derivatives, setDerivatives] = useState<DerivativesData | null>(null);
+  const [loadingDerivatives, setLoadingDerivatives] = useState(false);
   const historyRequestId = useRef(0);
 
   const selectedIsKraken = selected.market === "KRAKEN";
@@ -191,6 +254,56 @@ export default function Home() {
       }),
     [candles, selectedIsKraken, fibonacci.anchorA?.time]
   );
+
+  async function fetchDerivatives(
+    silent = false,
+    signal?: AbortSignal
+  ) {
+    if (selectedIsKraken || !connected) {
+      setDerivatives(null);
+      return;
+    }
+
+    if (!silent) setLoadingDerivatives(true);
+
+    try {
+      const params = new URLSearchParams({
+        symbol: selected.symbol,
+        market: selected.market,
+        type: selected.type,
+        underlying: selected.underlying || "",
+        spotPrice: String(quote?.lp ?? 0)
+      });
+
+      const response = await fetch(
+        `/api/fyers/derivatives?${params.toString()}`,
+        { cache: "no-store", signal }
+      );
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(
+          data.error || "Unable to load derivatives confirmation."
+        );
+      }
+
+      setDerivatives(data);
+    } catch (error) {
+      if (signal?.aborted) return;
+
+      setDerivatives({
+        available: false,
+        reason:
+          error instanceof Error
+            ? error.message
+            : "Unable to load derivatives confirmation."
+      });
+    } finally {
+      if (!signal?.aborted && !silent) {
+        setLoadingDerivatives(false);
+      }
+    }
+  }
 
   async function refreshStatus() {
     try {
@@ -531,6 +644,33 @@ export default function Home() {
     selected.market,
     selectedIsKraken,
     resolution
+  ]);
+
+  useEffect(() => {
+    if (selectedIsKraken || !connected) {
+      setDerivatives(null);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    void fetchDerivatives(false, controller.signal);
+
+    const timer = window.setInterval(() => {
+      void fetchDerivatives(true);
+    }, 30_000);
+
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+    };
+  }, [
+    connected,
+    selectedIsKraken,
+    selected.symbol,
+    selected.market,
+    selected.type,
+    selected.underlying
   ]);
 
   useEffect(() => {
@@ -1166,6 +1306,203 @@ export default function Home() {
             dynamically excluded from the future confluence score.
           </p>
         ) : null}
+
+        <section className="derivativesPanel">
+          <div className="derivativesHeader">
+            <div>
+              <span className="toolbarLabel">DERIVATIVES CONFIRMATION</span>
+              <strong>
+                {selectedIsKraken
+                  ? "Not connected for this provider"
+                  : loadingDerivatives
+                    ? "Loading FYERS futures/options…"
+                    : derivatives?.available
+                      ? derivatives.underlying || "FYERS F&O"
+                      : "Unavailable for this instrument"}
+              </strong>
+            </div>
+            {!selectedIsKraken && derivatives?.available ? (
+              <span className="derivativesBadge">FYERS F&O</span>
+            ) : null}
+          </div>
+
+          {!selectedIsKraken && derivatives?.available ? (
+            <>
+              <div className="derivativesSummary">
+                <div>
+                  <span>NEAREST FUTURE</span>
+                  <strong>
+                    {derivatives.future?.symbol
+                      ? derivatives.future.symbol.replace(/^.*:/, "")
+                      : "—"}
+                  </strong>
+                  <small>
+                    {derivatives.future?.expiry
+                      ? new Date(
+                          derivatives.future.expiry * 1000
+                        ).toLocaleDateString("en-IN", {
+                          timeZone: "Asia/Kolkata",
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric"
+                        })
+                      : ""}
+                  </small>
+                </div>
+                <div>
+                  <span>FUTURE PRICE / BASIS</span>
+                  <strong>
+                    {derivatives.future
+                      ? derivatives.future.price.toLocaleString("en-IN", {
+                          maximumFractionDigits: 2
+                        })
+                      : "—"}
+                  </strong>
+                  <small>
+                    {derivatives.future?.basis !== null &&
+                    derivatives.future?.basis !== undefined
+                      ? `Basis ${derivatives.future.basis >= 0 ? "+" : ""}${derivatives.future.basis.toFixed(2)} (${derivatives.future.basisPercent?.toFixed(2) ?? "—"}%)`
+                      : ""}
+                  </small>
+                </div>
+                <div>
+                  <span>FUTURES OI / ΔOI</span>
+                  <strong>
+                    {derivatives.future?.oi !== null &&
+                    derivatives.future?.oi !== undefined
+                      ? derivatives.future.oi.toLocaleString("en-IN")
+                      : "—"}
+                  </strong>
+                  <small>
+                    {derivatives.future?.oiChange !== null &&
+                    derivatives.future?.oiChange !== undefined
+                      ? `ΔOI ${derivatives.future.oiChange >= 0 ? "+" : ""}${derivatives.future.oiChange.toLocaleString("en-IN")}`
+                      : ""}
+                  </small>
+                </div>
+                <div>
+                  <span>PCR · CALL OI / PUT OI</span>
+                  <strong>
+                    {derivatives.options?.pcr !== null &&
+                    derivatives.options?.pcr !== undefined
+                      ? derivatives.options.pcr.toFixed(2)
+                      : "—"}
+                  </strong>
+                  <small>
+                    {derivatives.options
+                      ? `CE ${derivatives.options.callOi.toLocaleString("en-IN")} · PE ${derivatives.options.putOi.toLocaleString("en-IN")}`
+                      : ""}
+                  </small>
+                </div>
+              </div>
+
+              {derivatives.options ? (
+                <div className="derivativesSummary secondary">
+                  <div>
+                    <span>NEAREST EXPIRY</span>
+                    <strong>
+                      {derivatives.options.nearestExpiry?.date ?? "—"}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>ATM STRIKE</span>
+                    <strong>
+                      {derivatives.options.atm.strike !== null
+                        ? derivatives.options.atm.strike.toLocaleString("en-IN")
+                        : "—"}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>ATM CE IV / Δ</span>
+                    <strong>
+                      {derivatives.options.atm.call?.greeks
+                        ? `${derivatives.options.atm.call.greeks.iv.toFixed(2)}% / ${derivatives.options.atm.call.greeks.delta.toFixed(3)}`
+                        : "—"}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>ATM PE IV / Δ</span>
+                    <strong>
+                      {derivatives.options.atm.put?.greeks
+                        ? `${derivatives.options.atm.put.greeks.iv.toFixed(2)}% / ${derivatives.options.atm.put.greeks.delta.toFixed(3)}`
+                        : "—"}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>INDIA VIX</span>
+                    <strong>
+                      {derivatives.options.indiaVix !== null
+                        ? derivatives.options.indiaVix.toFixed(2)
+                        : "—"}
+                    </strong>
+                  </div>
+                </div>
+              ) : null}
+
+              {derivatives.options ? (
+                <div className="oiWallsGrid">
+                  <div className="oiWallPanel">
+                    <span className="toolbarLabel">TOP CALL OI WALLS</span>
+                    {derivatives.options.callOiWalls.map((leg) => (
+                      <div className="oiWallRow call" key={leg.symbol}>
+                        <span>{leg.strike.toLocaleString("en-IN")} CE</span>
+                        <strong>{leg.oi.toLocaleString("en-IN")}</strong>
+                        <small>
+                          Δ {leg.oiChange >= 0 ? "+" : ""}
+                          {leg.oiChange.toLocaleString("en-IN")}
+                        </small>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="oiWallPanel">
+                    <span className="toolbarLabel">TOP PUT OI WALLS</span>
+                    {derivatives.options.putOiWalls.map((leg) => (
+                      <div className="oiWallRow put" key={leg.symbol}>
+                        <span>{leg.strike.toLocaleString("en-IN")} PE</span>
+                        <strong>{leg.oi.toLocaleString("en-IN")}</strong>
+                        <small>
+                          Δ {leg.oiChange >= 0 ? "+" : ""}
+                          {leg.oiChange.toLocaleString("en-IN")}
+                        </small>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="oiWallPanel">
+                    <span className="toolbarLabel">CALL OI BUILD</span>
+                    {derivatives.options.callOiBuild.map((leg) => (
+                      <div className="oiWallRow call" key={leg.symbol}>
+                        <span>{leg.strike.toLocaleString("en-IN")} CE</span>
+                        <strong>
+                          +{leg.oiChange.toLocaleString("en-IN")}
+                        </strong>
+                        <small>{leg.oiChangePercent.toFixed(1)}%</small>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="oiWallPanel">
+                    <span className="toolbarLabel">PUT OI BUILD</span>
+                    {derivatives.options.putOiBuild.map((leg) => (
+                      <div className="oiWallRow put" key={leg.symbol}>
+                        <span>{leg.strike.toLocaleString("en-IN")} PE</span>
+                        <strong>
+                          +{leg.oiChange.toLocaleString("en-IN")}
+                        </strong>
+                        <small>{leg.oiChangePercent.toFixed(1)}%</small>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <p className="derivativesUnavailable">
+              {selectedIsKraken
+                ? "Kraken spot is currently analysed without FYERS futures/options confirmation. The future confluence score will redistribute this unavailable input."
+                : derivatives?.reason ||
+                  "No current futures/options chain is available for this instrument. This input will be excluded rather than scored as negative."}
+            </p>
+          )}
+        </section>
 
         <div className="analysisSummary">
           <div>
