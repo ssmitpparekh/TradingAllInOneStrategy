@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import MarketChart, { type ChartCandle } from "@/components/MarketChart";
 import {
   buildFibonacciSetup,
+  buildImbalanceLiquiditySnapshot,
   buildMarketStructure
 } from "@/lib/analysis/market-structure";
 
@@ -155,6 +156,8 @@ export default function Home() {
   const [showFib, setShowFib] = useState(true);
   const [showTrendFib, setShowTrendFib] = useState(true);
   const [showStructure, setShowStructure] = useState(true);
+  const [showFvg, setShowFvg] = useState(true);
+  const [showLiquidity, setShowLiquidity] = useState(true);
   const historyRequestId = useRef(0);
 
   const selectedIsKraken = selected.market === "KRAKEN";
@@ -164,6 +167,10 @@ export default function Home() {
   );
   const structure = useMemo(
     () => buildMarketStructure(candles),
+    [candles]
+  );
+  const imbalance = useMemo(
+    () => buildImbalanceLiquiditySnapshot(candles),
     [candles]
   );
 
@@ -832,9 +839,12 @@ export default function Home() {
           rangeKey={range}
           fibonacci={fibonacci}
           structure={structure}
+          imbalance={imbalance}
           showFib={showFib}
           showTrendFib={showTrendFib}
           showStructure={showStructure}
+          showFvg={showFvg}
+          showLiquidity={showLiquidity}
         />
 
         {quote ? (
@@ -888,6 +898,22 @@ export default function Home() {
             >
               Structure {showStructure ? "ON" : "OFF"}
             </button>
+            <button
+              className={showFvg ? "analysisToggle active" : "analysisToggle"}
+              onClick={() => setShowFvg((value) => !value)}
+            >
+              FVG {showFvg ? "ON" : "OFF"}
+            </button>
+            <button
+              className={
+                showLiquidity
+                  ? "analysisToggle active"
+                  : "analysisToggle"
+              }
+              onClick={() => setShowLiquidity((value) => !value)}
+            >
+              Liquidity {showLiquidity ? "ON" : "OFF"}
+            </button>
           </div>
         </div>
 
@@ -926,6 +952,45 @@ export default function Home() {
                     maximumFractionDigits: 2
                   })}`
                 : "—"}
+            </strong>
+          </div>
+        </div>
+
+        <div className="imbalanceStrip">
+          <div>
+            <span>ACTIVE FVGs</span>
+            <strong>{imbalance.activeFvgs.length}</strong>
+          </div>
+          <div>
+            <span>LATEST SWEEP</span>
+            <strong
+              className={
+                imbalance.latestSweep
+                  ? `sweepDirection ${imbalance.latestSweep.direction}`
+                  : ""
+              }
+            >
+              {imbalance.latestSweep
+                ? `${imbalance.latestSweep.direction.toUpperCase()} ${imbalance.latestSweep.direction === "bullish" ? "↑" : "↓"}`
+                : "—"}
+            </strong>
+          </div>
+          <div>
+            <span>SWEEP LEVEL</span>
+            <strong>
+              {imbalance.latestSweep
+                ? imbalance.latestSweep.level.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })
+                : "—"}
+            </strong>
+          </div>
+          <div>
+            <span>FVG STATE</span>
+            <strong>
+              {imbalance.activeFvgs.length
+                ? `${imbalance.activeFvgs.filter((gap) => gap.status === "active").length} active · ${imbalance.activeFvgs.filter((gap) => gap.status === "touched").length} touched`
+                : "None nearby"}
             </strong>
           </div>
         </div>
@@ -1075,6 +1140,87 @@ export default function Home() {
             be selected.
           </p>
         )}
+
+        {imbalance.activeFvgs.length ? (
+          <div className="imbalanceGrid">
+            <div className="imbalancePanel">
+              <span className="toolbarLabel">ACTIVE / TOUCHED FVGs</span>
+              <div className="fvgRows">
+                {imbalance.activeFvgs
+                  .slice()
+                  .reverse()
+                  .map((gap) => (
+                    <div
+                      className={`fvgRow ${gap.direction} ${gap.status}`}
+                      key={`${gap.createdTime}-${gap.direction}`}
+                    >
+                      <div>
+                        <strong>
+                          {gap.direction === "bullish" ? "Bull FVG" : "Bear FVG"}
+                        </strong>
+                        <span>{gap.status.toUpperCase()}</span>
+                      </div>
+                      <div>
+                        {gap.lower.toLocaleString("en-IN", {
+                          maximumFractionDigits: 2
+                        })}
+                        {" – "}
+                        {gap.upper.toLocaleString("en-IN", {
+                          maximumFractionDigits: 2
+                        })}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+            <div className="imbalancePanel">
+              <span className="toolbarLabel">RECENT LIQUIDITY SWEEPS</span>
+              {imbalance.recentSweeps.length ? (
+                <div className="eventChips">
+                  {imbalance.recentSweeps
+                    .slice()
+                    .reverse()
+                    .map((sweep) => (
+                      <span
+                        className={`eventChip ${sweep.direction}`}
+                        key={`${sweep.time}-${sweep.direction}-${sweep.level}`}
+                      >
+                        Sweep {sweep.direction === "bullish" ? "↑" : "↓"}{" "}
+                        {sweep.level.toLocaleString("en-IN", {
+                          maximumFractionDigits: 2
+                        })}
+                      </span>
+                    ))}
+                </div>
+              ) : (
+                <p className="analysisWaiting">
+                  No confirmed liquidity sweep in the loaded window.
+                </p>
+              )}
+            </div>
+          </div>
+        ) : imbalance.recentSweeps.length ? (
+          <div className="imbalancePanel standalone">
+            <span className="toolbarLabel">RECENT LIQUIDITY SWEEPS</span>
+            <div className="eventChips">
+              {imbalance.recentSweeps
+                .slice()
+                .reverse()
+                .map((sweep) => (
+                  <span
+                    className={`eventChip ${sweep.direction}`}
+                    key={`${sweep.time}-${sweep.direction}-${sweep.level}`}
+                  >
+                    Sweep {sweep.direction === "bullish" ? "↑" : "↓"}{" "}
+                    {sweep.level.toLocaleString("en-IN", {
+                      maximumFractionDigits: 2
+                    })}
+                  </span>
+                ))}
+            </div>
+          </div>
+        ) : null}
 
         {structure.recentEvents.length ? (
           <div className="structureEvents">
