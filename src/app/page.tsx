@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import MarketChart, { type ChartCandle } from "@/components/MarketChart";
+import { buildFibonacciSetup } from "@/lib/analysis/market-structure";
 
 type Quote = {
   symbol: string;
@@ -148,9 +149,15 @@ export default function Home() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [liveCandle, setLiveCandle] = useState<ChartCandle | null>(null);
+  const [showFib, setShowFib] = useState(true);
+  const [showTrendFib, setShowTrendFib] = useState(true);
   const historyRequestId = useRef(0);
 
   const selectedIsKraken = selected.market === "KRAKEN";
+  const fibonacci = useMemo(
+    () => buildFibonacciSetup(candles),
+    [candles]
+  );
 
   async function refreshStatus() {
     try {
@@ -815,6 +822,9 @@ export default function Home() {
           liveCandle={liveCandle}
           fitNonce={fitNonce}
           rangeKey={range}
+          fibonacci={fibonacci}
+          showFib={showFib}
+          showTrendFib={showTrendFib}
         />
 
         {quote ? (
@@ -825,6 +835,208 @@ export default function Home() {
             <span>PC <strong>{quote.previousClose.toLocaleString("en-IN")}</strong></span>
             {quote.volume ? <span>VOL <strong>{quote.volume.toLocaleString("en-IN")}</strong></span> : null}
             <span className="feedNote">{streamMessage}</span>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="card analysisCard">
+        <div className="analysisHeader">
+          <div>
+            <p className="label">AUTOMATIC STRUCTURE + FIBONACCI</p>
+            <h3>
+              {fibonacci.direction === "bullish"
+                ? "Bullish swing"
+                : fibonacci.direction === "bearish"
+                  ? "Bearish swing"
+                  : "Waiting for confirmed swing"}
+            </h3>
+          </div>
+          <div className="analysisToggles">
+            <button
+              className={showFib ? "analysisToggle active" : "analysisToggle"}
+              onClick={() => setShowFib((value) => !value)}
+            >
+              Fib {showFib ? "ON" : "OFF"}
+            </button>
+            <button
+              className={
+                showTrendFib
+                  ? "analysisToggle active"
+                  : "analysisToggle"
+              }
+              onClick={() => setShowTrendFib((value) => !value)}
+            >
+              Trend Fib {showTrendFib ? "ON" : "OFF"}
+            </button>
+          </div>
+        </div>
+
+        <div className="analysisSummary">
+          <div>
+            <span>SWING A</span>
+            <strong>
+              {fibonacci.anchorA
+                ? fibonacci.anchorA.price.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })
+                : "—"}
+            </strong>
+            <small>
+              {fibonacci.anchorA
+                ? new Date(fibonacci.anchorA.time * 1000).toLocaleString(
+                    "en-IN",
+                    {
+                      timeZone: selectedIsKraken
+                        ? "UTC"
+                        : "Asia/Kolkata",
+                      day: "2-digit",
+                      month: "short",
+                      hour: "2-digit",
+                      minute: "2-digit"
+                    }
+                  )
+                : ""}
+            </small>
+          </div>
+
+          <div>
+            <span>SWING B</span>
+            <strong>
+              {fibonacci.anchorB
+                ? fibonacci.anchorB.price.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })
+                : "—"}
+            </strong>
+            <small>
+              {fibonacci.anchorB
+                ? new Date(fibonacci.anchorB.time * 1000).toLocaleString(
+                    "en-IN",
+                    {
+                      timeZone: selectedIsKraken
+                        ? "UTC"
+                        : "Asia/Kolkata",
+                      day: "2-digit",
+                      month: "short",
+                      hour: "2-digit",
+                      minute: "2-digit"
+                    }
+                  )
+                : ""}
+            </small>
+          </div>
+
+          <div>
+            <span>GOLDEN ZONE 61.8–78.6</span>
+            <strong>
+              {fibonacci.goldenZone
+                ? `${fibonacci.goldenZone.low.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })} – ${fibonacci.goldenZone.high.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })}`
+                : "—"}
+            </strong>
+          </div>
+
+          <div>
+            <span>ATR(14)</span>
+            <strong>
+              {fibonacci.atr14
+                ? fibonacci.atr14.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })
+                : "—"}
+            </strong>
+          </div>
+        </div>
+
+        {fibonacci.retracements.length ? (
+          <div className="fibTables">
+            <div className="fibTable">
+              <div className="fibTableTitle">RETRACEMENT LEVELS</div>
+              {fibonacci.retracements.map((level) => (
+                <div
+                  className={
+                    level.ratio === 0.618 ||
+                    level.ratio === 0.705 ||
+                    level.ratio === 0.786
+                      ? "fibRow important"
+                      : "fibRow"
+                  }
+                  key={level.ratio}
+                >
+                  <span>{level.label}</span>
+                  <strong>
+                    {level.price.toLocaleString("en-IN", {
+                      maximumFractionDigits: 2
+                    })}
+                  </strong>
+                </div>
+              ))}
+            </div>
+
+            <div className="fibTable">
+              <div className="fibTableTitle">TREND FIB EXTENSIONS</div>
+              {fibonacci.trendExtension ? (
+                <>
+                  <div className="extensionMeta">
+                    {fibonacci.trendExtension.direction.toUpperCase()} ·
+                    A→B→C confirmed
+                  </div>
+                  {fibonacci.trendExtension.levels.map((level) => (
+                    <div
+                      className={
+                        level.ratio === 1.272 ||
+                        level.ratio === 1.618
+                          ? "fibRow extension important"
+                          : "fibRow extension"
+                      }
+                      key={level.ratio}
+                    >
+                      <span>{level.label}</span>
+                      <strong>
+                        {level.price.toLocaleString("en-IN", {
+                          maximumFractionDigits: 2
+                        })}
+                      </strong>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <p className="analysisWaiting">
+                  Waiting for a confirmed A→B→C three-swing structure.
+                </p>
+              )}
+            </div>
+          </div>
+        ) : (
+          <p className="analysisWaiting">
+            More confirmed candles are needed before automatic Fib anchors can
+            be selected.
+          </p>
+        )}
+
+        {fibonacci.recentSwings.length ? (
+          <div className="recentSwings">
+            <span className="toolbarLabel">RECENT CONFIRMED SWINGS</span>
+            <div className="swingChips">
+              {fibonacci.recentSwings.map((swing) => (
+                <span
+                  className={
+                    swing.type === "high"
+                      ? "swingChip high"
+                      : "swingChip low"
+                  }
+                  key={`${swing.time}-${swing.type}`}
+                >
+                  {swing.type === "high" ? "H" : "L"}{" "}
+                  {swing.price.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })}
+                </span>
+              ))}
+            </div>
           </div>
         ) : null}
       </section>

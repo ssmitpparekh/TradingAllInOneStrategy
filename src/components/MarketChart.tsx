@@ -8,9 +8,12 @@ import {
   createChart,
   type CandlestickData,
   type IChartApi,
+  LineStyle,
+  type IPriceLine,
   type ISeriesApi,
   type Time
 } from "lightweight-charts";
+import type { FibonacciSetup } from "@/lib/analysis/market-structure";
 
 export type ChartCandle = {
   time: number;
@@ -27,6 +30,9 @@ type Props = {
   liveCandle?: ChartCandle | null;
   fitNonce?: number;
   rangeKey?: "1D" | "5D" | "1M" | "3M" | "6M" | "1Y" | "5Y" | "MAX";
+  fibonacci?: FibonacciSetup | null;
+  showFib?: boolean;
+  showTrendFib?: boolean;
 };
 
 function formatIst(timestamp: number) {
@@ -57,11 +63,15 @@ export default function MarketChart({
   candles,
   liveCandle = null,
   fitNonce = 0,
-  rangeKey = "1M"
+  rangeKey = "1M",
+  fibonacci = null,
+  showFib = true,
+  showTrendFib = true
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const analysisLinesRef = useRef<IPriceLine[]>([]);
   const [hovered, setHovered] = useState<ChartCandle | null>(null);
 
   const latest = useMemo(
@@ -264,6 +274,73 @@ export default function MarketChart({
       close: liveCandle.close
     });
   }, [liveCandle, candles]);
+
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series) return;
+
+    for (const line of analysisLinesRef.current) {
+      try {
+        series.removePriceLine(line);
+      } catch {
+        // A chart reset can remove a line before this cleanup runs.
+      }
+    }
+    analysisLinesRef.current = [];
+
+    if (!fibonacci) return;
+
+    if (showFib) {
+      for (const level of fibonacci.retracements) {
+        const important =
+          level.ratio === 0.618 ||
+          level.ratio === 0.705 ||
+          level.ratio === 0.786;
+
+        analysisLinesRef.current.push(
+          series.createPriceLine({
+            price: level.price,
+            color: important ? "#f5b942" : "#667085",
+            lineWidth: important ? 2 : 1,
+            lineStyle: important ? LineStyle.Solid : LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `Fib ${level.label}`
+          })
+        );
+      }
+    }
+
+    if (showTrendFib && fibonacci.trendExtension) {
+      for (const level of fibonacci.trendExtension.levels) {
+        const important = level.ratio === 1.272 || level.ratio === 1.618;
+
+        analysisLinesRef.current.push(
+          series.createPriceLine({
+            price: level.price,
+            color: important ? "#8b7cff" : "#536079",
+            lineWidth: important ? 2 : 1,
+            lineStyle: important ? LineStyle.Solid : LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: `Trend ${level.label}`
+          })
+        );
+      }
+    }
+
+    return () => {
+      const activeSeries = seriesRef.current;
+      if (!activeSeries) return;
+
+      for (const line of analysisLinesRef.current) {
+        try {
+          activeSeries.removePriceLine(line);
+        } catch {
+          // no-op
+        }
+      }
+      analysisLinesRef.current = [];
+    };
+  }, [fibonacci, showFib, showTrendFib]);
 
   useEffect(() => {
     if (fitNonce > 0) {
