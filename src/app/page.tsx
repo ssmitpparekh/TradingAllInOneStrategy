@@ -249,6 +249,40 @@ function formatDate(timestamp: number | null) {
   }).format(new Date(timestamp * 1000));
 }
 
+function tradePieBackground(stats: ReturnType<typeof summarizeTrades>) {
+  const total = Math.max(1, stats.total);
+  const wins = (stats.wins / total) * 100;
+  const losses = (stats.losses / total) * 100;
+  const breakeven = (stats.breakeven / total) * 100;
+  const open = (stats.open / total) * 100;
+  const stop1 = wins;
+  const stop2 = stop1 + losses;
+  const stop3 = stop2 + breakeven;
+  const stop4 = stop3 + open;
+
+  return {
+    background:
+      "conic-gradient(" +
+      "#28c76f 0% " +
+      stop1 +
+      "%, #ea5455 " +
+      stop1 +
+      "% " +
+      stop2 +
+      "%, #9ca8ba " +
+      stop2 +
+      "% " +
+      stop3 +
+      "%, #4d8dff " +
+      stop3 +
+      "% " +
+      stop4 +
+      "%, #182230 " +
+      stop4 +
+      "% 100%)"
+  };
+}
+
 export default function Home() {
   const [connected, setConnected] = useState<boolean | null>(null);
   const [selected, setSelected] = useState<Instrument>(DEFAULT_INSTRUMENT);
@@ -568,6 +602,41 @@ export default function Home() {
     ]
   );
 
+  const analysisTrades = useMemo(
+    () =>
+      tradeJournal.filter(
+        (trade) => trade.symbol === primaryAnalysisSymbol
+      ),
+    [tradeJournal, primaryAnalysisSymbol]
+  );
+  const chartTrades = useMemo(
+    () =>
+      tradeJournal.filter(
+        (trade) => trade.symbol === selected.symbol
+      ),
+    [tradeJournal, selected.symbol]
+  );
+  const overallTradeStats = useMemo(
+    () => summarizeTrades(tradeJournal),
+    [tradeJournal]
+  );
+  const symbolTradeStats = useMemo(
+    () => summarizeTrades(analysisTrades),
+    [analysisTrades]
+  );
+  const tradeMarkers = useMemo<TradeChartMarker[]>(
+    () =>
+      chartTrades.map((trade) => ({
+        id: trade.id,
+        time: trade.signalTime,
+        price: trade.entry,
+        direction: trade.direction,
+        status: trade.status,
+        outcome: trade.outcome
+      })),
+    [chartTrades]
+  );
+
   async function fetchAnalysisContext(signal?: AbortSignal) {
     if (!selectedIsKraken && !connected) {
       setContext4h([]);
@@ -830,6 +899,23 @@ export default function Home() {
     }
   }
 
+  function resetChartView() {
+    setShowFib(false);
+    setShowTrendFib(false);
+    setShowStructure(false);
+    setShowFvg(false);
+    setShowLiquidity(false);
+    setShowOrderBlocks(false);
+    setShowVwap(false);
+    setShowProfile(false);
+    setShowEma(false);
+    setShowSessionBreaks(false);
+    setShowOrderFlow(false);
+    setShowAdvancedAnalysis(false);
+    setFitNonce((value) => value + 1);
+    setMessage("Chart reset to the clean default view.");
+  }
+
   async function toggleFullscreen() {
     const terminal = document.getElementById("market-terminal");
     if (!terminal) return;
@@ -893,6 +979,121 @@ export default function Home() {
       })
     );
   }, [viewReady, selected, resolution, range]);
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(TRADE_JOURNAL_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setTradeJournal(parsed as JournalTrade[]);
+        }
+      }
+    } catch {
+      // A corrupt local journal must not break the market terminal.
+    } finally {
+      setJournalReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!journalReady) return;
+    window.localStorage.setItem(
+      TRADE_JOURNAL_KEY,
+      JSON.stringify(tradeJournal)
+    );
+  }, [journalReady, tradeJournal]);
+
+  useEffect(() => {
+    if (
+      !journalReady ||
+      simpleTradePlan.state !== "READY" ||
+      simpleTradePlan.signalTime === null ||
+      simpleTradePlan.confirmationTimeframe === null ||
+      simpleTradePlan.entry === null ||
+      simpleTradePlan.stopLoss === null ||
+      !simpleTradePlan.trigger ||
+      simpleTradePlan.targets.length < 3
+    ) {
+      return;
+    }
+
+    const direction =
+      simpleTradePlan.trend === "bullish" ? "long" : "short";
+    const id = makeTradeId({
+      market: selected.market,
+      symbol: primaryAnalysisSymbol,
+      direction,
+      signalTime: simpleTradePlan.signalTime
+    });
+
+    setTradeJournal((current) => {
+      if (current.some((trade) => trade.id === id)) return current;
+
+      const record: JournalTrade = {
+        id,
+        symbol: primaryAnalysisSymbol,
+        name:
+          primaryAnalysisSymbol === selected.symbol
+            ? selected.name
+            : primaryAnalysisSymbol,
+        market: selected.market,
+        direction,
+        signalTime: simpleTradePlan.signalTime!,
+        confirmationTimeframe:
+          simpleTradePlan.confirmationTimeframe!,
+        entry: simpleTradePlan.entry!,
+        initialStop: simpleTradePlan.stopLoss!,
+        currentStop: simpleTradePlan.stopLoss!,
+        targets: simpleTradePlan.targets.slice(0, 3),
+        trigger: simpleTradePlan.trigger!,
+        score: simpleTradePlan.score,
+        status: "OPEN",
+        outcome: "OPEN",
+        highestTargetHit: 0,
+        resultR: null,
+        closedTime: null,
+        createdAt: Date.now()
+      };
+
+      return [...current, record];
+    });
+  }, [
+    journalReady,
+    simpleTradePlan,
+    selected.market,
+    selected.name,
+    selected.symbol,
+    primaryAnalysisSymbol
+  ]);
+
+  useEffect(() => {
+    if (!journalReady || !quote?.lp || !(quote.lp > 0)) return;
+
+    const now = Math.floor(Date.now() / 1000);
+    const symbol = selected.symbol;
+
+    setTradeJournal((current) => {
+      let changed = false;
+      const next = current.map((trade) => {
+        if (trade.symbol !== symbol || trade.status !== "OPEN") {
+          return trade;
+        }
+
+        const updated = updateTradeWithPrice(trade, quote.lp, now);
+        if (
+          updated.status !== trade.status ||
+          updated.highestTargetHit !== trade.highestTargetHit ||
+          updated.currentStop !== trade.currentStop
+        ) {
+          changed = true;
+        }
+        return updated;
+      });
+
+      return changed ? next : current;
+    });
+  }, [journalReady, quote?.lp, selected.symbol]);
 
   useEffect(() => {
     const clockTimer = window.setInterval(() => {
@@ -1511,6 +1712,12 @@ export default function Home() {
             </button>
             <button
               className="button secondary compactButton"
+              onClick={resetChartView}
+            >
+              Reset chart
+            </button>
+            <button
+              className="button secondary compactButton"
               onClick={() => void toggleFullscreen()}
             >
               {isFullscreen ? "Exit fullscreen" : "Fullscreen"}
@@ -1610,6 +1817,7 @@ export default function Home() {
           showSessionBreaks={showSessionBreaks}
           orderFlowBuckets={orderFlowBuckets}
           showOrderFlow={showOrderFlow}
+          tradeMarkers={tradeMarkers}
         />
 
         {quote ? (
@@ -1627,7 +1835,9 @@ export default function Home() {
       <section className={"card simplePlanCard " + simpleTradePlan.state.toLowerCase()}>
         <div className="simplePlanHeader">
           <div>
-            <p className="label">SIMPLE SWING TRADE PLAN · 4H → 1H → 15m</p>
+            <p className="label">
+              SWING TRADE PLAN · 4H/1H CONTEXT · 15m CONFIRMATION · 1m/5m OPENING TRIGGER ONLY
+            </p>
             <h3>{loadingContext ? "Building real-data context…" : simpleTradePlan.headline}</h3>
             <p>{simpleTradePlan.instruction}</p>
           </div>
@@ -1657,7 +1867,12 @@ export default function Home() {
                 ? simpleTradePlan.entry.toLocaleString("en-IN", { maximumFractionDigits: 2 })
                 : "WAIT"}
             </strong>
-            <small>{simpleTradePlan.trigger ?? "Needs liquidity sweep / Order Block reaction"}</small>
+            <small>
+              {simpleTradePlan.trigger ?? "Needs liquidity sweep / Order Block reaction"}
+              {simpleTradePlan.confirmationTimeframe
+                ? " · " + simpleTradePlan.confirmationTimeframe + " confirmation"
+                : ""}
+            </small>
           </div>
           <div>
             <span>STRICT SL</span>
@@ -1902,6 +2117,145 @@ export default function Home() {
             Targets will appear when confirmed directional structure provides valid levels.
           </p>
         )}
+      </section>
+
+      <section
+        className={
+          showAdvancedAnalysis
+            ? "card performanceCard"
+            : "card performanceCard advancedHidden"
+        }
+      >
+        <div className="performanceHeader">
+          <div>
+            <p className="label">PLATFORM TRADE JOURNAL · REAL SIGNAL HISTORY</p>
+            <h3>P/L analytics in R-multiples</h3>
+            <p>
+              Signals are stored locally and remain on the chart after refresh.
+              No account size or position size is assumed.
+            </p>
+          </div>
+        </div>
+
+        <div className="performanceGrid">
+          {[
+            {
+              title: "ALL SYMBOLS",
+              stats: overallTradeStats,
+              style: tradePieBackground(overallTradeStats)
+            },
+            {
+              title: primaryAnalysisSymbol,
+              stats: symbolTradeStats,
+              style: tradePieBackground(symbolTradeStats)
+            }
+          ].map((item) => (
+            <div className="performancePanel" key={item.title}>
+              <div className="performancePie" style={item.style}>
+                <div>
+                  <strong>{item.stats.totalR.toFixed(1)}R</strong>
+                  <span>TOTAL</span>
+                </div>
+              </div>
+              <div className="performanceNumbers">
+                <span>{item.title}</span>
+                <strong>
+                  {item.stats.winRate.toFixed(1)}% win rate
+                </strong>
+                <small>
+                  {item.stats.wins} wins · {item.stats.losses} losses ·{" "}
+                  {item.stats.breakeven} BE · {item.stats.open} open
+                </small>
+                <small>
+                  Avg {item.stats.averageR.toFixed(2)}R ·{" "}
+                  {item.stats.closed} closed
+                </small>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="tradeHistoryTableWrap">
+          <table className="tradeHistoryTable">
+            <thead>
+              <tr>
+                <th>Signal</th>
+                <th>Symbol</th>
+                <th>Side</th>
+                <th>TF</th>
+                <th>Entry</th>
+                <th>SL / Live Stop</th>
+                <th>Outcome</th>
+                <th>P/L</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tradeJournal.length ? (
+                tradeJournal
+                  .slice()
+                  .sort((a, b) => b.signalTime - a.signalTime)
+                  .slice(0, 100)
+                  .map((trade) => (
+                    <tr key={trade.id}>
+                      <td>
+                        {new Date(trade.signalTime * 1000).toLocaleString(
+                          "en-IN",
+                          {
+                            timeZone:
+                              trade.market === "KRAKEN"
+                                ? "UTC"
+                                : "Asia/Kolkata",
+                            day: "2-digit",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit"
+                          }
+                        )}
+                      </td>
+                      <td>{trade.symbol}</td>
+                      <td className={trade.direction}>
+                        {trade.direction.toUpperCase()}
+                      </td>
+                      <td>{trade.confirmationTimeframe}</td>
+                      <td>
+                        {trade.entry.toLocaleString("en-IN", {
+                          maximumFractionDigits: 2
+                        })}
+                      </td>
+                      <td>
+                        {trade.currentStop.toLocaleString("en-IN", {
+                          maximumFractionDigits: 2
+                        })}
+                      </td>
+                      <td>{trade.outcome}</td>
+                      <td
+                        className={
+                          (trade.resultR ?? 0) > 0
+                            ? "positive"
+                            : (trade.resultR ?? 0) < 0
+                              ? "negative"
+                              : ""
+                        }
+                      >
+                        {trade.resultR === null
+                          ? "OPEN"
+                          : (trade.resultR > 0 ? "+" : "") +
+                            trade.resultR.toFixed(2) +
+                            "R"}
+                      </td>
+                    </tr>
+                  ))
+              ) : (
+                <tr>
+                  <td colSpan={8}>
+                    No platform trades have been issued yet. The journal starts
+                    automatically with the first confirmed READY signal.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className={showAdvancedAnalysis ? "card analysisCard" : "card analysisCard advancedHidden"}>
