@@ -58,7 +58,7 @@ export type ScannerOpportunity = {
   updatedAt: number;
 };
 
-function bucketStart(
+export function scannerBucketStart(
   timestamp: number,
   minutes: number,
   market: ScannerInstrument["market"]
@@ -104,7 +104,7 @@ export function aggregateCandles(
   const grouped = new Map<number, ChartCandle>();
 
   for (const candle of candles) {
-    const time = bucketStart(candle.time, minutes, market);
+    const time = scannerBucketStart(candle.time, minutes, market);
     const current = grouped.get(time);
 
     if (!current) {
