@@ -725,3 +725,200 @@ h2 {
     flex-direction: column;
   }
 }
+
+
+/* Phase 3: structure + Fibonacci */
+.analysisCard {
+  padding: 20px;
+}
+
+.analysisHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.analysisHeader h3 {
+  margin: 2px 0 0;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+.analysisToggles {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.analysisToggle {
+  padding: 8px 11px;
+  border: 1px solid #283244;
+  border-radius: 9px;
+  background: #0b111a;
+  color: #7e8ba0;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.analysisToggle.active {
+  border-color: #5268d9;
+  background: #19264d;
+  color: #ffffff;
+}
+
+.analysisSummary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.analysisSummary > div {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid #202937;
+  border-radius: 11px;
+  background: #090e15;
+}
+
+.analysisSummary span,
+.analysisSummary small {
+  display: block;
+}
+
+.analysisSummary span {
+  margin-bottom: 7px;
+  color: #66758b;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.analysisSummary strong {
+  display: block;
+  color: #e9eef7;
+  font-size: 16px;
+}
+
+.analysisSummary small {
+  margin-top: 5px;
+  color: #657287;
+  font-size: 10px;
+}
+
+.fibTables {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.fibTable {
+  overflow: hidden;
+  border: 1px solid #202937;
+  border-radius: 11px;
+  background: #090e15;
+}
+
+.fibTableTitle {
+  padding: 10px 12px;
+  border-bottom: 1px solid #202937;
+  color: #67758b;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.fibRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #151d29;
+  color: #77859a;
+  font-size: 12px;
+}
+
+.fibRow:last-child {
+  border-bottom: 0;
+}
+
+.fibRow strong {
+  color: #dbe4f0;
+}
+
+.fibRow.important {
+  background: rgba(245, 185, 66, 0.07);
+  color: #e0b75a;
+}
+
+.fibRow.extension.important {
+  background: rgba(139, 124, 255, 0.08);
+  color: #aa9fff;
+}
+
+.extensionMeta {
+  padding: 9px 12px;
+  border-bottom: 1px solid #202937;
+  color: #7c89a0;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.analysisWaiting {
+  margin: 0;
+  padding: 14px;
+  color: #66758b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.recentSwings {
+  margin-top: 14px;
+}
+
+.swingChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.swingChip {
+  padding: 6px 9px;
+  border: 1px solid #273142;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.swingChip.high {
+  color: #ff8587;
+}
+
+.swingChip.low {
+  color: #74e39b;
+}
+
+@media (max-width: 900px) {
+  .analysisHeader {
+    flex-direction: column;
+  }
+
+  .analysisSummary {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .fibTables {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .analysisSummary {
+    grid-template-columns: 1fr;
+  }
+}
