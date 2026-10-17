@@ -382,6 +382,9 @@ export default function Home() {
   const [newsConnected, setNewsConnected] = useState(false);
   const [newsXConfigured, setNewsXConfigured] = useState(false);
   const [newsXStreaming, setNewsXStreaming] = useState(false);
+  const [tradeCapitalInput, setTradeCapitalInput] = useState("");
+  const [selectedOptionMargin, setSelectedOptionMargin] =
+    useState<number | null>(null);
   const historyRequestId = useRef(0);
   const orderFlowNeedsPartialRef = useRef(true);
   const orderFlowPartialBucketRef = useRef<number | null>(null);
@@ -744,6 +747,57 @@ export default function Home() {
       newsGate.direction !== "unknown" &&
       newsGate.direction !== reactionTradePlan.direction);
 
+  const tradeCapital = Math.max(
+    0,
+    Number(tradeCapitalInput || 0)
+  );
+  const activePlannerPlan =
+    !reactionNewsBlocked &&
+    reactionTradePlan.state === "READY" &&
+    reactionTradePlan.entry !== null &&
+    reactionTradePlan.stopLoss !== null
+      ? {
+          setup: "REACTION" as const,
+          moveClass: reactionTradePlan.moveClass,
+          direction: reactionTradePlan.direction,
+          entry: reactionTradePlan.entry,
+          stopLoss: reactionTradePlan.stopLoss,
+          targets: reactionTradePlan.targets
+        }
+      : !primaryNewsBlocked &&
+          simpleTradePlan.state === "READY" &&
+          simpleTradePlan.entry !== null &&
+          simpleTradePlan.stopLoss !== null
+        ? {
+            setup: "PRIMARY" as const,
+            moveClass: simpleTradePlan.moveClass,
+            direction: simpleTradePlan.trend,
+            entry: simpleTradePlan.entry,
+            stopLoss: simpleTradePlan.stopLoss,
+            targets: simpleTradePlan.targets
+          }
+        : null;
+
+  const selectedLotSize =
+    selected.lotSize && selected.lotSize > 0
+      ? selected.lotSize
+      : null;
+  const optionBuyCostPerLot =
+    selected.type === "OPTION" &&
+    selectedLotSize &&
+    quote?.lp &&
+    quote.lp > 0
+      ? quote.lp * selectedLotSize
+      : null;
+  const maxBuyLots =
+    optionBuyCostPerLot && tradeCapital > 0
+      ? Math.floor(tradeCapital / optionBuyCostPerLot)
+      : null;
+  const maxSellLots =
+    selectedOptionMargin && tradeCapital > 0
+      ? Math.floor(tradeCapital / selectedOptionMargin)
+      : null;
+
   const analysisTrades = useMemo(
     () =>
       tradeJournal.filter(
@@ -1077,6 +1131,9 @@ export default function Home() {
     orderFlowNeedsPartialRef.current = true;
     orderFlowPartialBucketRef.current = null;
     setHistoryMeta({ from: null, to: null, note: null });
+    setTradeCapitalInput("");
+    setSelectedOptionMargin(null);
+    setFitNonce((value) => value + 1);
 
     if (
       instrument.market === "KRAKEN" &&
@@ -1423,6 +1480,53 @@ export default function Home() {
     journalReady,
     closedContext1m,
     primaryAnalysisSymbol
+  ]);
+
+  useEffect(() => {
+    setSelectedOptionMargin(null);
+
+    if (
+      !connected ||
+      selected.type !== "OPTION" ||
+      !selected.lotSize ||
+      selected.lotSize <= 0
+    ) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    void fetch("/api/fyers/margin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        symbol: selected.symbol,
+        qty: selected.lotSize,
+        side: -1,
+        productType: "MARGIN"
+      }),
+      signal: controller.signal
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (
+          !controller.signal.aborted &&
+          data?.ok &&
+          Number(data.marginTotal) > 0
+        ) {
+          setSelectedOptionMargin(Number(data.marginTotal));
+        }
+      })
+      .catch(() => {
+        // Margin is optional. Do not estimate it when FYERS cannot return it.
+      });
+
+    return () => controller.abort();
+  }, [
+    connected,
+    selected.symbol,
+    selected.type,
+    selected.lotSize
   ]);
 
   useEffect(() => {
@@ -2274,6 +2378,17 @@ export default function Home() {
             </div>
           </div>
 
+          <div className="toolbarGroup chartViewGroup">
+            <span className="toolbarLabel">VIEW</span>
+            <button
+              type="button"
+              className="timeframe chartResetButton"
+              onClick={resetChartView}
+            >
+              Reset
+            </button>
+          </div>
+
           <div className="historyStatus">
             <span>
               {loadingChart
@@ -2292,6 +2407,7 @@ export default function Home() {
         {historyMeta.note ? <div className="historyNotice">{historyMeta.note}</div> : null}
 
         <MarketChart
+          key={selected.market + ":" + selected.symbol}
           candles={candles}
           liveCandle={liveCandle}
           fitNonce={fitNonce}
@@ -2332,14 +2448,6 @@ export default function Home() {
           </div>
         ) : null}
       </section>
-
-      <NewsImpactPanel
-        events={newsEvents}
-        gate={newsGate}
-        connected={newsConnected}
-        xConfigured={newsXConfigured}
-        xStreaming={newsXStreaming}
-      />
 
       {reactionTradePlan.state !== "NONE" ? (
         <section
@@ -2570,6 +2678,174 @@ export default function Home() {
             {showAdvancedAnalysis ? "Hide advanced analysis" : "Show advanced analysis"}
           </button>
         </div>
+      </section>
+
+      <section className="card tradeCapitalPlanner">
+        <div className="tradeCapitalHeader">
+          <div>
+            <p className="label">TRADE & CAPITAL PLANNER · CURRENT CHART</p>
+            <h3>{selected.name}</h3>
+            <p>
+              Capital is entered here for this chart only. Trade levels always come
+              from the confirmed market setup; position size never changes the signal.
+            </p>
+          </div>
+          <div className="tradeCapitalInputWrap">
+            <span>CAPITAL</span>
+            <label>
+              <b>{selected.market === "KRAKEN" ? "$" : "₹"}</b>
+              <input
+                inputMode="decimal"
+                value={tradeCapitalInput}
+                onChange={(event) =>
+                  setTradeCapitalInput(
+                    event.target.value.replace(/[^0-9.]/g, "")
+                  )
+                }
+                placeholder="e.g. 100000"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="tradeCapitalGrid">
+          <div>
+            <span>SETUP</span>
+            <strong>
+              {activePlannerPlan
+                ? (activePlannerPlan.moveClass ?? "TACTICAL") +
+                  " " +
+                  activePlannerPlan.setup
+                : "WAIT"}
+            </strong>
+            <small>
+              {activePlannerPlan?.direction
+                ? activePlannerPlan.direction.toUpperCase()
+                : "No confirmed trade yet"}
+            </small>
+          </div>
+          <div>
+            <span>ENTRY</span>
+            <strong>
+              {activePlannerPlan
+                ? activePlannerPlan.entry.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })
+                : "—"}
+            </strong>
+            <small>
+              {selected.type === "OPTION"
+                ? "Underlying strategy entry"
+                : "Confirmed chart entry"}
+            </small>
+          </div>
+          <div>
+            <span>STRICT SL</span>
+            <strong>
+              {activePlannerPlan
+                ? activePlannerPlan.stopLoss.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })
+                : "—"}
+            </strong>
+            <small>
+              {selected.type === "OPTION"
+                ? "Underlying invalidation level"
+                : "Real structure invalidation"}
+            </small>
+          </div>
+          {(["T1", "T2", "T3"] as const).map((label) => {
+            const target = activePlannerPlan?.targets.find(
+              (item) => item.label === label
+            );
+            return (
+              <div key={label}>
+                <span>{label}</span>
+                <strong>
+                  {target
+                    ? target.price.toLocaleString("en-IN", {
+                        maximumFractionDigits: 2
+                      })
+                    : "—"}
+                </strong>
+                <small>
+                  {selected.type === "OPTION"
+                    ? "Underlying target"
+                    : target?.rr !== null &&
+                        target?.rr !== undefined
+                      ? target.rr.toFixed(1) + "R"
+                      : "Waiting"}
+                </small>
+              </div>
+            );
+          })}
+        </div>
+
+        {selected.type === "OPTION" ? (
+          <div className="optionCapitalGrid">
+            <div>
+              <span>OPTION PREMIUM NOW</span>
+              <strong>
+                {quote?.lp
+                  ? quote.lp.toLocaleString("en-IN", {
+                      maximumFractionDigits: 2
+                    })
+                  : "—"}
+              </strong>
+              <small>{selected.symbol}</small>
+            </div>
+            <div>
+              <span>LOT SIZE</span>
+              <strong>{selectedLotSize ?? "—"}</strong>
+              <small>From FYERS instrument master</small>
+            </div>
+            <div>
+              <span>BUY · 1 LOT COST</span>
+              <strong>
+                {optionBuyCostPerLot
+                  ? "₹" +
+                    Math.round(optionBuyCostPerLot).toLocaleString(
+                      "en-IN"
+                    )
+                  : "—"}
+              </strong>
+              <small>
+                {tradeCapital > 0 && maxBuyLots !== null
+                  ? "Capital fits " + maxBuyLots + " lot(s)"
+                  : "Enter capital to size"}
+              </small>
+            </div>
+            <div>
+              <span>SELL · MARGIN / LOT</span>
+              <strong>
+                {selectedOptionMargin
+                  ? "₹" +
+                    Math.round(selectedOptionMargin).toLocaleString(
+                      "en-IN"
+                    )
+                  : "—"}
+              </strong>
+              <small>
+                {tradeCapital > 0 && maxSellLots !== null
+                  ? "Capital fits " + maxSellLots + " lot(s)"
+                  : "Exact FYERS margin when available"}
+              </small>
+            </div>
+          </div>
+        ) : (
+          <p className="tradeCapitalNote">
+            Open a specific option contract from a confirmed trade to see its
+            exact premium, FYERS lot size, buy cost per lot and sell margin here.
+          </p>
+        )}
+
+        {selected.type === "OPTION" ? (
+          <p className="tradeCapitalNote">
+            Option premium SL/targets are not fabricated from the underlying.
+            ALLINONEVIEW shows the real underlying entry, invalidation and targets,
+            plus the contract's live premium/capital requirement.
+          </p>
+        ) : null}
       </section>
 
       <section className={showAdvancedAnalysis ? "card orderFlowCard" : "card orderFlowCard advancedHidden"}>
@@ -3795,6 +4071,14 @@ export default function Home() {
           </div>
         ) : null}
       </section>
+
+      <NewsImpactPanel
+        events={newsEvents}
+        gate={newsGate}
+        connected={newsConnected}
+        xConfigured={newsXConfigured}
+        xStreaming={newsXStreaming}
+      />
 
       {!selectedIsKraken && connected && !streamConnected && socketDiagnostic ? (
         <section className={showAdvancedAnalysis ? "card" : "card advancedHidden"}>

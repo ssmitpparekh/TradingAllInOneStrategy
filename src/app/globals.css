@@ -4152,3 +4152,233 @@ html[data-theme="light"] .scannerNewsItem:hover:not(:disabled) {
     text-align: left;
   }
 }
+
+
+/* Scanner UX simplification */
+.opportunityScanner {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.scannerHeader {
+  position: sticky;
+  z-index: 5;
+  top: 0;
+  background: rgba(10, 15, 22, 0.98);
+  backdrop-filter: blur(10px);
+}
+
+.scannerList {
+  min-height: 0;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.bestTradeRank {
+  padding: 8px 13px 0;
+  color: #74e39b;
+  font-size: 8px;
+  font-weight: 950;
+  letter-spacing: 0.09em;
+}
+
+.scannerOpportunity.best-trade {
+  border-top: 1px solid rgba(116, 227, 155, 0.38);
+  border-bottom: 1px solid rgba(116, 227, 155, 0.38);
+  background:
+    linear-gradient(
+      90deg,
+      rgba(116, 227, 155, 0.08),
+      transparent 64%
+    );
+  box-shadow:
+    inset 4px 0 0 #74e39b,
+    0 0 0 1px rgba(116, 227, 155, 0.06);
+}
+
+.scannerOpportunity.best-trade .scannerOpportunityTop strong {
+  font-size: 14px;
+}
+
+.scannerOpportunity.best-trade .scannerDirection {
+  border: 1px solid currentColor;
+}
+
+/* Keep drawing implementation dormant until we intentionally revisit it. */
+.chartToolRail,
+.drawingInteractionLayer,
+.drawingSvgLayer {
+  display: none !important;
+}
+
+/* Always-visible chart reset in the timeframe/range row. */
+.chartViewGroup {
+  flex: 0 0 auto;
+}
+
+.chartResetButton {
+  min-width: 64px;
+  border: 1px solid #334158;
+}
+
+/* Capital and trade planner belongs to the opened chart, not the scanner. */
+.tradeCapitalPlanner {
+  padding: 18px;
+}
+
+.tradeCapitalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.tradeCapitalHeader h3 {
+  margin: 3px 0 5px;
+  font-size: 21px;
+}
+
+.tradeCapitalHeader p {
+  max-width: 760px;
+  margin: 0;
+  color: #7e8a9d;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.tradeCapitalInputWrap {
+  width: min(260px, 100%);
+}
+
+.tradeCapitalInputWrap > span {
+  display: block;
+  margin-bottom: 6px;
+  color: #6a778b;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.tradeCapitalInputWrap label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid #2a3547;
+  border-radius: 9px;
+  background: #080d14;
+}
+
+.tradeCapitalInputWrap b {
+  color: #9ba7b8;
+}
+
+.tradeCapitalInputWrap input {
+  width: 100%;
+  height: 40px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #f1f5f9;
+  font-size: 13px;
+}
+
+.tradeCapitalGrid,
+.optionCapitalGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.optionCapitalGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.tradeCapitalGrid > div,
+.optionCapitalGrid > div {
+  padding: 11px;
+  border: 1px solid #202a39;
+  border-radius: 9px;
+  background: #090e15;
+}
+
+.tradeCapitalGrid span,
+.optionCapitalGrid span,
+.tradeCapitalGrid strong,
+.optionCapitalGrid strong,
+.tradeCapitalGrid small,
+.optionCapitalGrid small {
+  display: block;
+}
+
+.tradeCapitalGrid span,
+.optionCapitalGrid span {
+  color: #69768a;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+}
+
+.tradeCapitalGrid strong,
+.optionCapitalGrid strong {
+  margin-top: 5px;
+  color: #e9eef6;
+  font-size: 14px;
+}
+
+.tradeCapitalGrid small,
+.optionCapitalGrid small {
+  margin-top: 4px;
+  color: #68758a;
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.tradeCapitalNote {
+  margin: 11px 0 0;
+  color: #66748a;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+html[data-theme="light"] .scannerHeader {
+  background: rgba(255, 255, 255, 0.98);
+}
+
+html[data-theme="light"] .tradeCapitalInputWrap label,
+html[data-theme="light"] .tradeCapitalGrid > div,
+html[data-theme="light"] .optionCapitalGrid > div {
+  border-color: #dce3ed;
+  background: #ffffff;
+}
+
+html[data-theme="light"] .tradeCapitalInputWrap input,
+html[data-theme="light"] .tradeCapitalGrid strong,
+html[data-theme="light"] .optionCapitalGrid strong {
+  color: #0f172a;
+}
+
+@media (max-width: 900px) {
+  .tradeCapitalHeader {
+    flex-direction: column;
+  }
+
+  .tradeCapitalInputWrap {
+    width: 100%;
+  }
+
+  .tradeCapitalGrid,
+  .optionCapitalGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .tradeCapitalGrid,
+  .optionCapitalGrid {
+    grid-template-columns: 1fr;
+  }
+}
