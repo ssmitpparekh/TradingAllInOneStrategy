@@ -66,7 +66,8 @@ export type ReversalEngineResult = {
 
 export type ReversalEngineInput = {
   price: number;
-  atr: number | null;
+  htfAtr: number | null;
+  refineAtr: number | null;
   htfReady: boolean;
   confirmation15mReady: boolean;
   fibonacci: FibonacciSetup;
@@ -739,26 +740,28 @@ function scoreDirection(
   direction: ReversalDirection,
   input: ReversalEngineInput
 ): ReversalScore {
-  const atr = input.atr ?? input.fibonacci.atr14 ?? 0;
+  const htfAtr =
+    input.htfAtr ?? input.fibonacci.atr14 ?? 0;
+  const refineAtr = input.refineAtr ?? htfAtr;
 
   const components = [
     scoreStructure(direction, input.structure, input.htfReady),
     scoreFib(
       direction,
       input.price,
-      atr,
+      htfAtr,
       input.fibonacci,
       input.htfReady
     ),
     scoreSmartMoney(
       direction,
       input.price,
-      atr,
+      refineAtr,
       input.imbalance,
       input.orderBlocks,
       input.htfReady
     ),
-    scoreVwapProfile(input.price, atr, input.volume),
+    scoreVwapProfile(input.price, refineAtr, input.volume),
     scoreVolume(input.volume),
     scoreDerivatives(direction, input.derivatives),
     score15mConfirmation(
@@ -801,7 +804,7 @@ function scoreDirection(
   const risk = invalidationAndStop(
     direction,
     input.price,
-    atr,
+    refineAtr,
     input.fibonacci,
     input.structure,
     input.imbalance
