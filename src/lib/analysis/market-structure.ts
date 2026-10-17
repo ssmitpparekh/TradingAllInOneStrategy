@@ -31,6 +31,35 @@ export type MarketStructureSnapshot = {
   activeSwingLow: SwingPoint | null;
 };
 
+export type FairValueGap = {
+  direction: "bullish" | "bearish";
+  createdTime: number;
+  createdIndex: number;
+  lower: number;
+  upper: number;
+  midpoint: number;
+  size: number;
+  status: "active" | "touched" | "filled";
+  firstTouchTime: number | null;
+  filledTime: number | null;
+};
+
+export type LiquiditySweep = {
+  direction: "bullish" | "bearish";
+  time: number;
+  level: number;
+  extreme: number;
+  close: number;
+  sourceSwing: SwingPoint;
+};
+
+export type ImbalanceLiquiditySnapshot = {
+  recentFvgs: FairValueGap[];
+  activeFvgs: FairValueGap[];
+  recentSweeps: LiquiditySweep[];
+  latestSweep: LiquiditySweep | null;
+};
+
 export type FibonacciLevel = {
   ratio: number;
   price: number;
@@ -318,6 +347,219 @@ export function buildMarketStructure(
     recentEvents,
     activeSwingHigh,
     activeSwingLow
+  };
+}
+
+
+export function detectFairValueGaps(
+  candles: AnalysisCandle[],
+  options?: {
+    maxRecent?: number;
+    minAtrFraction?: number;
+  }
+): FairValueGap[] {
+  if (candles.length < 3) return [];
+
+  const maxRecent = Math.max(1, options?.maxRecent ?? 20);
+  const minAtrFraction = Math.max(0, options?.minAtrFraction ?? 0.05);
+  const recentCandles =
+    candles.length > 1200 ? candles.slice(-1200) : candles;
+  const atr = calculateAtr(recentCandles) ?? 0;
+  const latestClose = recentCandles[recentCandles.length - 1].close;
+  const minimumGap = Math.max(
+    latestClose * 0.0002,
+    atr * minAtrFraction
+  );
+
+  const gaps: FairValueGap[] = [];
+
+  for (let index = 2; index < recentCandles.length; index += 1) {
+    const first = recentCandles[index - 2];
+    const third = recentCandles[index];
+
+    const bullishSize = third.low - first.high;
+    const bearishSize = first.low - third.high;
+
+    let gap: FairValueGap | null = null;
+
+    if (bullishSize >= minimumGap) {
+      gap = {
+        direction: "bullish",
+        createdTime: third.time,
+        createdIndex: index,
+        lower: first.high,
+        upper: third.low,
+        midpoint: (first.high + third.low) / 2,
+        size: bullishSize,
+        status: "active",
+        firstTouchTime: null,
+        filledTime: null
+      };
+    } else if (bearishSize >= minimumGap) {
+      gap = {
+        direction: "bearish",
+        createdTime: third.time,
+        createdIndex: index,
+        lower: third.high,
+        upper: first.low,
+        midpoint: (third.high + first.low) / 2,
+        size: bearishSize,
+        status: "active",
+        firstTouchTime: null,
+        filledTime: null
+      };
+    }
+
+    if (!gap) continue;
+
+    for (
+      let futureIndex = index + 1;
+      futureIndex < recentCandles.length;
+      futureIndex += 1
+    ) {
+      const future = recentCandles[futureIndex];
+
+      if (gap.direction === "bullish") {
+        if (
+          gap.firstTouchTime === null &&
+          future.low <= gap.upper
+        ) {
+          gap.status = "touched";
+          gap.firstTouchTime = future.time;
+        }
+
+        if (future.low <= gap.lower) {
+          gap.status = "filled";
+          gap.filledTime = future.time;
+          break;
+        }
+      } else {
+        if (
+          gap.firstTouchTime === null &&
+          future.high >= gap.lower
+        ) {
+          gap.status = "touched";
+          gap.firstTouchTime = future.time;
+        }
+
+        if (future.high >= gap.upper) {
+          gap.status = "filled";
+          gap.filledTime = future.time;
+          break;
+        }
+      }
+    }
+
+    gaps.push(gap);
+  }
+
+  return gaps.slice(-maxRecent);
+}
+
+export function detectLiquiditySweeps(
+  candles: AnalysisCandle[],
+  options?: {
+    confirmationBars?: number;
+    maxRecent?: number;
+  }
+): LiquiditySweep[] {
+  if (candles.length < 10) return [];
+
+  const confirmationBars = Math.max(
+    2,
+    options?.confirmationBars ?? 3
+  );
+  const maxRecent = Math.max(1, options?.maxRecent ?? 12);
+  const recentCandles =
+    candles.length > 1200 ? candles.slice(-1200) : candles;
+  const swings = detectSwings(recentCandles, {
+    rightBars: confirmationBars
+  });
+  const atr = calculateAtr(recentCandles) ?? 0;
+  const latestClose = recentCandles[recentCandles.length - 1].close;
+  const minimumOvershoot = Math.max(
+    latestClose * 0.00005,
+    atr * 0.02
+  );
+
+  let activeSwingHigh: SwingPoint | null = null;
+  let activeSwingLow: SwingPoint | null = null;
+  let sweptHighTime: number | null = null;
+  let sweptLowTime: number | null = null;
+  let swingCursor = 0;
+  const sweeps: LiquiditySweep[] = [];
+
+  for (let index = 0; index < recentCandles.length; index += 1) {
+    while (
+      swingCursor < swings.length &&
+      swings[swingCursor].index + confirmationBars <= index
+    ) {
+      const swing = swings[swingCursor];
+
+      if (swing.type === "high") {
+        activeSwingHigh = swing;
+        sweptHighTime = null;
+      } else {
+        activeSwingLow = swing;
+        sweptLowTime = null;
+      }
+
+      swingCursor += 1;
+    }
+
+    const candle = recentCandles[index];
+
+    if (
+      activeSwingHigh &&
+      sweptHighTime !== activeSwingHigh.time &&
+      candle.high >= activeSwingHigh.price + minimumOvershoot &&
+      candle.close < activeSwingHigh.price
+    ) {
+      sweeps.push({
+        direction: "bearish",
+        time: candle.time,
+        level: activeSwingHigh.price,
+        extreme: candle.high,
+        close: candle.close,
+        sourceSwing: activeSwingHigh
+      });
+      sweptHighTime = activeSwingHigh.time;
+    }
+
+    if (
+      activeSwingLow &&
+      sweptLowTime !== activeSwingLow.time &&
+      candle.low <= activeSwingLow.price - minimumOvershoot &&
+      candle.close > activeSwingLow.price
+    ) {
+      sweeps.push({
+        direction: "bullish",
+        time: candle.time,
+        level: activeSwingLow.price,
+        extreme: candle.low,
+        close: candle.close,
+        sourceSwing: activeSwingLow
+      });
+      sweptLowTime = activeSwingLow.time;
+    }
+  }
+
+  return sweeps.slice(-maxRecent);
+}
+
+export function buildImbalanceLiquiditySnapshot(
+  candles: AnalysisCandle[]
+): ImbalanceLiquiditySnapshot {
+  const recentFvgs = detectFairValueGaps(candles);
+  const recentSweeps = detectLiquiditySweeps(candles);
+
+  return {
+    recentFvgs,
+    activeFvgs: recentFvgs
+      .filter((gap) => gap.status !== "filled")
+      .slice(-6),
+    recentSweeps,
+    latestSweep: recentSweeps[recentSweeps.length - 1] ?? null
   };
 }
 
