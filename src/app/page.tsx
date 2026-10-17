@@ -560,7 +560,7 @@ export default function Home() {
         ) : null}
         {historyMeta.note ? <div className="historyNotice">{historyMeta.note}</div> : null}
 
-        <MarketChart candles={candles} fitNonce={fitNonce} />
+        <MarketChart candles={candles} fitNonce={fitNonce} rangeKey={range} />
 
         {quote ? (
           <div className="ohlcStrip">
