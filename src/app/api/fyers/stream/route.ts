@@ -78,17 +78,22 @@ export async function GET(request: NextRequest) {
           );
         }
 
-        socket = DataSocket.getInstance(websocketToken, "", false);
+        const liveSocket = DataSocket.getInstance(
+          websocketToken,
+          "",
+          false
+        ) as DataSocketInstance;
+        socket = liveSocket;
 
         // FYERS has shipped both autoReconnect() and autoreconnect()
         // spellings across Node SDK/docs. Support either without crashing.
-        if (typeof socket.autoReconnect === "function") {
-          socket.autoReconnect(10);
-        } else if (typeof socket.autoreconnect === "function") {
-          socket.autoreconnect(10);
+        if (typeof liveSocket.autoReconnect === "function") {
+          liveSocket.autoReconnect(10);
+        } else if (typeof liveSocket.autoreconnect === "function") {
+          liveSocket.autoreconnect(10);
         }
 
-        socket.setQueueProcessInterval?.(200);
+        liveSocket.setQueueProcessInterval?.(200);
 
         safeEnqueue(
           sse(
@@ -102,8 +107,8 @@ export async function GET(request: NextRequest) {
           )
         );
 
-        socket.on("connect", () => {
-          socket?.subscribe([symbol]);
+        liveSocket.on("connect", () => {
+          liveSocket.subscribe([symbol]);
           safeEnqueue(
             sse(
               { connected: true, symbol, transport: "FYERS Data Socket" },
@@ -112,11 +117,11 @@ export async function GET(request: NextRequest) {
           );
         });
 
-        socket.on("message", (message: Record<string, unknown>) => {
+        liveSocket.on("message", (message: Record<string, unknown>) => {
           safeEnqueue(sse(message, "tick"));
         });
 
-        socket.on("error", (error: unknown) => {
+        liveSocket.on("error", (error: unknown) => {
           const detail =
             error instanceof Error
               ? error.message
@@ -134,7 +139,7 @@ export async function GET(request: NextRequest) {
           );
         });
 
-        socket.on("close", (reason?: unknown) => {
+        liveSocket.on("close", (reason?: unknown) => {
           safeEnqueue(
             sse(
               {
@@ -151,7 +156,7 @@ export async function GET(request: NextRequest) {
           );
         });
 
-        socket.connect();
+        liveSocket.connect();
 
         keepAlive = setInterval(() => {
           safeEnqueue(sse({ ts: Date.now() }, "keepalive"));
