@@ -194,17 +194,8 @@ function opportunityPriority(
   opportunity: ScannerOpportunity,
   events: NewsImpactEvent[]
 ) {
-  const gate = buildNewsGate({
-    events,
-    symbol: opportunity.instrument.symbol,
-    market: opportunity.instrument.market
-  });
-
-  return (
-    newsRiskPriority(gate.riskLevel) * 1000 +
-    (gate.direction === opportunity.direction ? 100 : 0) +
-    opportunity.score
-  );
+  void events;
+  return opportunity.score;
 }
 
 async function fetchLotSize(symbol: string) {
@@ -333,14 +324,6 @@ export default function OpportunityScanner({
   const [derivativeWatches, setDerivativeWatches] = useState<
     DerivativeWatch[]
   >([]);
-  const [tradeChoice, setTradeChoice] = useState<{
-    opportunity: ScannerOpportunity;
-    idea: DerivativeIdea | null;
-  } | null>(null);
-  const [tradeChoiceLoading, setTradeChoiceLoading] = useState(false);
-  const [tradeChoiceError, setTradeChoiceError] = useState<string | null>(
-    null
-  );
 
   const contextsRef = useRef(
     new Map<string, ScannerStaticContext>()
@@ -1085,135 +1068,13 @@ export default function OpportunityScanner({
     [opportunities, newsEvents, derivativeWatches]
   );
 
-  const fetchDerivativeIdeaForOpportunity = async (
+  const handleOpportunityClick = (
     opportunity: ScannerOpportunity
   ) => {
-    if (
-      opportunity.instrument.market === "KRAKEN" ||
-      opportunity.instrument.market === "MCX"
-    ) {
-      return null;
-    }
-
-    const cached =
-      derivativeIdeas[opportunity.instrument.symbol] ?? null;
-    if (cached) return cached;
-
-    const instrument = opportunity.instrument;
-    const response = await fetch(
-      "/api/fyers/derivatives?symbol=" +
-        encodeURIComponent(instrument.symbol) +
-        "&market=" +
-        encodeURIComponent(instrument.market) +
-        "&type=" +
-        encodeURIComponent(instrument.type) +
-        "&underlying=" +
-        encodeURIComponent(instrument.underlying) +
-        "&spotPrice=" +
-        encodeURIComponent(String(opportunity.price)),
-      { cache: "no-store" }
-    );
-    const data = await response.json();
-
-    if (!response.ok || !data.ok || !data.available) {
-      return null;
-    }
-
-    const idea = await buildDerivativeIdea(
-      instrument,
-      opportunity.direction,
-      opportunity.price,
-      data
-    );
-
-    if (idea) {
-      setDerivativeIdeas((current) => ({
-        ...current,
-        [instrument.symbol]: idea
-      }));
-    }
-
-    return idea;
-  };
-
-  const handleOpportunityClick = async (
-    opportunity: ScannerOpportunity
-  ) => {
-    setTradeChoiceError(null);
-
-    if (
-      opportunity.instrument.market === "KRAKEN" ||
-      opportunity.instrument.market === "MCX"
-    ) {
-      onOpen(toOpenInstrument(opportunity.instrument));
-      return;
-    }
-
-    const cached =
-      derivativeIdeas[opportunity.instrument.symbol] ?? null;
-
-    if (cached) {
-      setTradeChoice({
-        opportunity,
-        idea: cached
-      });
-      return;
-    }
-
-    setTradeChoiceLoading(true);
-    setTradeChoice({
-      opportunity,
-      idea: null
-    });
-
-    try {
-      const idea =
-        await fetchDerivativeIdeaForOpportunity(opportunity);
-
-      setTradeChoice({
-        opportunity,
-        idea
-      });
-
-      if (!idea) {
-        setTradeChoiceError(
-          "No live option chain is available for this instrument right now. You can still open the underlying chart."
-        );
-      }
-    } catch {
-      setTradeChoiceError(
-        "The option chain could not be loaded right now. You can still open the underlying chart."
-      );
-    } finally {
-      setTradeChoiceLoading(false);
-    }
+    onOpen(toOpenInstrument(opportunity.instrument));
   };
 
   const strongCount = actionableOpportunities.length;
-
-  const openOption = (
-    sizing: OptionSizing,
-    parent: ScannerOpportunity
-  ) => {
-    onOpen({
-      symbol: sizing.symbol,
-      name:
-        sizing.action +
-        " · " +
-        sizing.strike.toLocaleString("en-IN") +
-        " " +
-        sizing.optionType,
-      market: parent.instrument.market,
-      segment: "F&O",
-      type: "OPTION",
-      underlying: parent.instrument.underlying,
-      expiry: null,
-      strike: sizing.strike,
-      optionType: sizing.optionType,
-      lotSize: sizing.lotSize,
-      tickSize: null
-    });
-  };
 
   return (
     <aside className="opportunityScanner">
@@ -1295,7 +1156,7 @@ export default function OpportunityScanner({
                   type="button"
                   className="scannerOpportunityMain"
                   onClick={() =>
-                    void handleOpportunityClick(opportunity)
+                    handleOpportunityClick(opportunity)
                   }
                 >
                   <div className="scannerOpportunityTop">
@@ -1363,132 +1224,6 @@ export default function OpportunityScanner({
           </div>
         )}
       </div>
-
-      {tradeChoice ? (
-        <div
-          className="tradeChoiceBackdrop"
-          role="presentation"
-          onClick={() => {
-            if (!tradeChoiceLoading) setTradeChoice(null);
-          }}
-        >
-          <div
-            className="tradeChoiceModal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Choose how to take this trade"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="tradeChoiceHeader">
-              <div>
-                <span>CONFIRMED {tradeChoice.opportunity.moveClass} TRADE</span>
-                <h3>{tradeChoice.opportunity.instrument.name}</h3>
-                <p>
-                  {tradeChoice.opportunity.direction === "bullish"
-                    ? "Bullish setup — choose BUY CALL or SELL PUT."
-                    : "Bearish setup — choose BUY PUT or SELL CALL."}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setTradeChoice(null)}
-                disabled={tradeChoiceLoading}
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="tradeChoicePlan">
-              <span>
-                ENTRY {formatPrice(tradeChoice.opportunity.entry)}
-              </span>
-              <span>
-                SL {formatPrice(tradeChoice.opportunity.stopLoss)}
-              </span>
-              <span>
-                T1 {formatPrice(tradeChoice.opportunity.targets[0].price)}
-              </span>
-              <span>
-                T2 {formatPrice(tradeChoice.opportunity.targets[1].price)}
-              </span>
-              <span>
-                T3 {formatPrice(tradeChoice.opportunity.targets[2].price)}
-              </span>
-            </div>
-
-            {tradeChoiceLoading ? (
-              <div className="tradeChoiceLoading">
-                Loading the live option chain…
-              </div>
-            ) : tradeChoice.idea ? (
-              <div className="tradeChoiceActions">
-                {[tradeChoice.idea.buy, tradeChoice.idea.sell]
-                  .filter(Boolean)
-                  .map((sizing) => {
-                    const item = sizing as OptionSizing;
-                    return (
-                      <button
-                        type="button"
-                        className="tradeChoiceOption"
-                        key={item.action + item.symbol}
-                        onClick={() => {
-                          openOption(item, tradeChoice.opportunity);
-                          setTradeChoice(null);
-                        }}
-                      >
-                        <span>{item.action}</span>
-                        <strong>
-                          {item.strike.toLocaleString("en-IN")}{" "}
-                          {item.optionType}
-                        </strong>
-                        <small>
-                          Live premium ₹{formatPrice(item.ltp)} · lot{" "}
-                          {item.lotSize ?? "?"}
-                        </small>
-                        <small>
-                          {item.action.startsWith("SELL")
-                            ? item.perLotCapital
-                              ? "FYERS margin/lot ₹" +
-                                Math.round(
-                                  item.perLotCapital
-                                ).toLocaleString("en-IN")
-                              : "FYERS margin loading/unavailable"
-                            : item.perLotCapital
-                              ? "1 lot costs ₹" +
-                                Math.round(
-                                  item.perLotCapital
-                                ).toLocaleString("en-IN")
-                              : "Premium sizing unavailable"}
-                        </small>
-                      </button>
-                    );
-                  })}
-              </div>
-            ) : (
-              <div className="tradeChoiceUnavailable">
-                {tradeChoiceError ??
-                  "No option contract is available for this setup right now."}
-              </div>
-            )}
-
-            <button
-              type="button"
-              className="tradeChoiceUnderlying"
-              onClick={() => {
-                onOpen(
-                  toOpenInstrument(
-                    tradeChoice.opportunity.instrument
-                  )
-                );
-                setTradeChoice(null);
-              }}
-            >
-              Open underlying chart instead
-            </button>
-          </div>
-        </div>
-      ) : null}
 
       <div className="scannerFooter">
         <span>Only fresh, chart-READY trades are shown</span>
