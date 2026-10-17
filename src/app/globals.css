@@ -1895,3 +1895,79 @@ button {
     animation-iteration-count: 1 !important;
   }
 }
+
+
+.appInstall {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.appInstallButton,
+.appInstallStatus {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px solid rgba(127, 149, 255, 0.34);
+  border-radius: 999px;
+  background: rgba(77, 107, 255, 0.12);
+  color: #bcc7ff;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.appInstallButton {
+  cursor: pointer;
+}
+
+.appInstallButton:hover {
+  background: rgba(77, 107, 255, 0.2);
+}
+
+.appInstallStatus {
+  border-color: rgba(116, 227, 155, 0.3);
+  background: rgba(116, 227, 155, 0.08);
+  color: #74e39b;
+}
+
+.appInstallHint {
+  position: absolute;
+  z-index: 120;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(300px, calc(100vw - 28px));
+  padding: 10px 12px;
+  border: 1px solid #2a3548;
+  border-radius: 10px;
+  background: #0c121b;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.42);
+  color: #aeb8c8;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+@media (max-width: 900px) {
+  .appInstall {
+    flex: 0 0 auto;
+  }
+
+  .appInstallButton,
+  .appInstallStatus {
+    min-height: 40px;
+  }
+
+  .appInstallHint {
+    right: auto;
+    left: 0;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .appInstallButton:hover {
+    background: rgba(77, 107, 255, 0.12);
+  }
+}
