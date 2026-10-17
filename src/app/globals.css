@@ -2777,3 +2777,223 @@ button {
     bottom: 84px;
   }
 }
+
+
+/* Permanent strategy trade markers */
+.tradeMarkerLayer {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.tradeMarker {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+}
+
+.tradeMarker.long {
+  color: #74e39b;
+}
+
+.tradeMarker.short {
+  color: #ff8587;
+}
+
+.tradeMarker.closed {
+  opacity: 0.72;
+}
+
+.tradeMarkerArrow {
+  font-size: 11px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+.tradeMarkerLabel {
+  padding: 3px 5px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  background: rgba(8, 13, 20, 0.88);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+/* Platform performance journal */
+.performanceCard {
+  padding: 18px;
+}
+
+.performanceHeader h3 {
+  margin: 2px 0 4px;
+  font-size: 21px;
+}
+
+.performanceHeader p {
+  margin: 0;
+  color: #7d899b;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.performanceGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.performancePanel {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px;
+  border: 1px solid #202937;
+  border-radius: 11px;
+  background: #090e15;
+}
+
+.performancePie {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  flex: 0 0 112px;
+  border-radius: 50%;
+}
+
+.performancePie::after {
+  position: absolute;
+  inset: 17px;
+  border-radius: 50%;
+  background: #090e15;
+  content: "";
+}
+
+.performancePie > div {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+}
+
+.performancePie strong,
+.performancePie span {
+  display: block;
+}
+
+.performancePie strong {
+  color: #edf2f7;
+  font-size: 18px;
+}
+
+.performancePie span {
+  margin-top: 2px;
+  color: #69768a;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.performanceNumbers {
+  min-width: 0;
+}
+
+.performanceNumbers > span,
+.performanceNumbers > small {
+  display: block;
+}
+
+.performanceNumbers > span {
+  overflow: hidden;
+  color: #6f7d90;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.performanceNumbers > strong {
+  display: block;
+  margin: 5px 0;
+  color: #e8edf4;
+  font-size: 17px;
+}
+
+.performanceNumbers > small {
+  margin-top: 4px;
+  color: #718096;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.tradeHistoryTableWrap {
+  overflow-x: auto;
+  margin-top: 14px;
+  border: 1px solid #202937;
+  border-radius: 11px;
+}
+
+.tradeHistoryTable {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+  background: #090e15;
+  font-size: 10px;
+}
+
+.tradeHistoryTable th,
+.tradeHistoryTable td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #171f2c;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.tradeHistoryTable th {
+  color: #67758a;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.tradeHistoryTable td {
+  color: #abb5c5;
+}
+
+.tradeHistoryTable td.long,
+.tradeHistoryTable td.positive {
+  color: #74e39b;
+}
+
+.tradeHistoryTable td.short,
+.tradeHistoryTable td.negative {
+  color: #ff8587;
+}
+
+@media (max-width: 780px) {
+  .performanceGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .performancePanel {
+    align-items: flex-start;
+  }
+
+  .performancePie {
+    width: 92px;
+    height: 92px;
+    flex-basis: 92px;
+  }
+
+  .performancePie::after {
+    inset: 14px;
+  }
+}
