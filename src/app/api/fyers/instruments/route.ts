@@ -64,10 +64,13 @@ function parseCsvLine(line: string): string[] {
   return values;
 }
 
-function classify(symbol: string, segment: string, optionType: string): string {
-  if (symbol.endsWith("-INDEX")) return "INDEX";
-  if (optionType === "CE" || optionType === "PE") return "OPTION";
-  if (symbol.endsWith("FUT")) return "FUTURE";
+function classify(symbol: string, segment: string, optionType: string, instrumentType: number): string {
+  if (instrumentType === 10 || symbol.endsWith("-INDEX")) return "INDEX";
+  if ([14, 15, 19, 31, 32, 36, 37].includes(instrumentType) || optionType === "CE" || optionType === "PE") return "OPTION";
+  if ([11, 12, 13, 16, 17, 18, 25, 30, 33, 34, 35].includes(instrumentType) || symbol.endsWith("FUT")) return "FUTURE";
+  if (instrumentType === 9) return "ETF";
+  if (instrumentType === 8) return "MF";
+  if (instrumentType === 5) return "SGB";
   if (segment === "COMMODITY") return "COMMODITY";
   if (segment === "CURRENCY") return "CURRENCY";
   return "EQUITY";
@@ -101,13 +104,14 @@ async function loadMaster(entry: (typeof MASTER_FILES)[number]): Promise<Instrum
       const symbol = row[9].trim();
       const optionType = row[16]?.trim() || "XX";
       const strikeRaw = Number(row[15]);
+      const instrumentType = Number(row[2]);
 
       return {
         symbol,
         name: row[1]?.trim() || symbol,
         market: entry.market,
         segment: entry.segment,
-        type: classify(symbol, entry.segment, optionType),
+        type: classify(symbol, entry.segment, optionType, instrumentType),
         underlying: row[13]?.trim() || "",
         expiry: normalizeExpiry(row[8]?.trim() || ""),
         strike: Number.isFinite(strikeRaw) && strikeRaw >= 0 ? strikeRaw : null,
@@ -119,19 +123,23 @@ async function loadMaster(entry: (typeof MASTER_FILES)[number]): Promise<Instrum
   return instruments;
 }
 
-function scoreInstrument(instrument: Instrument, query: string): number {
-  const q = query.toUpperCase();
-  const symbol = instrument.symbol.toUpperCase();
-  const name = instrument.name.toUpperCase();
-  const underlying = instrument.underlying.toUpperCase();
+function normalizeSearch(value: string) {
+  return value.toUpperCase().replace(/[^A-Z0-9.]+/g, " ").trim();
+}
 
+function scoreInstrument(instrument: Instrument, query: string): number {
+  const q = normalizeSearch(query);
+  const symbol = normalizeSearch(instrument.symbol);
+  const name = normalizeSearch(instrument.name);
+  const underlying = normalizeSearch(instrument.underlying);
+  const haystack = `${symbol} ${name} ${underlying} ${instrument.expiry ?? ""} ${instrument.strike ?? ""} ${instrument.optionType ?? ""}`;
+  const terms = q.split(/\s+/).filter(Boolean);
+
+  if (!terms.every((term) => haystack.includes(term))) return 0;
   if (symbol === q || underlying === q) return 1000;
-  if (symbol.startsWith(q) || underlying.startsWith(q)) return 800;
-  if (name.startsWith(q)) return 700;
-  if (symbol.includes(q)) return 600;
-  if (underlying.includes(q)) return 550;
-  if (name.includes(q)) return 500;
-  return 0;
+  if (symbol.startsWith(q) || underlying.startsWith(q)) return 850;
+  if (name.startsWith(q)) return 750;
+  return 500 + Math.max(0, 100 - symbol.length);
 }
 
 export async function GET(request: NextRequest) {
@@ -146,7 +154,11 @@ export async function GET(request: NextRequest) {
   try {
     const files = MASTER_FILES.filter((entry) => market === "ALL" || entry.market === market);
     const loaded = await Promise.all(files.map(loadMaster));
-    const pool = [...CURATED_INDICES, ...loaded.flat()];
+    const poolMap = new Map<string, Instrument>();
+    for (const item of [...CURATED_INDICES, ...loaded.flat()]) {
+      if (!poolMap.has(item.symbol)) poolMap.set(item.symbol, item);
+    }
+    const pool = [...poolMap.values()];
 
     const instruments = pool
       .filter((item) => market === "ALL" || item.market === market)
