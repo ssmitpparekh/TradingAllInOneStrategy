@@ -389,7 +389,7 @@ function mergeOrderFlowHistory(
 
   return [...byTime.values()]
     .sort((a, b) => a.time - b.time)
-    .slice(-4000);
+    .slice(-10000);
 }
 
 function mergeLiveCandle(
@@ -2029,7 +2029,7 @@ export default function Home() {
           (currentBucket === null ||
             bucket.time < currentBucket)
       )
-      .slice(-4000);
+      .slice(-10000);
 
     try {
       window.localStorage.setItem(
@@ -2243,7 +2243,7 @@ export default function Home() {
           }
 
           next.sort((a, b) => a.time - b.time);
-          return next.slice(-240);
+          return next.slice(-10000);
         });
 
         if (
