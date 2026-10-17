@@ -13,7 +13,10 @@ import {
   type ISeriesApi,
   type Time
 } from "lightweight-charts";
-import type { FibonacciSetup } from "@/lib/analysis/market-structure";
+import type {
+  FibonacciSetup,
+  MarketStructureSnapshot
+} from "@/lib/analysis/market-structure";
 
 export type ChartCandle = {
   time: number;
@@ -31,8 +34,10 @@ type Props = {
   fitNonce?: number;
   rangeKey?: "1D" | "5D" | "1M" | "3M" | "6M" | "1Y" | "5Y" | "MAX";
   fibonacci?: FibonacciSetup | null;
+  structure?: MarketStructureSnapshot | null;
   showFib?: boolean;
   showTrendFib?: boolean;
+  showStructure?: boolean;
 };
 
 function formatIst(timestamp: number) {
@@ -65,8 +70,10 @@ export default function MarketChart({
   fitNonce = 0,
   rangeKey = "1M",
   fibonacci = null,
+  structure = null,
   showFib = true,
-  showTrendFib = true
+  showTrendFib = true,
+  showStructure = true
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -288,6 +295,50 @@ export default function MarketChart({
     }
     analysisLinesRef.current = [];
 
+    if (showStructure && structure) {
+      if (structure.activeSwingHigh) {
+        analysisLinesRef.current.push(
+          series.createPriceLine({
+            price: structure.activeSwingHigh.price,
+            color: "#8b96aa",
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: false,
+            title: "Swing H"
+          })
+        );
+      }
+
+      if (structure.activeSwingLow) {
+        analysisLinesRef.current.push(
+          series.createPriceLine({
+            price: structure.activeSwingLow.price,
+            color: "#8b96aa",
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: false,
+            title: "Swing L"
+          })
+        );
+      }
+
+      if (structure.latestEvent) {
+        analysisLinesRef.current.push(
+          series.createPriceLine({
+            price: structure.latestEvent.brokenLevel,
+            color:
+              structure.latestEvent.direction === "bullish"
+                ? "#45d483"
+                : "#ff7477",
+            lineWidth: 2,
+            lineStyle: LineStyle.Solid,
+            axisLabelVisible: true,
+            title: `${structure.latestEvent.type} ${structure.latestEvent.direction === "bullish" ? "↑" : "↓"}`
+          })
+        );
+      }
+    }
+
     if (!fibonacci) return;
 
     if (showFib) {
@@ -340,7 +391,13 @@ export default function MarketChart({
       }
       analysisLinesRef.current = [];
     };
-  }, [fibonacci, showFib, showTrendFib]);
+  }, [
+    fibonacci,
+    structure,
+    showFib,
+    showTrendFib,
+    showStructure
+  ]);
 
   useEffect(() => {
     if (fitNonce > 0) {
