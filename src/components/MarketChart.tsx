@@ -25,6 +25,7 @@ export type ChartCandle = {
 type Props = {
   candles: ChartCandle[];
   fitNonce?: number;
+  rangeKey?: "1D" | "5D" | "1M" | "3M" | "6M" | "1Y" | "5Y" | "MAX";
 };
 
 function formatIst(timestamp: number) {
@@ -51,7 +52,11 @@ function toEpoch(time: Time): number | null {
   return null;
 }
 
-export default function MarketChart({ candles, fitNonce = 0 }: Props) {
+export default function MarketChart({
+  candles,
+  fitNonce = 0,
+  rangeKey = "1M"
+}: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -194,7 +199,12 @@ export default function MarketChart({ candles, fitNonce = 0 }: Props) {
   }, []);
 
   useEffect(() => {
-    if (!seriesRef.current || candles.length === 0) return;
+    if (!seriesRef.current) return;
+
+    if (candles.length === 0) {
+      seriesRef.current.setData([]);
+      return;
+    }
 
     const data: CandlestickData<Time>[] = candles.map((candle) => ({
       time: candle.time as Time,
@@ -205,8 +215,34 @@ export default function MarketChart({ candles, fitNonce = 0 }: Props) {
     }));
 
     seriesRef.current.setData(data);
-    chartRef.current?.timeScale().fitContent();
-  }, [candles]);
+
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    if (rangeKey === "MAX") {
+      chart.timeScale().fitContent();
+      return;
+    }
+
+    const secondsByRange: Record<Exclude<Props["rangeKey"], undefined | "MAX">, number> = {
+      "1D": 24 * 60 * 60,
+      "5D": 5 * 24 * 60 * 60,
+      "1M": 31 * 24 * 60 * 60,
+      "3M": 93 * 24 * 60 * 60,
+      "6M": 186 * 24 * 60 * 60,
+      "1Y": 366 * 24 * 60 * 60,
+      "5Y": 5 * 366 * 24 * 60 * 60
+    };
+
+    const lastTime = candles[candles.length - 1].time;
+    const firstTime = candles[0].time;
+    const desiredFrom = lastTime - secondsByRange[rangeKey];
+
+    chart.timeScale().setVisibleRange({
+      from: Math.max(firstTime, desiredFrom) as Time,
+      to: lastTime as Time
+    });
+  }, [candles, rangeKey]);
 
   useEffect(() => {
     if (fitNonce > 0) {

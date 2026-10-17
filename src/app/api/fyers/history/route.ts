@@ -66,7 +66,16 @@ export async function GET(request: NextRequest) {
   const now = Math.floor(Date.now() / 1000);
   const to = now - 60;
   const lookback = requestedLookback(range, resolution);
-  const from = Math.max(0, to - lookback);
+
+  // Fetch a small calendar buffer so 1D/5D still has the latest trading
+  // session available across weekends and exchange holidays. The chart
+  // controls the visible range separately.
+  const calendarBuffer =
+    range === "1D" ? 4 * DAY :
+    range === "5D" ? 5 * DAY :
+    2 * DAY;
+
+  const from = Math.max(0, to - lookback - calendarBuffer);
   const chunk = maxChunkSeconds(resolution);
 
   try {
