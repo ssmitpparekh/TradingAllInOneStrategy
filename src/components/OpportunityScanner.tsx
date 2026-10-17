@@ -11,9 +11,14 @@ import {
   type ScannerStaticContext
 } from "@/lib/scanner/engine";
 import type { ChartCandle } from "@/components/MarketChart";
+import {
+  buildNewsGate,
+  type NewsImpactEvent
+} from "@/lib/news/impact";
 
 type Props = {
   fyersConnected: boolean;
+  newsEvents: NewsImpactEvent[];
   onOpen: (instrument: {
     symbol: string;
     name: string;
@@ -177,10 +182,88 @@ function toOpenInstrument(instrument: ScannerInstrument) {
   };
 }
 
-function opportunityPriority(opportunity: ScannerOpportunity) {
-  if (opportunity.state === "STRONG") return 3;
-  if (opportunity.state === "LIVE SWEEP") return 2;
+function newsRiskPriority(level: string) {
+  if (level === "CRITICAL") return 4;
+  if (level === "HIGH") return 3;
+  if (level === "WATCH") return 2;
   return 1;
+}
+
+function opportunityPriority(
+  opportunity: ScannerOpportunity,
+  events: NewsImpactEvent[]
+) {
+  const gate = buildNewsGate({
+    events,
+    symbol: opportunity.instrument.symbol,
+    market: opportunity.instrument.market
+  });
+
+  const structurePriority =
+    opportunity.state === "STRONG"
+      ? 3
+      : opportunity.state === "LIVE SWEEP"
+        ? 2
+        : 1;
+
+  return (
+    newsRiskPriority(gate.riskLevel) * 1000 +
+    (gate.direction === opportunity.direction ? 100 : 0) +
+    structurePriority * 10 +
+    opportunity.score
+  );
+}
+
+function newsMappedInstrument(
+  event: NewsImpactEvent,
+  universe: UniverseResponse | null
+) {
+  if (!universe) return null;
+  const all = [...universe.fyers, ...universe.kraken];
+
+  for (const symbol of event.symbols) {
+    const exact = all.find((item) => item.symbol === symbol);
+    if (exact) return exact;
+  }
+
+  if (event.tags.includes("BTC")) {
+    return all.find((item) => item.symbol === "BTC/USD") ?? null;
+  }
+  if (event.tags.includes("ETH")) {
+    return all.find((item) => item.symbol === "ETH/USD") ?? null;
+  }
+  if (event.tags.includes("BANKNIFTY")) {
+    return (
+      all.find((item) => item.symbol === "NSE:NIFTYBANK-INDEX") ??
+      null
+    );
+  }
+  if (event.tags.includes("NIFTY") || event.tags.includes("INDIA")) {
+    return (
+      all.find((item) => item.symbol === "NSE:NIFTY50-INDEX") ??
+      null
+    );
+  }
+  if (event.tags.includes("OIL")) {
+    return (
+      all.find(
+        (item) =>
+          item.market === "MCX" &&
+          /CRUDE/i.test(item.name + item.symbol)
+      ) ?? null
+    );
+  }
+  if (event.tags.includes("GOLD")) {
+    return (
+      all.find(
+        (item) =>
+          item.market === "MCX" &&
+          /GOLD/i.test(item.name + item.symbol)
+      ) ?? null
+    );
+  }
+
+  return null;
 }
 
 async function fetchLotSize(symbol: string) {
@@ -291,6 +374,7 @@ function formatPrice(value: number) {
 
 export default function OpportunityScanner({
   fyersConnected,
+  newsEvents,
   onOpen
 }: Props) {
   const [universe, setUniverse] = useState<UniverseResponse | null>(null);
@@ -725,7 +809,8 @@ export default function OpportunityScanner({
 
       next.sort((a, b) => {
         const priority =
-          opportunityPriority(b) - opportunityPriority(a);
+          opportunityPriority(b, newsEvents) -
+          opportunityPriority(a, newsEvents);
         if (priority !== 0) return priority;
         return b.score - a.score;
       });
@@ -736,7 +821,7 @@ export default function OpportunityScanner({
     evaluate();
     const timer = window.setInterval(evaluate, 1000);
     return () => window.clearInterval(timer);
-  }, [contextsVersion]);
+  }, [contextsVersion, newsEvents]);
 
   useEffect(() => {
     if (!fyersConnected || !opportunities.length) return;
@@ -967,6 +1052,24 @@ export default function OpportunityScanner({
     };
   }, [universe, fyersConnected, capital]);
 
+  const activePriorityNews = useMemo(
+    () =>
+      newsEvents
+        .filter(
+          (event) =>
+            event.expiresAt > Date.now() &&
+            event.severity >= 70
+        )
+        .sort((a, b) => {
+          if (b.severity !== a.severity) {
+            return b.severity - a.severity;
+          }
+          return b.receivedAt - a.receivedAt;
+        })
+        .slice(0, 6),
+    [newsEvents]
+  );
+
   const strongCount = useMemo(
     () =>
       opportunities.filter((item) => item.state === "STRONG")
@@ -1053,11 +1156,60 @@ export default function OpportunityScanner({
         </small>
       </label>
 
+      {activePriorityNews.length ? (
+        <div className="scannerNewsSection">
+          <div className="scannerNewsTitle">
+            NEWS-FIRST MARKET RISK
+          </div>
+          {activePriorityNews.map((event) => {
+            const mapped = newsMappedInstrument(event, universe);
+            return (
+              <button
+                type="button"
+                className={
+                  "scannerNewsItem " +
+                  event.severityClass.toLowerCase()
+                }
+                key={event.id}
+                onClick={() => {
+                  if (mapped) onOpen(toOpenInstrument(mapped));
+                }}
+                disabled={!mapped}
+              >
+                <div>
+                  <span>
+                    {event.severityClass} · {event.source}
+                  </span>
+                  <strong>{event.headline}</strong>
+                </div>
+                <small>
+                  {event.bias.replaceAll("_", " ")} ·{" "}
+                  {event.confidence}% confidence · WAIT FOR PRICE
+                  CONFIRMATION
+                </small>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
       <div className="scannerList">
         {opportunities.length ? (
           opportunities.map((opportunity) => {
             const idea =
               derivativeIdeas[opportunity.instrument.symbol];
+            const newsGate = buildNewsGate({
+              events: newsEvents,
+              symbol: opportunity.instrument.symbol,
+              market: opportunity.instrument.market
+            });
+            const newsConflict =
+              newsGate.riskLevel === "HIGH" &&
+              newsGate.confidence >= 75 &&
+              newsGate.direction !== "unknown" &&
+              newsGate.direction !== opportunity.direction;
+            const newsBlocked =
+              newsGate.blocked || newsConflict;
             const age = Math.max(
               0,
               Math.floor(
@@ -1069,7 +1221,12 @@ export default function OpportunityScanner({
               <article
                 className={
                   "scannerOpportunity " +
-                  opportunity.state.toLowerCase().replace(" ", "-")
+                  opportunity.state.toLowerCase().replace(" ", "-") +
+                  (newsBlocked ? " news-hold" : "") +
+                  (newsGate.riskLevel === "HIGH" ||
+                  newsGate.riskLevel === "CRITICAL"
+                    ? " news-priority"
+                    : "")
                 }
                 key={
                   opportunity.instrument.market +
@@ -1102,21 +1259,35 @@ export default function OpportunityScanner({
                         opportunity.direction
                       }
                     >
-                      {opportunity.direction === "bullish"
-                        ? "LONG"
-                        : "SHORT"}
+                      {newsBlocked
+                        ? "NEWS HOLD"
+                        : opportunity.direction === "bullish"
+                          ? "LONG"
+                          : "SHORT"}
                     </div>
                   </div>
 
                   <div className="scannerScoreRow">
                     <span className="scannerState">
-                      {opportunity.state}
+                      {newsBlocked
+                        ? "NEWS HOLD"
+                        : newsGate.riskLevel === "HIGH" &&
+                            newsGate.direction === opportunity.direction
+                          ? "NEWS + " + opportunity.state
+                          : opportunity.state}
                     </span>
                     <b>{opportunity.score}/100</b>
                     <span>{formatPrice(opportunity.price)}</span>
                     <small>{age}s</small>
                   </div>
 
+                  {newsGate.event &&
+                  (newsGate.riskLevel === "HIGH" ||
+                    newsGate.riskLevel === "CRITICAL") ? (
+                    <p className="scannerNewsTrigger">
+                      {newsGate.event.headline}
+                    </p>
+                  ) : null}
                   <p>{opportunity.trigger}</p>
                   {opportunity.zone ? (
                     <small>
