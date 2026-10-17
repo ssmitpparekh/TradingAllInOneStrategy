@@ -39,7 +39,8 @@ async function loadPairs(): Promise<KrakenInstrument[]> {
   )
     .map((pair): KrakenInstrument | null => {
       const wsname = typeof pair.wsname === "string" ? pair.wsname : "";
-      if (!wsname || !wsname.includes("/")) return null;
+      const status = typeof pair.status === "string" ? pair.status : "online";
+      if (!wsname || !wsname.includes("/") || status !== "online") return null;
 
       const [base, quote] = wsname.split("/");
       return {
