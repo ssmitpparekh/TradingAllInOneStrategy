@@ -1953,7 +1953,9 @@ export default function Home() {
       localBuckets = [];
     }
 
-    setOrderFlowBuckets(localBuckets);
+    setOrderFlowBuckets((current) =>
+      mergeOrderFlowHistory(localBuckets, current)
+    );
 
     const firstTime =
       candles[0]?.time ??
