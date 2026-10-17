@@ -1678,6 +1678,7 @@ export default function Home() {
       return;
     }
 
+    const optionDirection = activePlannerPlan.direction;
     let cancelled = false;
     let timer: number | null = null;
 
@@ -1692,7 +1693,7 @@ export default function Home() {
             "&market=" +
             encodeURIComponent(selected.market) +
             "&direction=" +
-            encodeURIComponent(activePlannerPlan.direction) +
+            encodeURIComponent(optionDirection) +
             "&capital=" +
             encodeURIComponent(String(tradeCapital)),
           { cache: "no-store" }
