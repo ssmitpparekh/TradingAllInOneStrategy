@@ -547,7 +547,10 @@ export function buildNewsGate(input: {
 
   return {
     blocked: top.hardGate,
-    riskLevel: top.severityClass,
+    riskLevel:
+      top.severityClass === "INFO"
+        ? "NONE"
+        : top.severityClass,
     direction,
     confidence: top.confidence,
     event: top,
