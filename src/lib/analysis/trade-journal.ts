@@ -20,6 +20,7 @@ export type JournalTrade = {
   symbol: string;
   name: string;
   market: string;
+  setupType?: "PRIMARY" | "REACTION";
   direction: JournalDirection;
   signalTime: number;
   confirmationTimeframe: "1m" | "5m" | "15m";
@@ -56,10 +57,12 @@ export function makeTradeId(input: {
   symbol: string;
   direction: JournalDirection;
   signalTime: number;
+  setupType?: "PRIMARY" | "REACTION";
 }) {
   return [
     input.market,
     input.symbol,
+    input.setupType ?? "PRIMARY",
     input.direction,
     input.signalTime
   ].join("|");
