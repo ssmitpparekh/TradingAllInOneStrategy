@@ -333,6 +333,14 @@ export default function OpportunityScanner({
   const [derivativeWatches, setDerivativeWatches] = useState<
     DerivativeWatch[]
   >([]);
+  const [tradeChoice, setTradeChoice] = useState<{
+    opportunity: ScannerOpportunity;
+    idea: DerivativeIdea | null;
+  } | null>(null);
+  const [tradeChoiceLoading, setTradeChoiceLoading] = useState(false);
+  const [tradeChoiceError, setTradeChoiceError] = useState<string | null>(
+    null
+  );
 
   const contextsRef = useRef(
     new Map<string, ScannerStaticContext>()
@@ -1077,6 +1085,110 @@ export default function OpportunityScanner({
     [opportunities, newsEvents, derivativeWatches]
   );
 
+  const fetchDerivativeIdeaForOpportunity = async (
+    opportunity: ScannerOpportunity
+  ) => {
+    if (
+      opportunity.instrument.market === "KRAKEN" ||
+      opportunity.instrument.market === "MCX"
+    ) {
+      return null;
+    }
+
+    const cached =
+      derivativeIdeas[opportunity.instrument.symbol] ?? null;
+    if (cached) return cached;
+
+    const instrument = opportunity.instrument;
+    const response = await fetch(
+      "/api/fyers/derivatives?symbol=" +
+        encodeURIComponent(instrument.symbol) +
+        "&market=" +
+        encodeURIComponent(instrument.market) +
+        "&type=" +
+        encodeURIComponent(instrument.type) +
+        "&underlying=" +
+        encodeURIComponent(instrument.underlying) +
+        "&spotPrice=" +
+        encodeURIComponent(String(opportunity.price)),
+      { cache: "no-store" }
+    );
+    const data = await response.json();
+
+    if (!response.ok || !data.ok || !data.available) {
+      return null;
+    }
+
+    const idea = await buildDerivativeIdea(
+      instrument,
+      opportunity.direction,
+      opportunity.price,
+      data
+    );
+
+    if (idea) {
+      setDerivativeIdeas((current) => ({
+        ...current,
+        [instrument.symbol]: idea
+      }));
+    }
+
+    return idea;
+  };
+
+  const handleOpportunityClick = async (
+    opportunity: ScannerOpportunity
+  ) => {
+    setTradeChoiceError(null);
+
+    if (
+      opportunity.instrument.market === "KRAKEN" ||
+      opportunity.instrument.market === "MCX"
+    ) {
+      onOpen(toOpenInstrument(opportunity.instrument));
+      return;
+    }
+
+    const cached =
+      derivativeIdeas[opportunity.instrument.symbol] ?? null;
+
+    if (cached) {
+      setTradeChoice({
+        opportunity,
+        idea: cached
+      });
+      return;
+    }
+
+    setTradeChoiceLoading(true);
+    setTradeChoice({
+      opportunity,
+      idea: null
+    });
+
+    try {
+      const idea =
+        await fetchDerivativeIdeaForOpportunity(opportunity);
+
+      setTradeChoice({
+        opportunity,
+        idea
+      });
+
+      if (!idea) {
+        setTradeChoiceError(
+          "No live option chain is available for this instrument right now. You can still open the underlying chart."
+        );
+      }
+    } catch {
+      setTradeChoiceError(
+        "The option chain could not be loaded right now. You can still open the underlying chart."
+      );
+    } finally {
+      setTradeChoiceLoading(false);
+    }
+  };
+
   const strongCount = actionableOpportunities.length;
 
   const openOption = (
@@ -1150,8 +1262,6 @@ export default function OpportunityScanner({
       <div className="scannerList">
         {actionableOpportunities.length ? (
           actionableOpportunities.map((opportunity, index) => {
-            const idea =
-              derivativeIdeas[opportunity.instrument.symbol];
             const derivativeConfirm = derivativeWatches.some(
               (watch) =>
                 watch.instrument.symbol === opportunity.instrument.symbol &&
@@ -1185,9 +1295,7 @@ export default function OpportunityScanner({
                   type="button"
                   className="scannerOpportunityMain"
                   onClick={() =>
-                    onOpen(
-                      toOpenInstrument(opportunity.instrument)
-                    )
+                    void handleOpportunityClick(opportunity)
                   }
                 >
                   <div className="scannerOpportunityTop">
@@ -1238,53 +1346,6 @@ export default function OpportunityScanner({
                   </div>
                 </button>
 
-                {idea ? (
-                  <div className="scannerDerivativeIdeas">
-                    {[idea.buy, idea.sell]
-                      .filter(Boolean)
-                      .map((sizing) => {
-                        const item = sizing as OptionSizing;
-                        return (
-                          <button
-                            type="button"
-                            key={item.symbol + item.action}
-                            onClick={() =>
-                              openOption(item, opportunity)
-                            }
-                          >
-                            <span>{item.action}</span>
-                            <strong>
-                              {item.strike} {item.optionType}
-                            </strong>
-                            <small>
-                              ₹{formatPrice(item.ltp)} · lot{" "}
-                              {item.lotSize ?? "?"}
-                            </small>
-                            <small>
-                              {item.perLotCapital
-                                ? (item.source === "FYERS_MARGIN"
-                                    ? "Margin"
-                                    : "1 lot") +
-                                  " ₹" +
-                                  Math.round(
-                                    item.perLotCapital
-                                  ).toLocaleString("en-IN")
-                                : "Capital requirement unavailable"}
-                            </small>
-                            {capital > 0 ? (
-                              <small>
-                                {item.maxLots !== null
-                                  ? item.maxLots +
-                                    " lot(s) · qty " +
-                                    (item.maxQuantity ?? 0)
-                                  : "Capital insufficient / unavailable"}
-                              </small>
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                  </div>
-                ) : null}
               </article>
             );
           })
@@ -1302,6 +1363,132 @@ export default function OpportunityScanner({
           </div>
         )}
       </div>
+
+      {tradeChoice ? (
+        <div
+          className="tradeChoiceBackdrop"
+          role="presentation"
+          onClick={() => {
+            if (!tradeChoiceLoading) setTradeChoice(null);
+          }}
+        >
+          <div
+            className="tradeChoiceModal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Choose how to take this trade"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="tradeChoiceHeader">
+              <div>
+                <span>CONFIRMED {tradeChoice.opportunity.moveClass} TRADE</span>
+                <h3>{tradeChoice.opportunity.instrument.name}</h3>
+                <p>
+                  {tradeChoice.opportunity.direction === "bullish"
+                    ? "Bullish setup — choose how you want to express it."
+                    : "Bearish setup — choose how you want to express it."}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTradeChoice(null)}
+                disabled={tradeChoiceLoading}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="tradeChoicePlan">
+              <span>
+                ENTRY {formatPrice(tradeChoice.opportunity.entry)}
+              </span>
+              <span>
+                SL {formatPrice(tradeChoice.opportunity.stopLoss)}
+              </span>
+              <span>
+                T1 {formatPrice(tradeChoice.opportunity.targets[0].price)}
+              </span>
+              <span>
+                T2 {formatPrice(tradeChoice.opportunity.targets[1].price)}
+              </span>
+              <span>
+                T3 {formatPrice(tradeChoice.opportunity.targets[2].price)}
+              </span>
+            </div>
+
+            {tradeChoiceLoading ? (
+              <div className="tradeChoiceLoading">
+                Loading the live option chain…
+              </div>
+            ) : tradeChoice.idea ? (
+              <div className="tradeChoiceActions">
+                {[tradeChoice.idea.buy, tradeChoice.idea.sell]
+                  .filter(Boolean)
+                  .map((sizing) => {
+                    const item = sizing as OptionSizing;
+                    return (
+                      <button
+                        type="button"
+                        className="tradeChoiceOption"
+                        key={item.action + item.symbol}
+                        onClick={() => {
+                          openOption(item, tradeChoice.opportunity);
+                          setTradeChoice(null);
+                        }}
+                      >
+                        <span>{item.action}</span>
+                        <strong>
+                          {item.strike.toLocaleString("en-IN")}{" "}
+                          {item.optionType}
+                        </strong>
+                        <small>
+                          Live premium ₹{formatPrice(item.ltp)} · lot{" "}
+                          {item.lotSize ?? "?"}
+                        </small>
+                        <small>
+                          {item.action.startsWith("SELL")
+                            ? item.perLotCapital
+                              ? "FYERS margin/lot ₹" +
+                                Math.round(
+                                  item.perLotCapital
+                                ).toLocaleString("en-IN")
+                              : "FYERS margin loading/unavailable"
+                            : item.perLotCapital
+                              ? "1 lot costs ₹" +
+                                Math.round(
+                                  item.perLotCapital
+                                ).toLocaleString("en-IN")
+                              : "Premium sizing unavailable"}
+                        </small>
+                      </button>
+                    );
+                  })}
+              </div>
+            ) : (
+              <div className="tradeChoiceUnavailable">
+                {tradeChoiceError ??
+                  "No option contract is available for this setup right now."}
+              </div>
+            )}
+
+            <button
+              type="button"
+              className="tradeChoiceUnderlying"
+              onClick={() => {
+                onOpen(
+                  toOpenInstrument(
+                    tradeChoice.opportunity.instrument
+                  )
+                );
+                setTradeChoice(null);
+              }}
+            >
+              Open underlying chart instead
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="scannerFooter">
         <span>Only fresh, chart-READY trades are shown</span>
