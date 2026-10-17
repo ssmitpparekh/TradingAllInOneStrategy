@@ -1,12 +1,26 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import MarketChart, { type ChartCandle } from "@/components/MarketChart";
+import MarketChart, {
+  type ChartCandle,
+  type TradeChartMarker
+} from "@/components/MarketChart";
 import PwaInstallButton from "@/components/PwaInstallButton";
 import { buildTechnicalContext } from "@/lib/analysis/indicators";
 import { buildVolumeAnalytics } from "@/lib/analysis/volume";
 import { buildReversalEngine } from "@/lib/analysis/confluence";
 import { buildSimpleTradePlan } from "@/lib/analysis/trade-plan";
+import {
+  buildOpeningConfirmation,
+  indianSessionOpenEpoch,
+  isIndianOpeningWindow
+} from "@/lib/analysis/opening-confirmation";
+import {
+  makeTradeId,
+  summarizeTrades,
+  updateTradeWithPrice,
+  type JournalTrade
+} from "@/lib/analysis/trade-journal";
 import {
   orderFlowBucketStart,
   orderFlowPercentages,
@@ -152,6 +166,7 @@ const MARKET_FILTERS = ["ALL", "NSE", "BSE", "MCX", "KRAKEN"];
 const TYPE_FILTERS = ["ALL", "INDEX", "EQUITY", "ETF", "SGB", "MF", "FUTURE", "OPTION", "COMMODITY", "CURRENCY", "CRYPTO"];
 
 const LAST_VIEW_KEY = "allinoneview:last-view:v1";
+const TRADE_JOURNAL_KEY = "allinoneview:trade-journal:v1";
 
 const KRAKEN_RESOLUTIONS = new Set<Resolution>([
   "1", "5", "15", "30", "60", "240", "1D", "1W"
@@ -281,7 +296,11 @@ export default function Home() {
   const [context4h, setContext4h] = useState<ChartCandle[]>([]);
   const [context1h, setContext1h] = useState<ChartCandle[]>([]);
   const [context15m, setContext15m] = useState<ChartCandle[]>([]);
+  const [context5m, setContext5m] = useState<ChartCandle[]>([]);
+  const [context1m, setContext1m] = useState<ChartCandle[]>([]);
   const [contextPrice, setContextPrice] = useState<number | null>(null);
+  const [tradeJournal, setTradeJournal] = useState<JournalTrade[]>([]);
+  const [journalReady, setJournalReady] = useState(false);
   const [loadingContext, setLoadingContext] = useState(false);
   const [clockNow, setClockNow] = useState(Date.now());
   const historyRequestId = useRef(0);
@@ -345,41 +364,93 @@ export default function Home() {
     () => buildTechnicalContext(candles),
     [candles]
   );
+  const fastLatestTime =
+    context1m[context1m.length - 1]?.time ??
+    context5m[context5m.length - 1]?.time ??
+    null;
+  const openingSessionStart = useMemo(() => {
+    if (
+      fastLatestTime === null ||
+      (selected.market !== "NSE" && selected.market !== "BSE") ||
+      !isIndianOpeningWindow(fastLatestTime)
+    ) {
+      return null;
+    }
+
+    return indianSessionOpenEpoch(fastLatestTime);
+  }, [fastLatestTime, selected.market]);
+
+  const planContext4h = useMemo(() => {
+    if (openingSessionStart === null) return context4h;
+    const prior = context4h.filter(
+      (candle) => candle.time < openingSessionStart
+    );
+    return prior.length >= 30 ? prior : context4h;
+  }, [context4h, openingSessionStart]);
+
+  const planContext1h = useMemo(() => {
+    if (openingSessionStart === null) return context1h;
+    const prior = context1h.filter(
+      (candle) => candle.time < openingSessionStart
+    );
+    return prior.length >= 30 ? prior : context1h;
+  }, [context1h, openingSessionStart]);
+
   const htfTechnical = useMemo(
-    () => buildTechnicalContext(context4h),
-    [context4h]
+    () => buildTechnicalContext(planContext4h),
+    [planContext4h]
   );
   const htfFib = useMemo(
-    () => buildFibonacciSetup(context4h),
-    [context4h]
+    () => buildFibonacciSetup(planContext4h),
+    [planContext4h]
   );
   const htfStructure = useMemo(
-    () => buildMarketStructure(context4h),
-    [context4h]
+    () => buildMarketStructure(planContext4h),
+    [planContext4h]
   );
   const refineFib = useMemo(
-    () => buildFibonacciSetup(context1h),
-    [context1h]
+    () => buildFibonacciSetup(planContext1h),
+    [planContext1h]
   );
   const refineImbalance = useMemo(
-    () => buildImbalanceLiquiditySnapshot(context1h),
-    [context1h]
+    () => buildImbalanceLiquiditySnapshot(planContext1h),
+    [planContext1h]
   );
   const refineOrderBlocks = useMemo(
-    () => buildOrderBlockSnapshot(context1h),
-    [context1h]
+    () => buildOrderBlockSnapshot(planContext1h),
+    [planContext1h]
   );
   const refineVolume = useMemo(
     () =>
-      buildVolumeAnalytics(context1h, {
+      buildVolumeAnalytics(planContext1h, {
         timeZone: selectedIsKraken ? "UTC" : "Asia/Kolkata",
         anchorTime: htfFib.anchorA?.time ?? null
       }),
-    [context1h, selectedIsKraken, htfFib.anchorA?.time]
+    [planContext1h, selectedIsKraken, htfFib.anchorA?.time]
   );
   const confirmation15m = useMemo(
     () => buildMarketStructure(context15m),
     [context15m]
+  );
+  const structure5m = useMemo(
+    () => buildMarketStructure(context5m, { confirmationBars: 2 }),
+    [context5m]
+  );
+  const structure1m = useMemo(
+    () => buildMarketStructure(context1m, { confirmationBars: 2 }),
+    [context1m]
+  );
+  const imbalance5m = useMemo(
+    () => buildImbalanceLiquiditySnapshot(context5m),
+    [context5m]
+  );
+  const imbalance1m = useMemo(
+    () => buildImbalanceLiquiditySnapshot(context1m),
+    [context1m]
+  );
+  const orderBlocks5m = useMemo(
+    () => buildOrderBlockSnapshot(context5m),
+    [context5m]
   );
   const reversalEngine = useMemo(
     () =>
@@ -391,7 +462,7 @@ export default function Home() {
           0,
         htfAtr: htfFib.atr14,
         refineAtr: refineFib.atr14,
-        htfReady: context4h.length >= 30,
+        htfReady: planContext4h.length >= 30,
         confirmation15mReady: context15m.length >= 30,
         fibonacci: htfFib,
         structure: htfStructure,
@@ -423,7 +494,7 @@ export default function Home() {
     [
       contextPrice,
       context1h,
-      context4h,
+      planContext4h,
       context15m,
       quote?.lp,
       htfFib,
@@ -434,6 +505,30 @@ export default function Home() {
       refineVolume,
       confirmation15m,
       derivatives
+    ]
+  );
+
+  const openingConfirmation = useMemo(
+    () =>
+      buildOpeningConfirmation({
+        market: selected.market,
+        latestTime: fastLatestTime,
+        direction: reversalEngine.selected.direction,
+        structure1m,
+        structure5m,
+        imbalance1m,
+        imbalance5m,
+        orderBlocks5m
+      }),
+    [
+      selected.market,
+      fastLatestTime,
+      reversalEngine.selected.direction,
+      structure1m,
+      structure5m,
+      imbalance1m,
+      imbalance5m,
+      orderBlocks5m
     ]
   );
 
@@ -453,7 +548,9 @@ export default function Home() {
         imbalance: refineImbalance,
         orderBlocks: refineOrderBlocks,
         reversal: reversalEngine.selected,
-        refineAtr: refineFib.atr14
+        refineAtr: refineFib.atr14,
+        openingConfirmation,
+        confirmation15m
       }),
     [
       contextPrice,
@@ -465,7 +562,9 @@ export default function Home() {
       refineImbalance,
       refineOrderBlocks,
       reversalEngine.selected,
-      refineFib.atr14
+      refineFib.atr14,
+      openingConfirmation,
+      confirmation15m
     ]
   );
 
@@ -474,6 +573,8 @@ export default function Home() {
       setContext4h([]);
       setContext1h([]);
       setContext15m([]);
+      setContext5m([]);
+      setContext1m([]);
       setContextPrice(null);
       return;
     }
@@ -507,10 +608,12 @@ export default function Home() {
           return data.candles as ChartCandle[];
         });
 
-      const [h4, h1, m15, priceResponse] = await Promise.all([
+      const [h4, h1, m15, m5, m1, priceResponse] = await Promise.all([
         historyRequest("240", "6M"),
         historyRequest("60", "3M"),
         historyRequest("15", "1M"),
+        historyRequest("5", "5D"),
+        historyRequest("1", "5D"),
         fetch(
           `${quoteEndpoint}?symbol=${encodeURIComponent(primaryAnalysisSymbol)}`,
           { cache: "no-store", signal }
@@ -522,6 +625,8 @@ export default function Home() {
       setContext4h(h4);
       setContext1h(h1);
       setContext15m(m15);
+      setContext5m(m5);
+      setContext1m(m1);
       setContextPrice(
         priceResponse?.ok
           ? Number(priceResponse.quote?.lp ?? 0) || null
@@ -532,6 +637,8 @@ export default function Home() {
       setContext4h([]);
       setContext1h([]);
       setContext15m([]);
+      setContext5m([]);
+      setContext1m([]);
       setContextPrice(null);
     } finally {
       if (!signal?.aborted) setLoadingContext(false);
