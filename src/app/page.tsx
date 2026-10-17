@@ -157,8 +157,14 @@ export default function Home() {
       }
 
       setQuote(data.quote);
-      setConnected(true);
-      if (!silent) setMessage("FYERS quote received successfully.");
+      if (market !== "KRAKEN") {
+        setConnected(true);
+      }
+      if (!silent) {
+        setMessage(
+          `${market === "KRAKEN" ? "Kraken" : "FYERS"} quote received successfully.`
+        );
+      }
     } catch (error) {
       if (!silent) {
         setMessage(error instanceof Error ? error.message : "Unable to fetch the quote.");
