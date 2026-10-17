@@ -6,6 +6,7 @@ import PwaInstallButton from "@/components/PwaInstallButton";
 import { buildTechnicalContext } from "@/lib/analysis/indicators";
 import { buildVolumeAnalytics } from "@/lib/analysis/volume";
 import { buildReversalEngine } from "@/lib/analysis/confluence";
+import { buildSimpleTradePlan } from "@/lib/analysis/trade-plan";
 import {
   orderFlowBucketStart,
   orderFlowPercentages,
@@ -150,6 +151,8 @@ const RANGES: RangeKey[] = ["1D", "5D", "1M", "3M", "6M", "1Y", "5Y", "MAX"];
 const MARKET_FILTERS = ["ALL", "NSE", "BSE", "MCX", "KRAKEN"];
 const TYPE_FILTERS = ["ALL", "INDEX", "EQUITY", "ETF", "SGB", "MF", "FUTURE", "OPTION", "COMMODITY", "CURRENCY", "CRYPTO"];
 
+const LAST_VIEW_KEY = "allinoneview:last-view:v1";
+
 const KRAKEN_RESOLUTIONS = new Set<Resolution>([
   "1", "5", "15", "30", "60", "240", "1D", "1W"
 ]);
@@ -259,18 +262,20 @@ export default function Home() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [liveCandle, setLiveCandle] = useState<ChartCandle | null>(null);
-  const [showFib, setShowFib] = useState(true);
-  const [showTrendFib, setShowTrendFib] = useState(true);
-  const [showStructure, setShowStructure] = useState(true);
-  const [showFvg, setShowFvg] = useState(true);
-  const [showLiquidity, setShowLiquidity] = useState(true);
-  const [showOrderBlocks, setShowOrderBlocks] = useState(true);
-  const [showVolume, setShowVolume] = useState(true);
-  const [showVwap, setShowVwap] = useState(true);
-  const [showProfile, setShowProfile] = useState(true);
-  const [showEma, setShowEma] = useState(true);
-  const [showSessionBreaks, setShowSessionBreaks] = useState(true);
-  const [showOrderFlow, setShowOrderFlow] = useState(true);
+  const [showFib, setShowFib] = useState(false);
+  const [showTrendFib, setShowTrendFib] = useState(false);
+  const [showStructure, setShowStructure] = useState(false);
+  const [showFvg, setShowFvg] = useState(false);
+  const [showLiquidity, setShowLiquidity] = useState(false);
+  const [showOrderBlocks, setShowOrderBlocks] = useState(false);
+  const [showVolume, setShowVolume] = useState(false);
+  const [showVwap, setShowVwap] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [showEma, setShowEma] = useState(false);
+  const [showSessionBreaks, setShowSessionBreaks] = useState(false);
+  const [showOrderFlow, setShowOrderFlow] = useState(false);
+  const [showAdvancedAnalysis, setShowAdvancedAnalysis] = useState(false);
+  const [viewReady, setViewReady] = useState(false);
   const [orderFlowBuckets, setOrderFlowBuckets] = useState<OrderFlowBucket[]>([]);
   const [derivatives, setDerivatives] = useState<DerivativesData | null>(null);
   const [loadingDerivatives, setLoadingDerivatives] = useState(false);
@@ -340,6 +345,10 @@ export default function Home() {
   const technicalContext = useMemo(
     () => buildTechnicalContext(candles),
     [candles]
+  );
+  const htfTechnical = useMemo(
+    () => buildTechnicalContext(context4h),
+    [context4h]
   );
   const htfFib = useMemo(
     () => buildFibonacciSetup(context4h),
@@ -429,6 +438,38 @@ export default function Home() {
     ]
   );
 
+  const simpleTradePlan = useMemo(
+    () =>
+      buildSimpleTradePlan({
+        price:
+          contextPrice ??
+          context1h[context1h.length - 1]?.close ??
+          quote?.lp ??
+          0,
+        latestTime:
+          context1h[context1h.length - 1]?.time ?? null,
+        htfTechnical,
+        htfStructure,
+        fibonacci: htfFib,
+        imbalance: refineImbalance,
+        orderBlocks: refineOrderBlocks,
+        reversal: reversalEngine.selected,
+        refineAtr: refineFib.atr14
+      }),
+    [
+      contextPrice,
+      context1h,
+      quote?.lp,
+      htfTechnical,
+      htfStructure,
+      htfFib,
+      refineImbalance,
+      refineOrderBlocks,
+      reversalEngine.selected,
+      refineFib.atr14
+    ]
+  );
+
   async function fetchAnalysisContext(signal?: AbortSignal) {
     if (!selectedIsKraken && !connected) {
       setContext4h([]);
@@ -502,7 +543,7 @@ export default function Home() {
     silent = false,
     signal?: AbortSignal
   ) {
-    if (selectedIsKraken || !connected) {
+    if (!viewReady || selectedIsKraken || !connected) {
       setDerivatives(null);
       return;
     }
@@ -699,6 +740,55 @@ export default function Home() {
   }
 
   useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(LAST_VIEW_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as {
+          selected?: Instrument;
+          resolution?: Resolution;
+          range?: RangeKey;
+        };
+
+        if (
+          parsed.selected?.symbol &&
+          parsed.selected?.market &&
+          parsed.selected?.name
+        ) {
+          setSelected(parsed.selected);
+        }
+
+        if (
+          parsed.resolution &&
+          RESOLUTIONS.some((item) => item.value === parsed.resolution)
+        ) {
+          setResolution(parsed.resolution);
+        }
+
+        if (parsed.range && RANGES.includes(parsed.range)) {
+          setRange(parsed.range);
+        }
+      }
+    } catch {
+      // Ignore corrupt local view state and use the safe default.
+    } finally {
+      setViewReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!viewReady) return;
+
+    window.localStorage.setItem(
+      LAST_VIEW_KEY,
+      JSON.stringify({
+        selected,
+        resolution,
+        range
+      })
+    );
+  }, [viewReady, selected, resolution, range]);
+
+  useEffect(() => {
     const clockTimer = window.setInterval(() => {
       setClockNow(Date.now());
     }, 1000);
@@ -715,7 +805,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!selectedIsKraken && !connected) return;
+    if (!viewReady || (!selectedIsKraken && !connected)) return;
 
     const controller = new AbortController();
 
@@ -730,6 +820,7 @@ export default function Home() {
 
     return () => controller.abort();
   }, [
+    viewReady,
     connected,
     selected.symbol,
     selected.market,
@@ -739,7 +830,7 @@ export default function Home() {
   ]);
 
   useEffect(() => {
-    if (!selectedIsKraken && !connected) return;
+    if (!viewReady || (!selectedIsKraken && !connected)) return;
 
     setLiveCandle(null);
     setOrderFlowBuckets([]);
@@ -988,6 +1079,7 @@ export default function Home() {
       setLiveCandle(null);
     };
   }, [
+    viewReady,
     connected,
     selected.symbol,
     selected.market,
@@ -996,7 +1088,7 @@ export default function Home() {
   ]);
 
   useEffect(() => {
-    if (selectedIsKraken || !connected) {
+    if (!viewReady || selectedIsKraken || !connected) {
       setDerivatives(null);
       return;
     }
@@ -1014,6 +1106,7 @@ export default function Home() {
       window.clearInterval(timer);
     };
   }, [
+    viewReady,
     connected,
     selectedIsKraken,
     selected.symbol,
@@ -1025,7 +1118,7 @@ export default function Home() {
   ]);
 
   useEffect(() => {
-    if (!selectedIsKraken && !connected) return;
+    if (!viewReady || (!selectedIsKraken && !connected)) return;
 
     const controller = new AbortController();
 
@@ -1040,6 +1133,7 @@ export default function Home() {
       window.clearInterval(timer);
     };
   }, [
+    viewReady,
     connected,
     selectedIsKraken,
     primaryAnalysisSymbol
@@ -1116,6 +1210,17 @@ export default function Home() {
     if (!quote) return "";
     return quote.ch >= 0 ? "positive" : "negative";
   }, [quote]);
+
+  if (!viewReady) {
+    return (
+      <main className="shell wide">
+        <section className="card restoringView">
+          <p className="eyebrow">ALLINONEVIEW</p>
+          <h2>Restoring your last chart…</h2>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="shell wide">
@@ -1407,14 +1512,88 @@ export default function Home() {
             <span>O <strong>{quote.open.toLocaleString("en-IN")}</strong></span>
             <span>H <strong>{quote.high.toLocaleString("en-IN")}</strong></span>
             <span>L <strong>{quote.low.toLocaleString("en-IN")}</strong></span>
-            <span>PC <strong>{quote.previousClose.toLocaleString("en-IN")}</strong></span>
+            <span>C <strong>{quote.lp.toLocaleString("en-IN")}</strong></span>
             {quote.volume ? <span>VOL <strong>{quote.volume.toLocaleString("en-IN")}</strong></span> : null}
             <span className="feedNote">{streamMessage}</span>
           </div>
         ) : null}
       </section>
 
-      <section className="card orderFlowCard">
+      <section className={"card simplePlanCard " + simpleTradePlan.state.toLowerCase()}>
+        <div className="simplePlanHeader">
+          <div>
+            <p className="label">SIMPLE SWING TRADE PLAN · 4H → 1H → 15m</p>
+            <h3>{loadingContext ? "Building real-data context…" : simpleTradePlan.headline}</h3>
+            <p>{simpleTradePlan.instruction}</p>
+          </div>
+          <div className={"simpleTrend " + simpleTradePlan.trend}>
+            <span>OVERALL TREND</span>
+            <strong>{simpleTradePlan.trend.toUpperCase()}</strong>
+            <small>{simpleTradePlan.score}/100 confluence</small>
+          </div>
+        </div>
+
+        <div className="simplePlanGrid">
+          <div>
+            <span>WAIT / ENTRY ZONE</span>
+            <strong>
+              {simpleTradePlan.zone
+                ? simpleTradePlan.zone.low.toLocaleString("en-IN", { maximumFractionDigits: 2 }) +
+                  " – " +
+                  simpleTradePlan.zone.high.toLocaleString("en-IN", { maximumFractionDigits: 2 })
+                : "WAIT"}
+            </strong>
+            <small>Fib retracement refined by valid OB/sweep context</small>
+          </div>
+          <div>
+            <span>ENTRY</span>
+            <strong>
+              {simpleTradePlan.state === "READY" && simpleTradePlan.entry !== null
+                ? simpleTradePlan.entry.toLocaleString("en-IN", { maximumFractionDigits: 2 })
+                : "WAIT"}
+            </strong>
+            <small>{simpleTradePlan.trigger ?? "Needs liquidity sweep / Order Block reaction"}</small>
+          </div>
+          <div>
+            <span>STRICT SL</span>
+            <strong>
+              {simpleTradePlan.stopLoss !== null
+                ? simpleTradePlan.stopLoss.toLocaleString("en-IN", { maximumFractionDigits: 2 })
+                : "—"}
+            </strong>
+            <small>Beyond real invalidation; never tightened inside the invalidation point</small>
+          </div>
+        </div>
+
+        <div className="simpleTargets">
+          {(["T1", "T2", "T3"] as const).map((label) => {
+            const target = simpleTradePlan.targets.find((item) => item.label === label);
+            return (
+              <div key={label}>
+                <span>{label}</span>
+                <strong>
+                  {target
+                    ? target.price.toLocaleString("en-IN", { maximumFractionDigits: 2 })
+                    : "—"}
+                </strong>
+                <small>{target?.rr !== null && target?.rr !== undefined ? target.rr.toFixed(1) + "R" : target?.source ?? "Waiting for valid target"}</small>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="simplePlanFooter">
+          <p>{simpleTradePlan.reason}</p>
+          <button
+            className="button secondary compactButton"
+            onClick={() => setShowAdvancedAnalysis((value) => !value)}
+          >
+            {showAdvancedAnalysis ? "Hide advanced analysis" : "Show advanced analysis"}
+          </button>
+        </div>
+      </section>
+
+      <section className={showAdvancedAnalysis ? "card orderFlowCard" : "card orderFlowCard advancedHidden"}>
         <div className="orderFlowHeader">
           <div>
             <p className="label">TRUE BUY / SELL ORDER FLOW</p>
@@ -1497,7 +1676,7 @@ export default function Home() {
         )}
       </section>
 
-      <section className="card reversalCard">
+      <section className={showAdvancedAnalysis ? "card reversalCard" : "card reversalCard advancedHidden"}>
         <div className="reversalHeader">
           <div>
             <p className="label">MULTI-TIMEFRAME REVERSAL ENGINE</p>
@@ -1620,7 +1799,7 @@ export default function Home() {
         )}
       </section>
 
-      <section className="card analysisCard">
+      <section className={showAdvancedAnalysis ? "card analysisCard" : "card analysisCard advancedHidden"}>
         <div className="analysisHeader">
           <div>
             <p className="label">AUTOMATIC MARKET ANALYSIS</p>
@@ -2502,7 +2681,7 @@ export default function Home() {
       </section>
 
       {!selectedIsKraken && connected && !streamConnected && socketDiagnostic ? (
-        <section className="card">
+        <section className={showAdvancedAnalysis ? "card" : "card advancedHidden"}>
           <p className="label">Safe socket diagnostic</p>
           <div className="quoteGrid">
             <div><span>SDK loaded</span><strong>{socketDiagnostic.sdkLoaded ? "Yes" : "No"}</strong></div>
@@ -2516,11 +2695,12 @@ export default function Home() {
       ) : null}
 
       <section className="card roadmap">
-        <p className="label">Next layer</p>
+        <p className="label">PLATFORM RULE</p>
         <p>
-          Auto swing detection → Fib / Trend Fib → BOS/CHoCH → Order Blocks/FVG
-          → liquidity → futures VWAP/volume profile → OI/ΔOI → reversal score,
-          invalidation, SL and targets.
+          ALLINONEVIEW uses real market data and deterministic analysis. The simple
+          plan stays in WAIT / NO TRADE unless the required trend, retracement,
+          liquidity or Order Block trigger, confirmation, invalidation and
+          reward/risk conditions are actually present.
         </p>
       </section>
     </main>
