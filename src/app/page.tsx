@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import MarketChart, { type ChartCandle } from "@/components/MarketChart";
 import PwaInstallButton from "@/components/PwaInstallButton";
+import { buildTechnicalContext } from "@/lib/analysis/indicators";
 import { buildVolumeAnalytics } from "@/lib/analysis/volume";
 import { buildReversalEngine } from "@/lib/analysis/confluence";
 import {
@@ -262,6 +263,7 @@ export default function Home() {
   const [showVolume, setShowVolume] = useState(true);
   const [showVwap, setShowVwap] = useState(true);
   const [showProfile, setShowProfile] = useState(true);
+  const [showEma, setShowEma] = useState(true);
   const [derivatives, setDerivatives] = useState<DerivativesData | null>(null);
   const [loadingDerivatives, setLoadingDerivatives] = useState(false);
   const [context4h, setContext4h] = useState<ChartCandle[]>([]);
@@ -319,6 +321,10 @@ export default function Home() {
         anchorTime: fibonacci.anchorA?.time ?? null
       }),
     [candles, selectedIsKraken, fibonacci.anchorA?.time]
+  );
+  const technicalContext = useMemo(
+    () => buildTechnicalContext(candles),
+    [candles]
   );
   const htfFib = useMemo(
     () => buildFibonacciSetup(context4h),
@@ -1270,6 +1276,7 @@ export default function Home() {
           imbalance={imbalance}
           orderBlocks={orderBlocks}
           volumeAnalytics={volumeAnalytics}
+          technicalContext={technicalContext}
           showFib={showFib}
           showTrendFib={showTrendFib}
           showStructure={showStructure}
@@ -1279,6 +1286,7 @@ export default function Home() {
           showVolume={showVolume}
           showVwap={showVwap}
           showProfile={showProfile}
+          showEma={showEma}
         />
 
         {quote ? (
@@ -1507,6 +1515,12 @@ export default function Home() {
               disabled={!volumeAnalytics.available}
             >
               Profile {showProfile ? "ON" : "OFF"}
+            </button>
+            <button
+              className={showEma ? "analysisToggle active" : "analysisToggle"}
+              onClick={() => setShowEma((value) => !value)}
+            >
+              EMA {showEma ? "ON" : "OFF"}
             </button>
           </div>
         </div>
@@ -1896,6 +1910,70 @@ export default function Home() {
             </p>
           )}
         </section>
+
+        <div className="technicalStrip">
+          <div>
+            <span>TREND STATE</span>
+            <strong className={`technicalTrend ${technicalContext.trendState}`}>
+              {technicalContext.trendState.replaceAll("_", " ").toUpperCase()}
+            </strong>
+          </div>
+          <div>
+            <span>RSI(14)</span>
+            <strong>
+              {technicalContext.rsi14 !== null
+                ? technicalContext.rsi14.toFixed(1)
+                : "—"}
+            </strong>
+          </div>
+          <div>
+            <span>ADX(14)</span>
+            <strong>
+              {technicalContext.adx14 !== null
+                ? technicalContext.adx14.toFixed(1)
+                : "—"}
+            </strong>
+          </div>
+          <div>
+            <span>ATR / PRICE</span>
+            <strong>
+              {technicalContext.atrPercent !== null
+                ? `${technicalContext.atrPercent.toFixed(2)}%`
+                : "—"}
+            </strong>
+            <small>{technicalContext.volatilityState.toUpperCase()} VOLATILITY</small>
+          </div>
+          <div>
+            <span>EMA20</span>
+            <strong>
+              {technicalContext.latestEma20 !== null
+                ? technicalContext.latestEma20.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })
+                : "—"}
+            </strong>
+          </div>
+          <div>
+            <span>EMA50</span>
+            <strong>
+              {technicalContext.latestEma50 !== null
+                ? technicalContext.latestEma50.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })
+                : "—"}
+            </strong>
+          </div>
+          <div>
+            <span>EMA200</span>
+            <strong>
+              {technicalContext.latestEma200 !== null
+                ? technicalContext.latestEma200.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })
+                : "—"}
+            </strong>
+          </div>
+        </div>
 
         <div className="analysisSummary">
           <div>

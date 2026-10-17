@@ -15,6 +15,7 @@ import {
   type ISeriesApi,
   type Time
 } from "lightweight-charts";
+import type { TechnicalContext } from "@/lib/analysis/indicators";
 import type { VolumeAnalytics } from "@/lib/analysis/volume";
 import type {
   FibonacciSetup,
@@ -43,6 +44,7 @@ type Props = {
   imbalance?: ImbalanceLiquiditySnapshot | null;
   orderBlocks?: OrderBlockSnapshot | null;
   volumeAnalytics?: VolumeAnalytics | null;
+  technicalContext?: TechnicalContext | null;
   showFib?: boolean;
   showTrendFib?: boolean;
   showStructure?: boolean;
@@ -52,6 +54,7 @@ type Props = {
   showVolume?: boolean;
   showVwap?: boolean;
   showProfile?: boolean;
+  showEma?: boolean;
 };
 
 function formatIst(timestamp: number) {
@@ -104,6 +107,7 @@ export default function MarketChart({
   imbalance = null,
   orderBlocks = null,
   volumeAnalytics = null,
+  technicalContext = null,
   showFib = true,
   showTrendFib = true,
   showStructure = true,
@@ -112,7 +116,8 @@ export default function MarketChart({
   showOrderBlocks = true,
   showVolume = true,
   showVwap = true,
-  showProfile = true
+  showProfile = true,
+  showEma = true
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -120,6 +125,9 @@ export default function MarketChart({
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const sessionVwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const anchoredVwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const ema20SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const ema50SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const ema200SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const analysisLinesRef = useRef<IPriceLine[]>([]);
   const [hovered, setHovered] = useState<ChartCandle | null>(null);
 
@@ -248,11 +256,39 @@ export default function MarketChart({
       title: "AVWAP"
     });
 
+    const ema20Series = chart.addSeries(LineSeries, {
+      color: "#56b4ff",
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      title: "EMA20"
+    });
+
+    const ema50Series = chart.addSeries(LineSeries, {
+      color: "#f5b942",
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      title: "EMA50"
+    });
+
+    const ema200Series = chart.addSeries(LineSeries, {
+      color: "#d67cff",
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      title: "EMA200"
+    });
+
     chartRef.current = chart;
     seriesRef.current = series;
     volumeSeriesRef.current = volumeSeries;
     sessionVwapSeriesRef.current = sessionVwapSeries;
     anchoredVwapSeriesRef.current = anchoredVwapSeries;
+    ema20SeriesRef.current = ema20Series;
+    ema50SeriesRef.current = ema50Series;
+    ema200SeriesRef.current = ema200Series;
 
     chart.subscribeCrosshairMove((param) => {
       const item = param.seriesData.get(series);
@@ -292,6 +328,9 @@ export default function MarketChart({
       volumeSeriesRef.current = null;
       sessionVwapSeriesRef.current = null;
       anchoredVwapSeriesRef.current = null;
+      ema20SeriesRef.current = null;
+      ema50SeriesRef.current = null;
+      ema200SeriesRef.current = null;
     };
   }, []);
 
@@ -657,6 +696,40 @@ export default function MarketChart({
       }))
     );
   }, [volumeAnalytics, showVwap]);
+
+  useEffect(() => {
+    const ema20Series = ema20SeriesRef.current;
+    const ema50Series = ema50SeriesRef.current;
+    const ema200Series = ema200SeriesRef.current;
+
+    if (!ema20Series || !ema50Series || !ema200Series) return;
+
+    if (!showEma || !technicalContext) {
+      ema20Series.setData([]);
+      ema50Series.setData([]);
+      ema200Series.setData([]);
+      return;
+    }
+
+    ema20Series.setData(
+      technicalContext.ema20.map((point) => ({
+        time: point.time as Time,
+        value: point.value
+      }))
+    );
+    ema50Series.setData(
+      technicalContext.ema50.map((point) => ({
+        time: point.time as Time,
+        value: point.value
+      }))
+    );
+    ema200Series.setData(
+      technicalContext.ema200.map((point) => ({
+        time: point.time as Time,
+        value: point.value
+      }))
+    );
+  }, [technicalContext, showEma]);
 
   useEffect(() => {
     if (fitNonce > 0) {
