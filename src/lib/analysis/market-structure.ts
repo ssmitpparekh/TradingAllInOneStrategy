@@ -21,13 +21,20 @@ export type FibonacciLevel = {
   label: string;
 };
 
+export type TrendExtensionSetup = {
+  direction: "bullish" | "bearish";
+  anchorA: SwingPoint;
+  anchorB: SwingPoint;
+  anchorC: SwingPoint;
+  levels: FibonacciLevel[];
+};
+
 export type FibonacciSetup = {
   direction: "bullish" | "bearish" | "neutral";
   anchorA: SwingPoint | null;
   anchorB: SwingPoint | null;
-  anchorC: SwingPoint | null;
   retracements: FibonacciLevel[];
-  extensions: FibonacciLevel[];
+  trendExtension: TrendExtensionSetup | null;
   goldenZone: {
     low: number;
     high: number;
@@ -241,9 +248,8 @@ export function buildFibonacciSetup(
       direction: "neutral",
       anchorA: null,
       anchorB: null,
-      anchorC: null,
       retracements: [],
-      extensions: [],
+      trendExtension: null,
       goldenZone: null,
       recentSwings,
       atr14
@@ -270,9 +276,8 @@ export function buildFibonacciSetup(
       direction: "neutral",
       anchorA: null,
       anchorB: null,
-      anchorC: null,
       retracements: [],
-      extensions: [],
+      trendExtension: null,
       goldenZone: null,
       recentSwings,
       atr14
@@ -291,68 +296,47 @@ export function buildFibonacciSetup(
     label: `${(ratio * 100).toFixed(1)}%`
   }));
 
-  let anchorC: SwingPoint | null = null;
+  let trendExtension: TrendExtensionSetup | null = null;
 
-  if (swings.length >= 3) {
-    const candidate = swings[swings.length - 3];
-
-    if (
-      direction === "bullish" &&
-      candidate.type === "low" &&
-      anchorA.type === "low"
-    ) {
-      // The newest confirmed high has no confirmed retracement low yet.
-      anchorC = null;
-    } else if (
-      direction === "bearish" &&
-      candidate.type === "high" &&
-      anchorA.type === "high"
-    ) {
-      anchorC = null;
-    }
-  }
-
-  // A proper three-point Trend Fib needs A→B→C. If the latest three swings
-  // form low-high-low or high-low-high, use them for extensions.
-  let extensionA = anchorA;
-  let extensionB = anchorB;
-  let extensionC: SwingPoint | null = null;
-
+  // A proper Trend Fib uses A→B→C:
+  // bullish = low→high→higher/confirmed low
+  // bearish = high→low→lower/confirmed high.
   if (swings.length >= 3) {
     const a = swings[swings.length - 3];
     const b = swings[swings.length - 2];
-    const c = swings[swings.length - 1];
+    const cPoint = swings[swings.length - 1];
 
     const bullishThreePoint =
-      a.type === "low" && b.type === "high" && c.type === "low";
+      a.type === "low" && b.type === "high" && cPoint.type === "low";
     const bearishThreePoint =
-      a.type === "high" && b.type === "low" && c.type === "high";
+      a.type === "high" && b.type === "low" && cPoint.type === "high";
 
     if (bullishThreePoint || bearishThreePoint) {
-      extensionA = a;
-      extensionB = b;
-      extensionC = c;
-      direction = bullishThreePoint ? "bullish" : "bearish";
-      anchorA = a;
-      anchorB = b;
-      anchorC = c;
+      const extensionDirection = bullishThreePoint ? "bullish" : "bearish";
+
+      trendExtension = {
+        direction: extensionDirection,
+        anchorA: a,
+        anchorB: b,
+        anchorC: cPoint,
+        levels: EXTENSIONS.map((ratio) => ({
+          ratio,
+          price: priceForExtension(
+            extensionDirection,
+            a.price,
+            b.price,
+            cPoint.price,
+            ratio
+          ),
+          kind: "extension" as const,
+          label: `${ratio
+            .toFixed(3)
+            .replace(/0+$/, "")
+            .replace(/\.$/, "")}x`
+        }))
+      };
     }
   }
-
-  const extensions = extensionC
-    ? EXTENSIONS.map((ratio) => ({
-        ratio,
-        price: priceForExtension(
-          direction,
-          extensionA.price,
-          extensionB.price,
-          extensionC.price,
-          ratio
-        ),
-        kind: "extension" as const,
-        label: `${ratio.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}x`
-      }))
-    : [];
 
   const zone618 = retracements.find((level) => level.ratio === 0.618);
   const zone786 = retracements.find((level) => level.ratio === 0.786);
@@ -369,9 +353,8 @@ export function buildFibonacciSetup(
     direction,
     anchorA,
     anchorB,
-    anchorC,
     retracements,
-    extensions,
+    trendExtension,
     goldenZone,
     recentSwings,
     atr14
