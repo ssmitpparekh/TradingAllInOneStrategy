@@ -5295,3 +5295,257 @@ html[data-theme="light"] .tradeChoiceUnderlying:hover {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Final light-theme cleanup for every nested analytics/control surface */
+html[data-theme="light"] :where(
+  .structureStrip > div,
+  .imbalanceStrip > div,
+  .imbalancePanel,
+  .orderBlockStrip > div,
+  .orderBlockPanel,
+  .volumeStrip > div,
+  .profileStrip > div,
+  .derivativesPanel,
+  .derivativesSummary > div,
+  .oiWallPanel,
+  .directionScores > div,
+  .scoreComponent,
+  .reversalPlan > div,
+  .targetGrid > div,
+  .technicalStrip > div,
+  .capitalSizingSummary > div,
+  .tradeChoiceModal,
+  .tradeChoicePlan span,
+  .tradeChoiceLoading,
+  .tradeChoiceUnavailable,
+  .scannerTradeLevels span,
+  .eventChip,
+  .candleClock
+) {
+  border-color: #d5deea;
+  background: #ffffff;
+  color: #334155;
+}
+
+html[data-theme="light"] .tradeHistoryTable {
+  background: #ffffff;
+  color: #1f2937;
+}
+
+html[data-theme="light"] .tradeHistoryTable th {
+  background: #f8fafc;
+  color: #475569;
+}
+
+html[data-theme="light"] .tradeHistoryTable td {
+  border-color: #e2e8f0;
+  color: #1f2937;
+}
+
+html[data-theme="light"] .performancePie::after {
+  background: #ffffff;
+}
+
+html[data-theme="light"] :where(
+  .structureStrip strong,
+  .imbalanceStrip strong,
+  .imbalancePanel strong,
+  .orderBlockStrip strong,
+  .orderBlockPanel strong,
+  .volumeStrip strong,
+  .profileStrip strong,
+  .derivativesPanel strong,
+  .derivativesSummary strong,
+  .oiWallPanel strong,
+  .directionScores strong,
+  .scoreComponent strong,
+  .reversalPlan strong,
+  .targetGrid strong,
+  .technicalStrip strong,
+  .capitalSizingSummary strong,
+  .tradeChoiceModal strong,
+  .scannerTradeLevels strong
+) {
+  color: #0f172a;
+}
+
+html[data-theme="light"] :where(
+  .structureStrip span,
+  .imbalanceStrip span,
+  .imbalancePanel span,
+  .orderBlockStrip span,
+  .orderBlockPanel span,
+  .volumeStrip span,
+  .profileStrip span,
+  .derivativesPanel span,
+  .derivativesSummary span,
+  .oiWallPanel span,
+  .directionScores span,
+  .scoreComponent span,
+  .reversalPlan span,
+  .targetGrid span,
+  .technicalStrip span,
+  .capitalSizingSummary span,
+  .capitalSizingSummary small,
+  .tradeChoiceModal p,
+  .tradeChoiceModal small
+) {
+  color: #64748b;
+}
+
+html[data-theme="light"] .volumeUnavailableNote {
+  border-color: #d5deea;
+  background: #f8fafc;
+  color: #475569;
+}
+
+html[data-theme="light"] .tradeChoiceBackdrop {
+  background: rgba(15, 23, 42, 0.2);
+}
+
+html[data-theme="light"] .themeControl {
+  border-color: #cbd5e1;
+  background: #eef2f7;
+}
+
+html[data-theme="light"] .themeButton.active {
+  background: #ffffff;
+  color: #0f172a;
+}
+
+/* Real option selector driven by confirmed trade + optional capital */
+.bestOptionSelector {
+  margin-top: 14px;
+  padding: 13px;
+  border: 1px solid #263143;
+  border-radius: 11px;
+  background: rgba(77, 141, 255, 0.04);
+}
+
+.bestOptionSelectorHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bestOptionSelectorHeader span,
+.bestOptionSelectorHeader strong,
+.bestOptionSelectorHeader small {
+  display: block;
+}
+
+.bestOptionSelectorHeader span {
+  color: #748197;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.bestOptionSelectorHeader strong {
+  margin-top: 4px;
+  color: #eaf0f7;
+  font-size: 14px;
+}
+
+.bestOptionSelectorHeader small {
+  color: #6f7c91;
+  font-size: 8px;
+}
+
+.bestOptionGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 11px;
+}
+
+.bestOptionCard {
+  padding: 11px;
+  border: 1px solid #2a3548;
+  border-radius: 9px;
+  background: #090e15;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bestOptionCard:hover {
+  border-color: #4d8dff;
+  background: #111a28;
+}
+
+.bestOptionTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.bestOptionTop span {
+  color: #8ba7ff;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.bestOptionTop b {
+  color: #74e39b;
+  font-size: 9px;
+}
+
+.bestOptionCard > strong {
+  display: block;
+  margin-top: 5px;
+  color: #eef3f8;
+  font-size: 15px;
+}
+
+.bestOptionCard > small {
+  display: block;
+  margin-top: 4px;
+  color: #758397;
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.optionSelectorError {
+  margin: 10px 0 0;
+  color: #ff8587;
+  font-size: 9px;
+}
+
+html[data-theme="light"] .bestOptionSelector {
+  border-color: #cbd5e1;
+  background: rgba(59, 130, 246, 0.045);
+}
+
+html[data-theme="light"] .bestOptionSelectorHeader strong,
+html[data-theme="light"] .bestOptionCard > strong {
+  color: #0f172a;
+}
+
+html[data-theme="light"] .bestOptionCard {
+  border-color: #d5deea;
+  background: #ffffff;
+}
+
+html[data-theme="light"] .bestOptionCard:hover {
+  border-color: #4d8dff;
+  background: #f1f5f9;
+}
+
+html[data-theme="light"] .bestOptionCard > small,
+html[data-theme="light"] .bestOptionSelectorHeader small {
+  color: #64748b;
+}
+
+@media (max-width: 720px) {
+  .bestOptionSelectorHeader {
+    flex-direction: column;
+  }
+
+  .bestOptionGrid {
+    grid-template-columns: 1fr;
+  }
+}
