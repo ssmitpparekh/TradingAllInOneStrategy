@@ -1691,3 +1691,40 @@ h2 {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Live candle countdown */
+.candleClock {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 9px;
+  padding: 6px 9px;
+  border: 1px solid #263143;
+  border-radius: 999px;
+  background: #080d13;
+  color: #728096;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+}
+
+.candleClock strong {
+  color: #e9eef7;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+
+.clockDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #74e39b;
+  box-shadow: 0 0 10px rgba(116, 227, 155, 0.45);
+}
+
+@media (max-width: 760px) {
+  .candleClock {
+    margin-top: 8px;
+  }
+}
