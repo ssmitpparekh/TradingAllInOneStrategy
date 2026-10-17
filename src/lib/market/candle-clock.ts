@@ -131,12 +131,17 @@ export function calculateCandleClock(options: {
       candleStart + (intervalsElapsed + 1) * interval;
   }
 
-  if (isIndianExchange(market) && /^\d+$/.test(resolution)) {
+  if (isIndianExchange(market)) {
     const untilSessionClose = secondsUntilIndianClose(nowMs);
-    closeTime = Math.min(
-      closeTime,
-      nowSeconds + untilSessionClose
-    );
+
+    if (resolution === "1D") {
+      closeTime = nowSeconds + untilSessionClose;
+    } else if (/^\d+$/.test(resolution)) {
+      closeTime = Math.min(
+        closeTime,
+        nowSeconds + untilSessionClose
+      );
+    }
   }
 
   return {
