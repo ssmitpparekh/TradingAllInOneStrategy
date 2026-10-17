@@ -24,6 +24,7 @@ export type ChartCandle = {
 
 type Props = {
   candles: ChartCandle[];
+  liveCandle?: ChartCandle | null;
   fitNonce?: number;
   rangeKey?: "1D" | "5D" | "1M" | "3M" | "6M" | "1Y" | "5Y" | "MAX";
 };
@@ -54,6 +55,7 @@ function toEpoch(time: Time): number | null {
 
 export default function MarketChart({
   candles,
+  liveCandle = null,
   fitNonce = 0,
   rangeKey = "1M"
 }: Props) {
@@ -63,8 +65,8 @@ export default function MarketChart({
   const [hovered, setHovered] = useState<ChartCandle | null>(null);
 
   const latest = useMemo(
-    () => (candles.length ? candles[candles.length - 1] : null),
-    [candles]
+    () => liveCandle ?? (candles.length ? candles[candles.length - 1] : null),
+    [candles, liveCandle]
   );
 
   useEffect(() => {
@@ -243,6 +245,18 @@ export default function MarketChart({
       to: lastTime as Time
     });
   }, [candles, rangeKey]);
+
+  useEffect(() => {
+    if (!liveCandle || !seriesRef.current) return;
+
+    seriesRef.current.update({
+      time: liveCandle.time as Time,
+      open: liveCandle.open,
+      high: liveCandle.high,
+      low: liveCandle.low,
+      close: liveCandle.close
+    });
+  }, [liveCandle]);
 
   useEffect(() => {
     if (fitNonce > 0) {
