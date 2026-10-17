@@ -298,7 +298,6 @@ export default function OpportunityScanner({
   );
   const liveRef = useRef(new Map<string, LiveRuntime>());
   const derivativeFetchRef = useRef(new Map<string, number>());
-  const scannerSourceRef = useRef<EventSource | null>(null);
   const krakenSourcesRef = useRef<EventSource[]>([]);
 
   const capital = Math.max(0, Number(capitalInput || 0));
@@ -412,7 +411,7 @@ export default function OpportunityScanner({
 
     const refreshTimer = window.setInterval(() => {
       if (!cancelled) void warm();
-    }, 15 * 60_000);
+    }, 60 * 60_000);
 
     return () => {
       cancelled = true;
@@ -421,62 +420,38 @@ export default function OpportunityScanner({
   }, [universe, fyersConnected]);
 
   useEffect(() => {
-    scannerSourceRef.current?.close();
-    scannerSourceRef.current = null;
-
     if (!universe || !fyersConnected || !universe.fyers.length) {
       return;
     }
 
-    const symbols = universe.fyers
-      .map((item) => item.symbol)
-      .join(",");
-    const source = new EventSource(
-      "/api/scanner/fyers-stream?symbols=" +
-        encodeURIComponent(symbols)
-    );
-    scannerSourceRef.current = source;
+    let cancelled = false;
 
-    source.addEventListener("status", (event) => {
-      try {
-        const payload = JSON.parse(
-          (event as MessageEvent<string>).data
-        );
-        setScannerLive(Boolean(payload.connected));
-      } catch {
-        setScannerLive(false);
-      }
-    });
+    const batches: ScannerInstrument[][] = [];
+    for (let index = 0; index < universe.fyers.length; index += 50) {
+      batches.push(universe.fyers.slice(index, index + 50));
+    }
 
-    source.addEventListener("tick", (event) => {
-      try {
-        const tick = JSON.parse(
-          (event as MessageEvent<string>).data
-        ) as {
-          symbol?: string;
-          ltp?: number;
-          time?: number;
-        };
+    const applyQuotes = (
+      batch: ScannerInstrument[],
+      quotes: Array<{ symbol: string; ltp: number; timestamp?: number }>
+    ) => {
+      const bySymbol = new Map(batch.map((item) => [item.symbol, item]));
 
-        const symbol = tick.symbol ?? "";
-        const price = Number(tick.ltp ?? 0);
-        const time = Number(
-          tick.time ?? Math.floor(Date.now() / 1000)
-        );
+      for (const quote of quotes) {
+        const instrument = bySymbol.get(quote.symbol);
+        const price = Number(quote.ltp ?? 0);
+        if (!instrument || !(price > 0)) continue;
 
-        if (!symbol || !(price > 0)) return;
-
-        const instrument = universe.fyers.find(
-          (item) => item.symbol === symbol
-        );
-        if (!instrument) return;
-
+        const time =
+          Number(quote.timestamp ?? 0) > 1_000_000_000
+            ? Number(quote.timestamp)
+            : Math.floor(Date.now() / 1000);
         const bucket = scannerBucketStart(
           time,
           15,
           instrument.market
         );
-        const previous = liveRef.current.get(symbol);
+        const previous = liveRef.current.get(quote.symbol);
 
         const next: LiveRuntime =
           !previous || previous.bucket !== bucket
@@ -491,29 +466,54 @@ export default function OpportunityScanner({
             : {
                 ...previous,
                 price,
-                observedHigh: Math.max(
-                  previous.observedHigh,
-                  price
-                ),
-                observedLow: Math.min(
-                  previous.observedLow,
-                  price
-                ),
+                observedHigh: Math.max(previous.observedHigh, price),
+                observedLow: Math.min(previous.observedLow, price),
                 updatedAt: Date.now()
               };
 
-        liveRef.current.set(symbol, next);
-        setLastTickAt(Date.now());
-      } catch {
-        // Ignore malformed scanner ticks.
+        liveRef.current.set(quote.symbol, next);
       }
-    });
 
-    source.onerror = () => setScannerLive(false);
+      if (quotes.length) {
+        setLastTickAt(Date.now());
+        setScannerLive(true);
+      }
+    };
+
+    const poll = async () => {
+      if (cancelled) return;
+
+      try {
+        for (const batch of batches) {
+          if (cancelled) return;
+
+          const response = await fetch(
+            "/api/fyers/quotes?symbols=" +
+              encodeURIComponent(
+                batch.map((item) => item.symbol).join(",")
+              ),
+            { cache: "no-store" }
+          );
+          const data = await response.json();
+
+          if (response.ok && data.ok && Array.isArray(data.quotes)) {
+            applyQuotes(batch, data.quotes);
+          }
+        }
+      } catch {
+        setScannerLive(false);
+      }
+    };
+
+    void poll();
+
+    // Standard-safe: all FYERS scanner symbols refresh about every 20s.
+    // With <=90 symbols this uses at most two Quotes API calls/cycle.
+    const timer = window.setInterval(poll, 20_000);
 
     return () => {
-      source.close();
-      scannerSourceRef.current = null;
+      cancelled = true;
+      window.clearInterval(timer);
     };
   }, [universe, fyersConnected]);
 
@@ -686,7 +686,7 @@ export default function OpportunityScanner({
 
       const key = opportunity.instrument.symbol;
       const previousFetch = derivativeFetchRef.current.get(key) ?? 0;
-      if (Date.now() - previousFetch < 30_000) return;
+      if (Date.now() - previousFetch < 5 * 60_000) return;
       derivativeFetchRef.current.set(key, Date.now());
 
       try {
@@ -773,7 +773,7 @@ export default function OpportunityScanner({
 
     const timer = window.setInterval(() => {
       void Promise.all(topIndian.map(hydrate));
-    }, 30_000);
+    }, 5 * 60_000);
 
     return () => {
       cancelled = true;
@@ -1013,8 +1013,8 @@ export default function OpportunityScanner({
       </div>
 
       <div className="scannerFooter">
-        <span>Ranks every 1s from live ticks</span>
-        <span>Options deep-scan ~30s</span>
+        <span>Ranks every 1s · India refresh ~20s</span>
+        <span>Crypto live · options deep-scan ~5m</span>
       </div>
     </aside>
   );
