@@ -50,12 +50,16 @@ function aggregate(
       current.buyVolume += row.buyVolume;
       current.sellVolume += row.sellVolume;
       current.trades += row.trades;
+      current.buyTrades += row.buyTrades;
+      current.sellTrades += row.sellTrades;
     } else {
       grouped.set(bucketTime, {
         time: bucketTime,
         buyVolume: row.buyVolume,
         sellVolume: row.sellVolume,
         trades: row.trades,
+        buyTrades: row.buyTrades,
+        sellTrades: row.sellTrades,
         partial: false,
         quality: row.quality,
         source: "Persistent exact trade tape"
