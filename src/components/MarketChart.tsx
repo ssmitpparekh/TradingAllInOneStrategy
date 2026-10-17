@@ -413,7 +413,47 @@ export default function MarketChart({
     });
     observer.observe(host);
 
+    const onVerticalWheel = (event: WheelEvent) => {
+      const priceScale = chart.priceScale("right");
+      const scaleWidth = priceScale.width();
+      const rect = host.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const overPriceScale =
+        scaleWidth > 0 && x >= host.clientWidth - scaleWidth - 6;
+
+      if (!overPriceScale && !event.altKey) return;
+
+      const visible = priceScale.getVisibleRange();
+      if (!visible) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const span = visible.to - visible.from;
+      if (!(span > 0)) return;
+
+      const yRatio = Math.max(
+        0,
+        Math.min(1, (event.clientY - rect.top) / Math.max(1, host.clientHeight))
+      );
+      const anchor = visible.to - yRatio * span;
+      const factor = event.deltaY > 0 ? 1.12 : 0.88;
+      const nextSpan = span * factor;
+
+      priceScale.setAutoScale(false);
+      priceScale.setVisibleRange({
+        from: anchor - (1 - yRatio) * nextSpan,
+        to: anchor + yRatio * nextSpan
+      });
+    };
+
+    host.addEventListener("wheel", onVerticalWheel, {
+      passive: false,
+      capture: true
+    });
+
     return () => {
+      host.removeEventListener("wheel", onVerticalWheel, true);
       observer.disconnect();
       chart.remove();
       chartRef.current = null;
@@ -901,7 +941,9 @@ export default function MarketChart({
 
   useEffect(() => {
     if (fitNonce > 0) {
-      chartRef.current?.timeScale().fitContent();
+      const chart = chartRef.current;
+      chart?.priceScale("right").setAutoScale(true);
+      chart?.timeScale().fitContent();
     }
   }, [fitNonce]);
 
