@@ -126,7 +126,9 @@ export default function Home() {
         setStreamMessage(
           payload.connected
             ? "FYERS Data Socket connected"
-            : payload.error || "FYERS Data Socket disconnected"
+            : payload.opening
+              ? "Opening FYERS Data Socket…"
+              : payload.error || "FYERS Data Socket disconnected"
         );
       } catch {
         setStreamConnected(false);
@@ -178,7 +180,9 @@ export default function Home() {
 
     source.onerror = () => {
       setStreamConnected(false);
-      setStreamMessage("Stream reconnecting…");
+      setStreamMessage(
+        "Browser lost the stream connection. Check the PowerShell window for the FYERS socket error."
+      );
     };
 
     return () => {
