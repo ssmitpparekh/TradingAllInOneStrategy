@@ -5,6 +5,10 @@ export type OrderFlowBucket = {
   buyVolume: number;
   sellVolume: number;
   trades: number;
+  buyTrades: number;
+  sellTrades: number;
+  oi?: number | null;
+  oiChange?: number | null;
   partial: boolean;
   quality: OrderFlowQuality;
   source: string;
@@ -59,7 +63,8 @@ export function orderFlowPercentages(bucket: OrderFlowBucket) {
       buyPercent: 0,
       sellPercent: 0,
       delta: 0,
-      deltaPercent: 0
+      deltaPercent: 0,
+      cumulativeDelta: 0
     };
   }
 
@@ -70,6 +75,7 @@ export function orderFlowPercentages(bucket: OrderFlowBucket) {
     buyPercent: (bucket.buyVolume / total) * 100,
     sellPercent: (bucket.sellVolume / total) * 100,
     delta,
-    deltaPercent: (delta / total) * 100
+    deltaPercent: (delta / total) * 100,
+    cumulativeDelta: delta
   };
 }
