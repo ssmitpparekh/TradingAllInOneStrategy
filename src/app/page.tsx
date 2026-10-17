@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import MarketChart, { type ChartCandle } from "@/components/MarketChart";
+import { buildVolumeAnalytics } from "@/lib/analysis/volume";
 import {
   buildFibonacciSetup,
   buildImbalanceLiquiditySnapshot,
@@ -160,6 +161,9 @@ export default function Home() {
   const [showFvg, setShowFvg] = useState(true);
   const [showLiquidity, setShowLiquidity] = useState(true);
   const [showOrderBlocks, setShowOrderBlocks] = useState(true);
+  const [showVolume, setShowVolume] = useState(true);
+  const [showVwap, setShowVwap] = useState(true);
+  const [showProfile, setShowProfile] = useState(true);
   const historyRequestId = useRef(0);
 
   const selectedIsKraken = selected.market === "KRAKEN";
@@ -178,6 +182,14 @@ export default function Home() {
   const orderBlocks = useMemo(
     () => buildOrderBlockSnapshot(candles),
     [candles]
+  );
+  const volumeAnalytics = useMemo(
+    () =>
+      buildVolumeAnalytics(candles, {
+        timeZone: selectedIsKraken ? "UTC" : "Asia/Kolkata",
+        anchorTime: fibonacci.anchorA?.time ?? null
+      }),
+    [candles, selectedIsKraken, fibonacci.anchorA?.time]
   );
 
   async function refreshStatus() {
@@ -847,12 +859,16 @@ export default function Home() {
           structure={structure}
           imbalance={imbalance}
           orderBlocks={orderBlocks}
+          volumeAnalytics={volumeAnalytics}
           showFib={showFib}
           showTrendFib={showTrendFib}
           showStructure={showStructure}
           showFvg={showFvg}
           showLiquidity={showLiquidity}
           showOrderBlocks={showOrderBlocks}
+          showVolume={showVolume}
+          showVwap={showVwap}
+          showProfile={showProfile}
         />
 
         {quote ? (
@@ -870,7 +886,7 @@ export default function Home() {
       <section className="card analysisCard">
         <div className="analysisHeader">
           <div>
-            <p className="label">AUTOMATIC STRUCTURE + FIBONACCI</p>
+            <p className="label">AUTOMATIC MARKET ANALYSIS</p>
             <h3>
               {fibonacci.direction === "bullish"
                 ? "Bullish swing"
@@ -931,6 +947,33 @@ export default function Home() {
               onClick={() => setShowOrderBlocks((value) => !value)}
             >
               Order Blocks {showOrderBlocks ? "ON" : "OFF"}
+            </button>
+            <button
+              className={
+                showVolume ? "analysisToggle active" : "analysisToggle"
+              }
+              onClick={() => setShowVolume((value) => !value)}
+              disabled={!volumeAnalytics.available}
+            >
+              Volume {showVolume ? "ON" : "OFF"}
+            </button>
+            <button
+              className={
+                showVwap ? "analysisToggle active" : "analysisToggle"
+              }
+              onClick={() => setShowVwap((value) => !value)}
+              disabled={!volumeAnalytics.available}
+            >
+              VWAP {showVwap ? "ON" : "OFF"}
+            </button>
+            <button
+              className={
+                showProfile ? "analysisToggle active" : "analysisToggle"
+              }
+              onClick={() => setShowProfile((value) => !value)}
+              disabled={!volumeAnalytics.available}
+            >
+              Profile {showProfile ? "ON" : "OFF"}
             </button>
           </div>
         </div>
@@ -1037,6 +1080,92 @@ export default function Home() {
             </strong>
           </div>
         </div>
+
+        <div className="volumeStrip">
+          <div>
+            <span>VOLUME DATA</span>
+            <strong className={volumeAnalytics.available ? "available" : "unavailable"}>
+              {volumeAnalytics.available ? "AVAILABLE" : "UNAVAILABLE"}
+            </strong>
+          </div>
+          <div>
+            <span>SESSION VWAP</span>
+            <strong>
+              {volumeAnalytics.latestSessionVwap !== null
+                ? volumeAnalytics.latestSessionVwap.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })
+                : "—"}
+            </strong>
+          </div>
+          <div>
+            <span>ANCHORED VWAP</span>
+            <strong>
+              {volumeAnalytics.latestAnchoredVwap !== null
+                ? volumeAnalytics.latestAnchoredVwap.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })
+                : "—"}
+            </strong>
+          </div>
+          <div>
+            <span>VOL vs AVG20</span>
+            <strong>
+              {volumeAnalytics.volumeRatio20 !== null
+                ? `${volumeAnalytics.volumeRatio20.toFixed(2)}×`
+                : "—"}
+            </strong>
+          </div>
+        </div>
+
+        <div className="profileStrip">
+          <div>
+            <span>POC</span>
+            <strong>
+              {volumeAnalytics.profile.poc !== null
+                ? volumeAnalytics.profile.poc.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })
+                : "—"}
+            </strong>
+          </div>
+          <div>
+            <span>VAH</span>
+            <strong>
+              {volumeAnalytics.profile.vah !== null
+                ? volumeAnalytics.profile.vah.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })
+                : "—"}
+            </strong>
+          </div>
+          <div>
+            <span>VAL</span>
+            <strong>
+              {volumeAnalytics.profile.val !== null
+                ? volumeAnalytics.profile.val.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })
+                : "—"}
+            </strong>
+          </div>
+          <div>
+            <span>PROFILE TYPE</span>
+            <strong>
+              {volumeAnalytics.available
+                ? "CANDLE-DERIVED"
+                : "NOT APPLICABLE"}
+            </strong>
+          </div>
+        </div>
+
+        {!volumeAnalytics.available ? (
+          <p className="volumeUnavailableNote">
+            This instrument does not provide usable traded volume in the loaded
+            candles. VWAP/profile confirmation is disabled here and will be
+            dynamically excluded from the future confluence score.
+          </p>
+        ) : null}
 
         <div className="analysisSummary">
           <div>
