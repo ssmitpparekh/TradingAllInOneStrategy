@@ -1,15 +1,16 @@
 {
   "name": "allinoneview",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev -H 127.0.0.1 -p 8080",
     "build": "next build",
     "start": "next start -H 127.0.0.1 -p 8080",
-    "lint": "next lint",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "fyers-api-v3": "2.4.0",
+    "lightweight-charts": "5.2.1",
     "next": "16.4.2",
     "react": "19.3.1",
     "react-dom": "19.3.1"
