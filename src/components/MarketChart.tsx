@@ -194,7 +194,12 @@ export default function MarketChart({ candles, fitNonce = 0 }: Props) {
   }, []);
 
   useEffect(() => {
-    if (!seriesRef.current || candles.length === 0) return;
+    if (!seriesRef.current) return;
+
+    if (candles.length === 0) {
+      seriesRef.current.setData([]);
+      return;
+    }
 
     const data: CandlestickData<Time>[] = candles.map((candle) => ({
       time: candle.time as Time,
