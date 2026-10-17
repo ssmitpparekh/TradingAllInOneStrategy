@@ -66,6 +66,7 @@ export type TradeChartMarker = {
   status: "OPEN" | "CLOSED";
   outcome?: string;
   setupType?: "PRIMARY" | "REACTION";
+  moveClass?: "TACTICAL" | "MAJOR";
 };
 
 type Props = {
@@ -1448,6 +1449,7 @@ export default function MarketChart({
                 {marker.direction === "long" ? "▲" : "▼"}
               </span>
               <span className="tradeMarkerLabel">
+                {marker.moveClass ? marker.moveClass + " " : ""}
                 {marker.setupType === "REACTION" ? "REACTION " : ""}
                 {marker.direction === "long" ? "LONG" : "SHORT"}
                 {marker.status === "CLOSED" && marker.outcome
