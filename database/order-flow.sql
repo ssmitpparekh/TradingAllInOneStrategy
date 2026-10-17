@@ -26,11 +26,19 @@ create table if not exists public.market_order_flow_1m (
   buy_volume double precision not null default 0,
   sell_volume double precision not null default 0,
   trades bigint not null default 0,
+  buy_trades bigint not null default 0,
+  sell_trades bigint not null default 0,
   quality text not null default 'exact',
   source text not null default 'Persistent exact trade tape',
   refreshed_at timestamptz not null default now(),
   primary key (provider, market, symbol, bucket_time)
 );
+
+alter table public.market_order_flow_1m
+  add column if not exists buy_trades bigint not null default 0;
+
+alter table public.market_order_flow_1m
+  add column if not exists sell_trades bigint not null default 0;
 
 create index if not exists market_order_flow_1m_symbol_time_idx
   on public.market_order_flow_1m (provider, market, symbol, bucket_time desc);
@@ -62,6 +70,8 @@ begin
     buy_volume,
     sell_volume,
     trades,
+    buy_trades,
+    sell_trades,
     quality,
     source,
     refreshed_at
@@ -74,6 +84,8 @@ begin
     coalesce(sum(case when t.side = 'buy' then t.qty else 0 end), 0),
     coalesce(sum(case when t.side = 'sell' then t.qty else 0 end), 0),
     count(*)::bigint,
+    count(*) filter (where t.side = 'buy')::bigint,
+    count(*) filter (where t.side = 'sell')::bigint,
     'exact',
     'Persistent exact Kraken trade tape',
     now()
@@ -89,6 +101,8 @@ begin
     buy_volume = excluded.buy_volume,
     sell_volume = excluded.sell_volume,
     trades = excluded.trades,
+    buy_trades = excluded.buy_trades,
+    sell_trades = excluded.sell_trades,
     quality = excluded.quality,
     source = excluded.source,
     refreshed_at = now();
