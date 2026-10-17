@@ -5,6 +5,8 @@ import {
   CandlestickSeries,
   ColorType,
   CrosshairMode,
+  HistogramSeries,
+  LineSeries,
   createChart,
   type CandlestickData,
   type IChartApi,
@@ -13,6 +15,7 @@ import {
   type ISeriesApi,
   type Time
 } from "lightweight-charts";
+import type { VolumeAnalytics } from "@/lib/analysis/volume";
 import type {
   FibonacciSetup,
   ImbalanceLiquiditySnapshot,
@@ -39,12 +42,16 @@ type Props = {
   structure?: MarketStructureSnapshot | null;
   imbalance?: ImbalanceLiquiditySnapshot | null;
   orderBlocks?: OrderBlockSnapshot | null;
+  volumeAnalytics?: VolumeAnalytics | null;
   showFib?: boolean;
   showTrendFib?: boolean;
   showStructure?: boolean;
   showFvg?: boolean;
   showLiquidity?: boolean;
   showOrderBlocks?: boolean;
+  showVolume?: boolean;
+  showVwap?: boolean;
+  showProfile?: boolean;
 };
 
 function formatIst(timestamp: number) {
@@ -80,16 +87,23 @@ export default function MarketChart({
   structure = null,
   imbalance = null,
   orderBlocks = null,
+  volumeAnalytics = null,
   showFib = true,
   showTrendFib = true,
   showStructure = true,
   showFvg = true,
   showLiquidity = true,
-  showOrderBlocks = true
+  showOrderBlocks = true,
+  showVolume = true,
+  showVwap = true,
+  showProfile = true
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const sessionVwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const anchoredVwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const analysisLinesRef = useRef<IPriceLine[]>([]);
   const [hovered, setHovered] = useState<ChartCandle | null>(null);
 
@@ -188,8 +202,41 @@ export default function MarketChart({
       priceLineVisible: true
     });
 
+    const volumeSeries = chart.addSeries(HistogramSeries, {
+      priceScaleId: "",
+      priceFormat: { type: "volume" },
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
+    chart.priceScale("").applyOptions({
+      scaleMargins: {
+        top: 0.82,
+        bottom: 0
+      }
+    });
+
+    const sessionVwapSeries = chart.addSeries(LineSeries, {
+      color: "#4d8dff",
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      title: "VWAP"
+    });
+
+    const anchoredVwapSeries = chart.addSeries(LineSeries, {
+      color: "#c386ff",
+      lineWidth: 2,
+      lineStyle: LineStyle.Dashed,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      title: "AVWAP"
+    });
+
     chartRef.current = chart;
     seriesRef.current = series;
+    volumeSeriesRef.current = volumeSeries;
+    sessionVwapSeriesRef.current = sessionVwapSeries;
+    anchoredVwapSeriesRef.current = anchoredVwapSeries;
 
     chart.subscribeCrosshairMove((param) => {
       const item = param.seriesData.get(series);
@@ -226,6 +273,9 @@ export default function MarketChart({
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      volumeSeriesRef.current = null;
+      sessionVwapSeriesRef.current = null;
+      anchoredVwapSeriesRef.current = null;
     };
   }, []);
 
@@ -431,6 +481,51 @@ export default function MarketChart({
       }
     }
 
+    if (
+      showProfile &&
+      volumeAnalytics?.available &&
+      volumeAnalytics.profile.poc !== null
+    ) {
+      const profileLevels = [
+        {
+          title: "POC",
+          price: volumeAnalytics.profile.poc,
+          color: "#f5b942",
+          width: 2 as const
+        },
+        {
+          title: "VAH",
+          price: volumeAnalytics.profile.vah,
+          color: "#7d8ba1",
+          width: 1 as const
+        },
+        {
+          title: "VAL",
+          price: volumeAnalytics.profile.val,
+          color: "#7d8ba1",
+          width: 1 as const
+        }
+      ];
+
+      for (const level of profileLevels) {
+        if (level.price === null) continue;
+
+        analysisLinesRef.current.push(
+          series.createPriceLine({
+            price: level.price,
+            color: level.color,
+            lineWidth: level.width,
+            lineStyle:
+              level.title === "POC"
+                ? LineStyle.Solid
+                : LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: level.title
+          })
+        );
+      }
+    }
+
     if (!fibonacci) return;
 
     if (showFib) {
@@ -488,13 +583,64 @@ export default function MarketChart({
     structure,
     imbalance,
     orderBlocks,
+    volumeAnalytics,
     showFib,
     showTrendFib,
     showStructure,
     showFvg,
     showLiquidity,
-    showOrderBlocks
+    showOrderBlocks,
+    showProfile
   ]);
+
+  useEffect(() => {
+    const volumeSeries = volumeSeriesRef.current;
+    if (!volumeSeries) return;
+
+    if (!showVolume || !volumeAnalytics?.available) {
+      volumeSeries.setData([]);
+      return;
+    }
+
+    volumeSeries.setData(
+      candles
+        .filter((candle) => Number(candle.volume ?? 0) > 0)
+        .map((candle) => ({
+          time: candle.time as Time,
+          value: Number(candle.volume ?? 0),
+          color:
+            candle.close >= candle.open
+              ? "rgba(40, 199, 111, 0.38)"
+              : "rgba(234, 84, 85, 0.38)"
+        }))
+    );
+  }, [candles, volumeAnalytics, showVolume]);
+
+  useEffect(() => {
+    const sessionSeries = sessionVwapSeriesRef.current;
+    const anchoredSeries = anchoredVwapSeriesRef.current;
+    if (!sessionSeries || !anchoredSeries) return;
+
+    if (!showVwap || !volumeAnalytics?.available) {
+      sessionSeries.setData([]);
+      anchoredSeries.setData([]);
+      return;
+    }
+
+    sessionSeries.setData(
+      volumeAnalytics.sessionVwap.map((point) => ({
+        time: point.time as Time,
+        value: point.value
+      }))
+    );
+
+    anchoredSeries.setData(
+      volumeAnalytics.anchoredVwap.map((point) => ({
+        time: point.time as Time,
+        value: point.value
+      }))
+    );
+  }, [volumeAnalytics, showVwap]);
 
   useEffect(() => {
     if (fitNonce > 0) {
