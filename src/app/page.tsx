@@ -130,6 +130,7 @@ type Resolution =
   | "60" | "120" | "180" | "240" | "1D" | "1W" | "1M";
 
 type RangeKey = "1D" | "5D" | "1M" | "3M" | "6M" | "1Y" | "5Y" | "MAX";
+type ThemeMode = "dark" | "light" | "system";
 
 const DEFAULT_INSTRUMENT: Instrument = {
   symbol: "NSE:NIFTY50-INDEX",
@@ -168,6 +169,7 @@ const TYPE_FILTERS = ["ALL", "INDEX", "EQUITY", "ETF", "SGB", "MF", "FUTURE", "O
 
 const LAST_VIEW_KEY = "allinoneview:last-view:v1";
 const TRADE_JOURNAL_KEY = "allinoneview:trade-journal:v1";
+const THEME_KEY = "allinoneview:theme:v1";
 
 const KRAKEN_RESOLUTIONS = new Set<Resolution>([
   "1", "5", "15", "30", "60", "240", "1D", "1W"
@@ -365,6 +367,8 @@ export default function Home() {
   const [journalReady, setJournalReady] = useState(false);
   const [loadingContext, setLoadingContext] = useState(false);
   const [clockNow, setClockNow] = useState(Date.now());
+  const [themeMode, setThemeMode] = useState<ThemeMode>("system");
+  const [resolvedTheme, setResolvedTheme] = useState<"dark" | "light">("dark");
   const historyRequestId = useRef(0);
   const orderFlowNeedsPartialRef = useRef(true);
   const orderFlowPartialBucketRef = useRef<number | null>(null);
@@ -1264,6 +1268,49 @@ export default function Home() {
   ]);
 
   useEffect(() => {
+    const saved = window.localStorage.getItem(THEME_KEY);
+    const initialMode: ThemeMode =
+      saved === "dark" || saved === "light" || saved === "system"
+        ? saved
+        : "system";
+
+    setThemeMode(initialMode);
+
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+
+    const apply = (mode: ThemeMode) => {
+      const next =
+        mode === "system" ? (media.matches ? "dark" : "light") : mode;
+      setResolvedTheme(next);
+      document.documentElement.dataset.theme = next;
+      document.documentElement.dataset.themeMode = mode;
+    };
+
+    apply(initialMode);
+
+    const onChange = () => {
+      if (initialMode === "system") apply("system");
+    };
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(THEME_KEY, themeMode);
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const next =
+      themeMode === "system"
+        ? media.matches
+          ? "dark"
+          : "light"
+        : themeMode;
+
+    setResolvedTheme(next);
+    document.documentElement.dataset.theme = next;
+    document.documentElement.dataset.themeMode = themeMode;
+  }, [themeMode]);
+
+  useEffect(() => {
     const clockTimer = window.setInterval(() => {
       setClockNow(Date.now());
     }, 1000);
@@ -1741,6 +1788,33 @@ export default function Home() {
             </p>
           </div>
           <div className="connectionStack">
+            <div className="themeControl" aria-label="Theme">
+              {(["light", "dark", "system"] as ThemeMode[]).map((mode) => (
+                <button
+                  type="button"
+                  key={mode}
+                  className={
+                    themeMode === mode
+                      ? "themeOption active"
+                      : "themeOption"
+                  }
+                  onClick={() => setThemeMode(mode)}
+                  title={
+                    mode === "light"
+                      ? "Light theme"
+                      : mode === "dark"
+                        ? "Dark theme"
+                        : "Follow system theme"
+                  }
+                >
+                  {mode === "light"
+                    ? "☀"
+                    : mode === "dark"
+                      ? "☾"
+                      : "◐"}
+                </button>
+              ))}
+            </div>
             <PwaInstallButton />
             <div className={connected ? "connectionPill online" : "connectionPill"}>
               <span className="dot" />
@@ -2018,6 +2092,8 @@ export default function Home() {
           orderFlowBuckets={orderFlowBuckets}
           showOrderFlow={showOrderFlow}
           tradeMarkers={tradeMarkers}
+          theme={resolvedTheme}
+          instrumentKey={selected.market + ":" + selected.symbol}
         />
 
         {quote ? (
