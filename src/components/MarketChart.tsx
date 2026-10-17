@@ -491,15 +491,24 @@ export default function MarketChart({
 
     const updatePositions = () => {
       const width = host.clientWidth;
-      const positions = sessionBreakTimes
-        .map((time) => ({
-          time,
-          x: chart.timeScale().timeToCoordinate(time as Time)
-        }))
-        .filter(
-          (item): item is { time: number; x: number } =>
-            item.x !== null && item.x >= 0 && item.x <= width
-        );
+      const positions = sessionBreakTimes.flatMap((time) => {
+        const coordinate = chart.timeScale().timeToCoordinate(time as Time);
+
+        if (
+          coordinate === null ||
+          coordinate < 0 ||
+          coordinate > width
+        ) {
+          return [];
+        }
+
+        return [
+          {
+            time,
+            x: Number(coordinate)
+          }
+        ];
+      });
 
       setSessionBreakPositions(positions);
     };
