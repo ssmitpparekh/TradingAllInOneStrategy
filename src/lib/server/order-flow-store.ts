@@ -8,6 +8,8 @@ type StoredOrderFlowRow = {
   buy_volume: number;
   sell_volume: number;
   trades: number;
+  buy_trades: number;
+  sell_trades: number;
   quality: "exact" | "classified";
   source: string;
 };
@@ -62,7 +64,7 @@ export async function readStoredOrderFlow(input: {
   );
   endpoint.searchParams.set(
     "select",
-    "provider,market,symbol,bucket_time,buy_volume,sell_volume,trades,quality,source"
+    "provider,market,symbol,bucket_time,buy_volume,sell_volume,trades,buy_trades,sell_trades,quality,source"
   );
   endpoint.searchParams.set("provider", "eq." + input.provider);
   endpoint.searchParams.set("market", "eq." + input.market);
@@ -100,6 +102,8 @@ export async function readStoredOrderFlow(input: {
         buyVolume: Number(row.buy_volume),
         sellVolume: Number(row.sell_volume),
         trades: Number(row.trades),
+        buyTrades: Number(row.buy_trades ?? 0),
+        sellTrades: Number(row.sell_trades ?? 0),
         partial: false,
         quality: row.quality,
         source: row.source
