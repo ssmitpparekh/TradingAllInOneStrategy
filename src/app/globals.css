@@ -2997,3 +2997,256 @@ button {
     inset: 14px;
   }
 }
+
+
+/* Theme switcher */
+.themeControl {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid #293244;
+  border-radius: 999px;
+  background: #0c1119;
+}
+
+.themeOption {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #8793a6;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.themeOption.active {
+  background: #202b3b;
+  color: #ffffff;
+}
+
+/* Persistent drawing / measurement rail */
+.chartToolRail {
+  position: absolute;
+  z-index: 12;
+  top: 50%;
+  right: 58px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 5px;
+  border: 1px solid rgba(55, 68, 89, 0.72);
+  border-radius: 10px;
+  background: rgba(8, 13, 20, 0.88);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+  transform: translateY(-50%);
+  backdrop-filter: blur(7px);
+}
+
+.chartTool {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #94a1b4;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.chartTool:hover,
+.chartTool.active {
+  background: #202b3b;
+  color: #ffffff;
+}
+
+.chartTool.danger {
+  margin-top: 3px;
+  border-top: 1px solid #293244;
+  color: #ff8587;
+}
+
+.drawingInteractionLayer,
+.drawingSvgLayer {
+  position: absolute;
+  z-index: 7;
+  inset: 0;
+}
+
+.drawingInteractionLayer {
+  cursor: crosshair;
+}
+
+.drawingInteractionLayer.inactive {
+  pointer-events: none;
+}
+
+.drawingSvgLayer {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.drawingText {
+  fill: #dce5f2;
+  paint-order: stroke;
+  stroke: rgba(8, 13, 20, 0.92);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* Light theme */
+html[data-theme="light"] {
+  color-scheme: light;
+  background: #f4f7fb;
+  color: #0f172a;
+}
+
+html[data-theme="light"] body {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(77, 107, 255, 0.08), transparent 34rem),
+    #f4f7fb;
+  color: #0f172a;
+}
+
+html[data-theme="light"] .card,
+html[data-theme="light"] .instrumentPanel,
+html[data-theme="light"] .terminalCard,
+html[data-theme="light"] .analysisCard,
+html[data-theme="light"] .simplePlanCard,
+html[data-theme="light"] .performanceCard,
+html[data-theme="light"] .orderFlowCard {
+  border-color: #d7dee9;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 34px rgba(15, 23, 42, 0.08);
+}
+
+html[data-theme="light"] .marketHeader,
+html[data-theme="light"] .chartToolbar,
+html[data-theme="light"] .ohlcStrip,
+html[data-theme="light"] .fibTableTitle,
+html[data-theme="light"] .instrumentResult,
+html[data-theme="light"] .fvgRow,
+html[data-theme="light"] .orderBlockRow,
+html[data-theme="light"] .tradeHistoryTable th,
+html[data-theme="light"] .tradeHistoryTable td {
+  border-color: #e2e8f0;
+}
+
+html[data-theme="light"] .marketChartShell,
+html[data-theme="light"] .marketChart,
+html[data-theme="light"] .searchResults,
+html[data-theme="light"] .tradeHistoryTable,
+html[data-theme="light"] .analysisSummary > div,
+html[data-theme="light"] .structureStrip > div,
+html[data-theme="light"] .imbalanceStrip > div,
+html[data-theme="light"] .orderBlockStrip > div,
+html[data-theme="light"] .fibTable,
+html[data-theme="light"] .orderBlockPanel,
+html[data-theme="light"] .imbalancePanel,
+html[data-theme="light"] .performancePanel,
+html[data-theme="light"] .simplePlanGrid > div,
+html[data-theme="light"] .simpleTargets > div,
+html[data-theme="light"] .simpleTrend,
+html[data-theme="light"] .orderFlowStats > div {
+  border-color: #dce3ed;
+  background: #ffffff;
+}
+
+html[data-theme="light"] .searchBox input {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+}
+
+html[data-theme="light"] .instrumentResult {
+  color: #111827;
+}
+
+html[data-theme="light"] .instrumentResult:hover {
+  background: #f1f5f9;
+}
+
+html[data-theme="light"] .filterChip,
+html[data-theme="light"] .liveShortcut,
+html[data-theme="light"] .analysisToggle,
+html[data-theme="light"] .connectionPill,
+html[data-theme="light"] .themeControl {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #475569;
+}
+
+html[data-theme="light"] .filterChip.active,
+html[data-theme="light"] .liveShortcut.active,
+html[data-theme="light"] .analysisToggle.active,
+html[data-theme="light"] .timeframe.active,
+html[data-theme="light"] .themeOption.active {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+html[data-theme="light"] .timeframe {
+  color: #64748b;
+}
+
+html[data-theme="light"] .crosshairReadout,
+html[data-theme="light"] .exactVolumeLegend,
+html[data-theme="light"] .chartToolRail {
+  border-color: rgba(148, 163, 184, 0.6);
+  background: rgba(255, 255, 255, 0.9);
+  color: #475569;
+}
+
+html[data-theme="light"] .crosshairReadout strong,
+html[data-theme="light"] .drawingText,
+html[data-theme="light"] .simplePlanGrid strong,
+html[data-theme="light"] .simpleTargets strong,
+html[data-theme="light"] .performanceNumbers > strong,
+html[data-theme="light"] .performancePie strong {
+  color: #0f172a;
+}
+
+html[data-theme="light"] .drawingText {
+  fill: #0f172a;
+  stroke: rgba(255, 255, 255, 0.92);
+}
+
+html[data-theme="light"] .button.secondary {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+html[data-theme="light"] .historyNotice {
+  border-color: #e2e8f0;
+  background: #fff8e8;
+}
+
+html[data-theme="light"] .positive {
+  color: #0f9f55;
+}
+
+html[data-theme="light"] .negative {
+  color: #d9363e;
+}
+
+@media (max-width: 760px) {
+  .chartToolRail {
+    top: auto;
+    right: 8px;
+    bottom: 118px;
+    flex-direction: row;
+    max-width: calc(100% - 16px);
+    overflow-x: auto;
+    transform: none;
+  }
+}
