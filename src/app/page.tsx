@@ -74,6 +74,42 @@ const KRAKEN_RESOLUTIONS = new Set<Resolution>([
   "1", "5", "15", "30", "60", "240", "1D", "1W"
 ]);
 
+const LIVE_GLOBAL_SHORTCUTS: Instrument[] = [
+  {
+    symbol: "BTC/USD",
+    name: "BTC / USD",
+    market: "KRAKEN",
+    segment: "SPOT",
+    type: "CRYPTO",
+    underlying: "BTC",
+    expiry: null,
+    strike: null,
+    optionType: null
+  },
+  {
+    symbol: "ETH/USD",
+    name: "ETH / USD",
+    market: "KRAKEN",
+    segment: "SPOT",
+    type: "CRYPTO",
+    underlying: "ETH",
+    expiry: null,
+    strike: null,
+    optionType: null
+  },
+  {
+    symbol: "SOL/USD",
+    name: "SOL / USD",
+    market: "KRAKEN",
+    segment: "SPOT",
+    type: "CRYPTO",
+    underlying: "SOL",
+    expiry: null,
+    strike: null,
+    optionType: null
+  }
+];
+
 function formatDate(timestamp: number | null) {
   if (!timestamp) return "—";
   return new Intl.DateTimeFormat("en-IN", {
@@ -594,6 +630,27 @@ export default function Home() {
                 onClick={() => setMarketFilter(item)}
               >
                 {item}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="liveNowRow">
+          <span className="toolbarLabel">LIVE NOW · 24/7 GLOBAL TEST</span>
+          <div className="filterRow">
+            {LIVE_GLOBAL_SHORTCUTS.map((instrument) => (
+              <button
+                key={instrument.symbol}
+                className={
+                  selected.market === "KRAKEN" &&
+                  selected.symbol === instrument.symbol
+                    ? "liveShortcut active"
+                    : "liveShortcut"
+                }
+                onClick={() => void selectInstrument(instrument)}
+              >
+                <span className="liveDot" />
+                {instrument.symbol}
               </button>
             ))}
           </div>
