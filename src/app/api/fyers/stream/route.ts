@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { fyersDataSocket } from "fyers-api-v3";
+import { createRequire } from "node:module";
 import { getFyersConfig } from "@/lib/fyers";
 import { readFyersSession } from "@/lib/fyers-session";
 
@@ -25,7 +25,22 @@ export async function GET(request: NextRequest) {
   const { appId } = getFyersConfig();
   const websocketToken = `${appId}:${session.accessToken}`;
 
-  let socket: InstanceType<typeof fyersDataSocket> | null = null;
+  type DataSocketInstance = {
+    LiteMode?: unknown;
+    FullMode?: unknown;
+    subscribe(symbols: string[], marketDepth?: boolean): void;
+    unsubscribe?(symbols: string[], marketDepth?: boolean): void;
+    mode?(mode: unknown): void;
+    autoReconnect?(retryCount?: number): void;
+    autoreconnect?(retryCount?: number): void;
+    setQueueProcessInterval?(intervalMs: number): void;
+    connect(): void;
+    close(): void;
+    isConnected?(): boolean;
+    on(event: string, handler: (...args: any[]) => void): void;
+  };
+
+  let socket: DataSocketInstance | null = null;
   let keepAlive: ReturnType<typeof setInterval> | null = null;
 
   const stream = new ReadableStream<Uint8Array>({
@@ -53,7 +68,17 @@ export async function GET(request: NextRequest) {
       };
 
       try {
-        socket = fyersDataSocket.getInstance(websocketToken, "", false);
+        const require = createRequire(import.meta.url);
+        const sdk = require("fyers-api-v3");
+        const DataSocket = sdk?.fyersDataSocket;
+
+        if (!DataSocket || typeof DataSocket.getInstance !== "function") {
+          throw new Error(
+            "FYERS SDK loaded but fyersDataSocket.getInstance() is unavailable."
+          );
+        }
+
+        socket = DataSocket.getInstance(websocketToken, "", false);
 
         // FYERS has shipped both autoReconnect() and autoreconnect()
         // spellings across Node SDK/docs. Support either without crashing.
