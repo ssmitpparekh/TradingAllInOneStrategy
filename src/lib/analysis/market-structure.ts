@@ -14,6 +14,23 @@ export type SwingPoint = {
   confirmed: boolean;
 };
 
+export type StructureEvent = {
+  type: "BOS" | "CHoCH";
+  direction: "bullish" | "bearish";
+  time: number;
+  close: number;
+  brokenLevel: number;
+  sourceSwing: SwingPoint;
+};
+
+export type MarketStructureSnapshot = {
+  trend: "bullish" | "bearish" | "neutral";
+  latestEvent: StructureEvent | null;
+  recentEvents: StructureEvent[];
+  activeSwingHigh: SwingPoint | null;
+  activeSwingLow: SwingPoint | null;
+};
+
 export type FibonacciLevel = {
   ratio: number;
   price: number;
@@ -206,6 +223,102 @@ export function detectSwings(
   }
 
   return alternating;
+}
+
+
+export function buildMarketStructure(
+  candles: AnalysisCandle[],
+  options?: {
+    confirmationBars?: number;
+    maxEvents?: number;
+  }
+): MarketStructureSnapshot {
+  const confirmationBars = Math.max(2, options?.confirmationBars ?? 3);
+  const maxEvents = Math.max(1, options?.maxEvents ?? 12);
+  const recentCandles =
+    candles.length > 1200 ? candles.slice(-1200) : candles;
+
+  const swings = detectSwings(recentCandles, {
+    rightBars: confirmationBars
+  });
+
+  let trend: MarketStructureSnapshot["trend"] = "neutral";
+  let activeSwingHigh: SwingPoint | null = null;
+  let activeSwingLow: SwingPoint | null = null;
+  let brokenHighTime: number | null = null;
+  let brokenLowTime: number | null = null;
+  const events: StructureEvent[] = [];
+
+  let swingCursor = 0;
+
+  for (let index = 0; index < recentCandles.length; index += 1) {
+    while (
+      swingCursor < swings.length &&
+      swings[swingCursor].index + confirmationBars <= index
+    ) {
+      const swing = swings[swingCursor];
+
+      if (swing.type === "high") {
+        activeSwingHigh = swing;
+        brokenHighTime = null;
+      } else {
+        activeSwingLow = swing;
+        brokenLowTime = null;
+      }
+
+      swingCursor += 1;
+    }
+
+    const candle = recentCandles[index];
+
+    if (
+      activeSwingHigh &&
+      brokenHighTime !== activeSwingHigh.time &&
+      candle.close > activeSwingHigh.price
+    ) {
+      const event: StructureEvent = {
+        type: trend === "bearish" ? "CHoCH" : "BOS",
+        direction: "bullish",
+        time: candle.time,
+        close: candle.close,
+        brokenLevel: activeSwingHigh.price,
+        sourceSwing: activeSwingHigh
+      };
+
+      events.push(event);
+      brokenHighTime = activeSwingHigh.time;
+      trend = "bullish";
+    }
+
+    if (
+      activeSwingLow &&
+      brokenLowTime !== activeSwingLow.time &&
+      candle.close < activeSwingLow.price
+    ) {
+      const event: StructureEvent = {
+        type: trend === "bullish" ? "CHoCH" : "BOS",
+        direction: "bearish",
+        time: candle.time,
+        close: candle.close,
+        brokenLevel: activeSwingLow.price,
+        sourceSwing: activeSwingLow
+      };
+
+      events.push(event);
+      brokenLowTime = activeSwingLow.time;
+      trend = "bearish";
+    }
+  }
+
+  const recentEvents = events.slice(-maxEvents);
+
+  return {
+    trend,
+    latestEvent: recentEvents[recentEvents.length - 1] ?? null,
+    recentEvents,
+    activeSwingHigh,
+    activeSwingLow
+  };
 }
 
 function priceForRetracement(
