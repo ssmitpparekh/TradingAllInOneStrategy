@@ -10,7 +10,8 @@ import {
 } from "@/lib/analysis/market-structure";
 import { buildTechnicalContext, type TechnicalContext } from "@/lib/analysis/indicators";
 import { buildVolumeAnalytics, type VolumeAnalytics } from "@/lib/analysis/volume";
-import { buildReversalEngine, type ReversalScore } from "@/lib/analysis/confluence";
+import { buildReversalEngine } from "@/lib/analysis/confluence";
+import { buildSimpleTradePlan } from "@/lib/analysis/trade-plan";
 import type { ChartCandle } from "@/components/MarketChart";
 
 export type ScannerInstrument = {
@@ -43,20 +44,50 @@ export type ScannerLiveState = {
   observedLow: number;
   observedSince: number;
   updatedAt: number;
+  sourceTime: number;
 };
 
 export type ScannerOpportunity = {
   instrument: ScannerInstrument;
   direction: "bullish" | "bearish";
-  state: "STRONG" | "WATCH" | "LIVE SWEEP";
+  state: "STRONG";
   score: number;
   price: number;
+  entry: number;
+  stopLoss: number;
+  targets: Array<{
+    label: "T1" | "T2" | "T3";
+    price: number;
+    rr: number | null;
+    source: string;
+  }>;
+  moveClass: "TACTICAL" | "MAJOR";
+  confirmationTimeframe: "15m";
   trigger: string;
   reason: string;
   zone: { low: number; high: number } | null;
   observedSweep: boolean;
   updatedAt: number;
+  sourceTime: number;
 };
+
+export function scannerQuoteIsFresh(
+  market: ScannerInstrument["market"],
+  sourceTime: number,
+  nowMs = Date.now()
+) {
+  if (!(sourceTime > 0)) return false;
+
+  const ageMs = nowMs - sourceTime * 1000;
+  if (ageMs < -30_000) return false;
+
+  // Kraken is a continuous market and should be genuinely streaming.
+  if (market === "KRAKEN") return ageMs <= 45_000;
+
+  // Indian scanner rows are "NOW" only when the exchange/provider quote
+  // itself is fresh. Re-polling yesterday's close must never make it live.
+  return ageMs <= 120_000;
+}
 
 export function scannerBucketStart(
   timestamp: number,
@@ -175,71 +206,19 @@ export function buildScannerStaticContext(
   };
 }
 
-function distanceToZone(
-  price: number,
-  zone: { low: number; high: number } | null
-) {
-  if (!zone) return Number.POSITIVE_INFINITY;
-  if (price < zone.low) return zone.low - price;
-  if (price > zone.high) return price - zone.high;
-  return 0;
-}
-
-function observedSweep(
-  context: ScannerStaticContext,
-  live: ScannerLiveState,
-  direction: "bullish" | "bearish"
-) {
-  const swingHigh = context.confirmation15m.activeSwingHigh;
-  const swingLow = context.confirmation15m.activeSwingLow;
-
-  if (
-    direction === "bearish" &&
-    swingHigh &&
-    live.observedHigh > swingHigh.price &&
-    live.price < swingHigh.price
-  ) {
-    return true;
-  }
-
-  if (
-    direction === "bullish" &&
-    swingLow &&
-    live.observedLow < swingLow.price &&
-    live.price > swingLow.price
-  ) {
-    return true;
-  }
-
-  return false;
-}
-
-function activeBlockNear(
-  context: ScannerStaticContext,
-  direction: "bullish" | "bearish",
-  price: number
-) {
-  const atr = context.atr ?? 0;
-
-  return context.refineOrderBlocks.activeBlocks.some((block) => {
-    if (block.direction !== direction) return false;
-    if (price >= block.lower && price <= block.upper) return true;
-
-    if (!(atr > 0)) return false;
-
-    const distance = Math.min(
-      Math.abs(price - block.lower),
-      Math.abs(price - block.upper)
-    );
-    return distance <= atr * 0.3;
-  });
-}
-
 export function evaluateScannerContext(
   context: ScannerStaticContext,
   live: ScannerLiveState
 ): ScannerOpportunity | null {
-  if (!(live.price > 0)) return null;
+  if (
+    !(live.price > 0) ||
+    !scannerQuoteIsFresh(
+      context.instrument.market,
+      live.sourceTime
+    )
+  ) {
+    return null;
+  }
 
   const reversal = buildReversalEngine({
     price: live.price,
@@ -256,73 +235,56 @@ export function evaluateScannerContext(
     derivatives: null
   });
 
-  const selected: ReversalScore = reversal.selected;
+  const latestTime =
+    context.candles15m[context.candles15m.length - 1]?.time ?? null;
 
+  const plan = buildSimpleTradePlan({
+    price: live.price,
+    latestTime,
+    htfTechnical: context.htfTechnical,
+    htfStructure: context.htfStructure,
+    fibonacci: context.htfFib,
+    imbalance: context.refineImbalance,
+    orderBlocks: context.refineOrderBlocks,
+    reversal: reversal.selected,
+    refineAtr: context.refineFib.atr14,
+    openingConfirmation: null,
+    confirmation15m: context.confirmation15m
+  });
+
+  // The scanner is not allowed to invent a shortcut "strong" state.
+  // If the same core trade-plan gate used by the chart is not READY,
+  // there is no actionable scanner trade.
   if (
-    selected.direction !== "bullish" &&
-    selected.direction !== "bearish"
+    plan.state !== "READY" ||
+    plan.trend === "neutral" ||
+    plan.entry === null ||
+    plan.stopLoss === null ||
+    plan.moveClass === null ||
+    plan.confirmationTimeframe !== "15m" ||
+    plan.targets.length < 3
   ) {
     return null;
   }
 
-  const direction = selected.direction;
-  const zone = context.htfFib.goldenZone
-    ? {
-        low: Math.min(
-          context.htfFib.goldenZone.low,
-          context.htfFib.goldenZone.high
-        ),
-        high: Math.max(
-          context.htfFib.goldenZone.low,
-          context.htfFib.goldenZone.high
-        )
-      }
-    : null;
-
-  const atr = context.atr ?? 0;
-  const zoneDistance = distanceToZone(live.price, zone);
-  const nearZone =
-    zoneDistance === 0 ||
-    (atr > 0 && zoneDistance <= atr * 0.5);
-  const sweep = observedSweep(context, live, direction);
-  const block = activeBlockNear(context, direction, live.price);
-
-  if (!sweep && !block && !nearZone && selected.score < 75) {
-    return null;
-  }
-
-  let state: ScannerOpportunity["state"] = "WATCH";
-  let trigger = "HTF confluence";
-
-  if (sweep) {
-    state = selected.score >= 70 ? "STRONG" : "LIVE SWEEP";
-    trigger = "Observed 15m liquidity sweep";
-  } else if (block && nearZone && selected.score >= 70) {
-    state = "STRONG";
-    trigger = "Order Block + retracement";
-  } else if (selected.score >= 75 && nearZone) {
-    state = "STRONG";
-    trigger = "High confluence retracement";
-  }
-
   return {
     instrument: context.instrument,
-    direction,
-    state,
-    score: selected.score,
+    direction: plan.trend,
+    state: "STRONG",
+    score: plan.score,
     price: live.price,
-    trigger,
-    reason: [
-      selected.classification,
-      selected.entryState,
-      ...selected.components
-        .filter((component) => component.available && component.points > 0)
-        .sort((a, b) => b.points - a.points)
-        .slice(0, 2)
-        .map((component) => component.detail)
-    ].join(" · "),
-    zone,
-    observedSweep: sweep,
-    updatedAt: live.updatedAt
+    entry: plan.entry,
+    stopLoss: plan.stopLoss,
+    targets: plan.targets.slice(0, 3),
+    moveClass: plan.moveClass,
+    confirmationTimeframe: "15m",
+    trigger: plan.trigger ?? "CONFIRMED STRUCTURE",
+    reason: plan.reason,
+    zone: plan.zone,
+    observedSweep:
+      plan.trigger === "LIQUIDITY SWEEP" ||
+      plan.trigger === "SWEEP + ORDER BLOCK",
+    updatedAt: live.updatedAt,
+    sourceTime: live.sourceTime
   };
 }
