@@ -19,6 +19,7 @@ export type SimpleTradePlan = {
   reason: string;
   signalTime: number | null;
   confirmationTimeframe: "1m" | "5m" | "15m" | null;
+  moveClass: "TACTICAL" | "MAJOR" | null;
 };
 
 function alignedTrend(technical: TechnicalContext, structure: MarketStructureSnapshot): SimpleTradePlan["trend"] {
@@ -82,7 +83,8 @@ export function buildSimpleTradePlan(input: {
     targets: [],
     reason,
     signalTime: null,
-    confirmationTimeframe: null
+    confirmationTimeframe: null,
+    moveClass: null
   });
 
   if (trend === "neutral" || reversal.direction !== trend || !fibonacci.goldenZone || fibonacci.direction !== trend) {
@@ -149,7 +151,7 @@ export function buildSimpleTradePlan(input: {
         : 75;
 
   if (reversal.score < 60) return { ...empty("NO_TRADE", "NO TRADE — confluence too weak", "Ignore this setup and wait for stronger real-data alignment.", "Confluence score is only " + reversal.score + "/100."), zone, trigger };
-  if (!nearZone) return { trend, state: "WAIT_RETRACE", headline: "WAIT FOR " + trend.toUpperCase() + " RETRACEMENT", instruction: "Do not chase price. Wait for " + zone.low.toLocaleString("en-IN", { maximumFractionDigits: 2 }) + "–" + zone.high.toLocaleString("en-IN", { maximumFractionDigits: 2 }) + ".", zone, entry: zoneMid, stopLoss, trigger, score: reversal.score, targets, signalTime: null, confirmationTimeframe: null, reason: trigger ? "Preferred zone has " + trigger.toLowerCase() + " confluence." : "Fib zone exists, but no qualifying sweep/order-block trigger is present yet." };
+  if (!nearZone) return { trend, state: "WAIT_RETRACE", headline: "WAIT FOR " + trend.toUpperCase() + " RETRACEMENT", instruction: "Do not chase price. Wait for " + zone.low.toLocaleString("en-IN", { maximumFractionDigits: 2 }) + "–" + zone.high.toLocaleString("en-IN", { maximumFractionDigits: 2 }) + ".", zone, entry: zoneMid, stopLoss, trigger, score: reversal.score, targets, signalTime: null, confirmationTimeframe: null, moveClass: null, reason: trigger ? "Preferred zone has " + trigger.toLowerCase() + " confluence." : "Fib zone exists, but no qualifying sweep/order-block trigger is present yet." };
   if (!effectiveTrigger || confirmationTimeframe === null) {
     return {
       trend,
@@ -171,12 +173,18 @@ export function buildSimpleTradePlan(input: {
           ? opening.reason
           : "15m structure confirmation is not complete.",
       signalTime: null,
-      confirmationTimeframe: null
+      confirmationTimeframe: null,
+      moveClass: null
     };
   }
-  if (stopLoss === null || risk === null || !(atr > 0)) return { trend, state: "NO_TRADE", headline: "NO TRADE — no strict invalidation", instruction: "Wait for a cleaner sweep or Order Block that gives a defensible tight stop.", zone, entry, stopLoss: null, trigger, score: reversal.score, targets, signalTime: null, confirmationTimeframe: null, reason: "A real invalidation level could not be established." };
-  if (risk > atr * 0.65) return { trend, state: "NO_TRADE", headline: "NO TRADE — stop is too wide", instruction: "Wait for a tighter retracement/sweep. Do not force a wide stop.", zone, entry, stopLoss, trigger, score: reversal.score, targets, signalTime: null, confirmationTimeframe: null, reason: "Required stop is " + (risk / atr).toFixed(2) + "× 1H ATR; strict limit is 0.65× ATR." };
+  if (stopLoss === null || risk === null || !(atr > 0)) return { trend, state: "NO_TRADE", headline: "NO TRADE — no strict invalidation", instruction: "Wait for a cleaner sweep or Order Block that gives a defensible tight stop.", zone, entry, stopLoss: null, trigger, score: reversal.score, targets, signalTime: null, confirmationTimeframe: null, moveClass: null, reason: "A real invalidation level could not be established." };
+  if (risk > atr * 0.65) return { trend, state: "NO_TRADE", headline: "NO TRADE — stop is too wide", instruction: "Wait for a tighter retracement/sweep. Do not force a wide stop.", zone, entry, stopLoss, trigger, score: reversal.score, targets, signalTime: null, confirmationTimeframe: null, moveClass: null, reason: "Required stop is " + (risk / atr).toFixed(2) + "× 1H ATR; strict limit is 0.65× ATR." };
   const bestRr = Math.max(0, ...targets.map((target) => target.rr ?? 0));
+  const t3 = targets.find((target) => target.label === "T3") ?? null;
+  const t3DistanceAtr =
+    t3 && atr > 0 ? Math.abs(t3.price - entry) / atr : 0;
+  const moveClass: "TACTICAL" | "MAJOR" =
+    bestRr >= 4 && t3DistanceAtr >= 3 ? "MAJOR" : "TACTICAL";
   if (reversal.score < requiredScore || bestRr < 3) {
     return {
       trend,
@@ -192,6 +200,7 @@ export function buildSimpleTradePlan(input: {
       targets,
       signalTime: null,
       confirmationTimeframe: null,
+      moveClass: null,
       reason:
         reversal.score < requiredScore
           ? "Confirmation threshold not met (" +
@@ -216,6 +225,7 @@ export function buildSimpleTradePlan(input: {
     targets,
     signalTime,
     confirmationTimeframe,
+    moveClass,
     reason:
       effectiveTrigger +
       " + " +

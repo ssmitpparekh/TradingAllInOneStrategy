@@ -11,6 +11,7 @@ import { buildTechnicalContext } from "@/lib/analysis/indicators";
 import { buildVolumeAnalytics } from "@/lib/analysis/volume";
 import { buildReversalEngine } from "@/lib/analysis/confluence";
 import { buildSimpleTradePlan } from "@/lib/analysis/trade-plan";
+import { buildReactionTradePlan } from "@/lib/analysis/reaction-trade";
 import {
   buildOpeningConfirmation,
   indianSessionOpenEpoch,
@@ -671,6 +672,40 @@ export default function Home() {
     ]
   );
 
+  const reactionImbalance15m = useMemo(
+    () => buildImbalanceLiquiditySnapshot(liveContext15m),
+    [liveContext15m]
+  );
+  const reactionFib15m = useMemo(
+    () => buildFibonacciSetup(liveContext15m),
+    [liveContext15m]
+  );
+  const reactionTradePlan = useMemo(
+    () =>
+      buildReactionTradePlan({
+        price:
+          primaryAnalysisSymbol === selected.symbol
+            ? quote?.lp ?? contextPrice ?? 0
+            : contextPrice ?? 0,
+        candles15m: liveContext15m,
+        imbalance15m: reactionImbalance15m,
+        structure15m: confirmation15m,
+        primaryPlan: simpleTradePlan,
+        atr15m: reactionFib15m.atr14
+      }),
+    [
+      primaryAnalysisSymbol,
+      selected.symbol,
+      quote?.lp,
+      contextPrice,
+      liveContext15m,
+      reactionImbalance15m,
+      confirmation15m,
+      simpleTradePlan,
+      reactionFib15m.atr14
+    ]
+  );
+
   const analysisTrades = useMemo(
     () =>
       tradeJournal.filter(
@@ -701,7 +736,9 @@ export default function Home() {
         price: trade.entry,
         direction: trade.direction,
         status: trade.status,
-        outcome: trade.outcome
+        outcome: trade.outcome,
+        setupType: trade.setupType ?? "PRIMARY",
+        moveClass: trade.moveClass ?? "TACTICAL"
       })),
     [chartTrades]
   );
@@ -1147,6 +1184,7 @@ export default function Home() {
     const id = makeTradeId({
       market: selected.market,
       symbol: primaryAnalysisSymbol,
+      setupType: "PRIMARY",
       direction,
       signalTime: simpleTradePlan.signalTime
     });
@@ -1162,6 +1200,8 @@ export default function Home() {
             ? selected.name
             : primaryAnalysisSymbol,
         market: selected.market,
+        setupType: "PRIMARY",
+        moveClass: simpleTradePlan.moveClass ?? "TACTICAL",
         direction,
         signalTime: simpleTradePlan.signalTime!,
         confirmationTimeframe:
@@ -1186,6 +1226,79 @@ export default function Home() {
   }, [
     journalReady,
     simpleTradePlan,
+    selected.market,
+    selected.name,
+    selected.symbol,
+    primaryAnalysisSymbol
+  ]);
+
+  useEffect(() => {
+    if (
+      !journalReady ||
+      reactionTradePlan.state !== "READY" ||
+      reactionTradePlan.direction === null ||
+      reactionTradePlan.signalTime === null ||
+      reactionTradePlan.entry === null ||
+      reactionTradePlan.stopLoss === null ||
+      !reactionTradePlan.trigger ||
+      reactionTradePlan.targets.length < 3
+    ) {
+      return;
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+
+    if (now - reactionTradePlan.signalTime > 35 * 60) {
+      return;
+    }
+
+    const direction =
+      reactionTradePlan.direction === "bullish" ? "long" : "short";
+
+    const id = makeTradeId({
+      market: selected.market,
+      symbol: primaryAnalysisSymbol,
+      setupType: "REACTION",
+      direction,
+      signalTime: reactionTradePlan.signalTime
+    });
+
+    setTradeJournal((current) => {
+      if (current.some((trade) => trade.id === id)) return current;
+
+      const record: JournalTrade = {
+        id,
+        symbol: primaryAnalysisSymbol,
+        name:
+          primaryAnalysisSymbol === selected.symbol
+            ? selected.name
+            : primaryAnalysisSymbol,
+        market: selected.market,
+        setupType: "REACTION",
+        moveClass: reactionTradePlan.moveClass ?? "TACTICAL",
+        direction,
+        signalTime: reactionTradePlan.signalTime!,
+        confirmationTimeframe: "15m",
+        entry: reactionTradePlan.entry!,
+        initialStop: reactionTradePlan.stopLoss!,
+        currentStop: reactionTradePlan.stopLoss!,
+        targets: reactionTradePlan.targets.slice(0, 3),
+        trigger: reactionTradePlan.trigger!,
+        score: reactionTradePlan.score,
+        status: "OPEN",
+        outcome: "OPEN",
+        highestTargetHit: 0,
+        resultR: null,
+        closedTime: null,
+        ambiguityReason: null,
+        createdAt: Date.now()
+      };
+
+      return [...current, record];
+    });
+  }, [
+    journalReady,
+    reactionTradePlan,
     selected.market,
     selected.name,
     selected.symbol,
@@ -2118,6 +2231,132 @@ export default function Home() {
         ) : null}
       </section>
 
+      {reactionTradePlan.state !== "NONE" ? (
+        <section
+          className={
+            "card reactionPlanCard " +
+            reactionTradePlan.state.toLowerCase()
+          }
+        >
+          <div className="reactionPlanHeader">
+            <div>
+              <p className="label">
+                REACTION TRADE · COUNTER-TREND · 15m LIQUIDITY SWEEP
+              </p>
+              <h3>{reactionTradePlan.headline}</h3>
+              {reactionTradePlan.state === "READY" &&
+              reactionTradePlan.moveClass ? (
+                <span
+                  className={
+                    "moveClassBadge " +
+                    reactionTradePlan.moveClass.toLowerCase()
+                  }
+                >
+                  CONFIRMED {reactionTradePlan.moveClass} MOVE
+                </span>
+              ) : null}
+              <p>{reactionTradePlan.instruction}</p>
+            </div>
+            <div
+              className={
+                "reactionDirection " +
+                (reactionTradePlan.direction ?? "neutral")
+              }
+            >
+              <span>REACTION LEG</span>
+              <strong>
+                {reactionTradePlan.direction
+                  ? reactionTradePlan.direction === "bullish"
+                    ? "LONG"
+                    : "SHORT"
+                  : "WATCH"}
+              </strong>
+              <small>{reactionTradePlan.score || "—"}/100</small>
+            </div>
+          </div>
+
+          <div className="simplePlanGrid">
+            <div>
+              <span>ENTRY NOW</span>
+              <strong>
+                {reactionTradePlan.state === "READY" &&
+                reactionTradePlan.entry !== null
+                  ? reactionTradePlan.entry.toLocaleString("en-IN", {
+                      maximumFractionDigits: 2
+                    })
+                  : "WAIT"}
+              </strong>
+              <small>
+                {reactionTradePlan.trigger ??
+                  "Needs fresh liquidity sweep + reversal"}
+              </small>
+            </div>
+            <div>
+              <span>STRICT SL</span>
+              <strong>
+                {reactionTradePlan.stopLoss !== null
+                  ? reactionTradePlan.stopLoss.toLocaleString("en-IN", {
+                      maximumFractionDigits: 2
+                    })
+                  : "—"}
+              </strong>
+              <small>Beyond the sweep extreme + ATR buffer</small>
+            </div>
+            <div>
+              <span>PRIMARY TRADE AFTERWARD</span>
+              <strong>
+                {simpleTradePlan.trend === "bearish"
+                  ? "LOOK FOR SHORT"
+                  : simpleTradePlan.trend === "bullish"
+                    ? "LOOK FOR LONG"
+                    : "WAIT"}
+              </strong>
+              <small>
+                {simpleTradePlan.zone
+                  ? simpleTradePlan.zone.low.toLocaleString("en-IN", {
+                      maximumFractionDigits: 2
+                    }) +
+                    " – " +
+                    simpleTradePlan.zone.high.toLocaleString("en-IN", {
+                      maximumFractionDigits: 2
+                    })
+                  : "No primary zone"}
+              </small>
+            </div>
+          </div>
+
+          <div className="simpleTargets">
+            {(["T1", "T2", "T3"] as const).map((label) => {
+              const target = reactionTradePlan.targets.find(
+                (item) => item.label === label
+              );
+
+              return (
+                <div key={label}>
+                  <span>{label}</span>
+                  <strong>
+                    {target
+                      ? target.price.toLocaleString("en-IN", {
+                          maximumFractionDigits: 2
+                        })
+                      : "—"}
+                  </strong>
+                  <small>
+                    {target?.rr !== null && target?.rr !== undefined
+                      ? target.rr.toFixed(1) + "R"
+                      : target?.source ?? "Waiting for valid target"}
+                  </small>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="simplePlanFooter">
+            <p>{reactionTradePlan.reason}</p>
+          </div>
+        </section>
+      ) : null}
+
       <section className={"card simplePlanCard " + simpleTradePlan.state.toLowerCase()}>
         <div className="simplePlanHeader">
           <div>
@@ -2125,6 +2364,11 @@ export default function Home() {
               SWING TRADE PLAN · 4H/1H CONTEXT · 15m CONFIRMATION · 1m/5m OPENING TRIGGER ONLY
             </p>
             <h3>{loadingContext ? "Building real-data context…" : simpleTradePlan.headline}</h3>
+            {simpleTradePlan.state === "READY" && simpleTradePlan.moveClass ? (
+              <span className={"moveClassBadge " + simpleTradePlan.moveClass.toLowerCase()}>
+                CONFIRMED {simpleTradePlan.moveClass} MOVE
+              </span>
+            ) : null}
             <p>{simpleTradePlan.instruction}</p>
           </div>
           <div className={"simpleTrend " + simpleTradePlan.trend}>
@@ -2468,6 +2712,8 @@ export default function Home() {
               <tr>
                 <th>Signal</th>
                 <th>Symbol</th>
+                <th>Setup</th>
+                <th>Move</th>
                 <th>Side</th>
                 <th>TF</th>
                 <th>Entry</th>
@@ -2500,6 +2746,8 @@ export default function Home() {
                         )}
                       </td>
                       <td>{trade.symbol}</td>
+                      <td>{trade.setupType ?? "PRIMARY"}</td>
+                      <td>{trade.moveClass ?? "TACTICAL"}</td>
                       <td className={trade.direction}>
                         {trade.direction.toUpperCase()}
                       </td>
@@ -2536,7 +2784,7 @@ export default function Home() {
                   ))
               ) : (
                 <tr>
-                  <td colSpan={8}>
+                  <td colSpan={10}>
                     No platform trades have been issued yet. The journal starts
                     automatically with the first confirmed READY signal.
                   </td>
