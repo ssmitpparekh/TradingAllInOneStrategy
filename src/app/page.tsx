@@ -383,7 +383,7 @@ export default function Home() {
   const [newsXConfigured, setNewsXConfigured] = useState(false);
   const [newsXStreaming, setNewsXStreaming] = useState(false);
   const [tradeCapitalInput, setTradeCapitalInput] = useState("");
-  const [selectedOptionMargin, setSelectedOptionMargin] =
+  const [selectedMarginPerLot, setSelectedMarginPerLot] =
     useState<number | null>(null);
   const historyRequestId = useRef(0);
   const orderFlowNeedsPartialRef = useRef(true);
@@ -782,21 +782,97 @@ export default function Home() {
     selected.lotSize && selected.lotSize > 0
       ? selected.lotSize
       : null;
+  const capitalCurrency =
+    selected.market === "KRAKEN" ? "$" : "₹";
+  const selectedLivePrice =
+    quote?.lp && quote.lp > 0 ? quote.lp : null;
+  const planMatchesSelectedPrice =
+    primaryAnalysisSymbol === selected.symbol;
+  const isDerivative =
+    selected.type === "OPTION" || selected.type === "FUTURE";
+
   const optionBuyCostPerLot =
     selected.type === "OPTION" &&
     selectedLotSize &&
-    quote?.lp &&
-    quote.lp > 0
-      ? quote.lp * selectedLotSize
+    selectedLivePrice
+      ? selectedLivePrice * selectedLotSize
       : null;
   const maxBuyLots =
     optionBuyCostPerLot && tradeCapital > 0
       ? Math.floor(tradeCapital / optionBuyCostPerLot)
       : null;
-  const maxSellLots =
-    selectedOptionMargin && tradeCapital > 0
-      ? Math.floor(tradeCapital / selectedOptionMargin)
+  const maxMarginLots =
+    selectedMarginPerLot && tradeCapital > 0
+      ? Math.floor(tradeCapital / selectedMarginPerLot)
       : null;
+
+  const cashSizingPrice =
+    !isDerivative
+      ? activePlannerPlan?.entry ?? selectedLivePrice
+      : null;
+  const affordableUnits =
+    tradeCapital > 0 && cashSizingPrice && cashSizingPrice > 0
+      ? selected.market === "KRAKEN"
+        ? tradeCapital / cashSizingPrice
+        : Math.floor(tradeCapital / cashSizingPrice)
+      : null;
+  const deployedCapital =
+    affordableUnits !== null && cashSizingPrice
+      ? affordableUnits * cashSizingPrice
+      : null;
+
+  const derivativeLots =
+    selected.type === "OPTION"
+      ? maxBuyLots
+      : selected.type === "FUTURE"
+        ? maxMarginLots
+        : null;
+  const derivativeQuantity =
+    derivativeLots !== null && selectedLotSize
+      ? derivativeLots * selectedLotSize
+      : null;
+
+  const sizedQuantity =
+    !isDerivative
+      ? affordableUnits
+      : planMatchesSelectedPrice
+        ? derivativeQuantity
+        : null;
+
+  const moneyRiskAtStop =
+    activePlannerPlan &&
+    sizedQuantity !== null &&
+    sizedQuantity > 0 &&
+    planMatchesSelectedPrice
+      ? Math.abs(
+          activePlannerPlan.entry - activePlannerPlan.stopLoss
+        ) * sizedQuantity
+      : null;
+
+  const targetMoney = (label: "T1" | "T2" | "T3") => {
+    const target = activePlannerPlan?.targets.find(
+      (item) => item.label === label
+    );
+
+    if (
+      !activePlannerPlan ||
+      !target ||
+      sizedQuantity === null ||
+      !(sizedQuantity > 0) ||
+      !planMatchesSelectedPrice
+    ) {
+      return null;
+    }
+
+    return (
+      Math.abs(target.price - activePlannerPlan.entry) *
+      sizedQuantity
+    );
+  };
+
+  const t1Money = targetMoney("T1");
+  const t2Money = targetMoney("T2");
+  const t3Money = targetMoney("T3");
 
   const analysisTrades = useMemo(
     () =>
@@ -1132,7 +1208,7 @@ export default function Home() {
     orderFlowPartialBucketRef.current = null;
     setHistoryMeta({ from: null, to: null, note: null });
     setTradeCapitalInput("");
-    setSelectedOptionMargin(null);
+    setSelectedMarginPerLot(null);
     setFitNonce((value) => value + 1);
 
     if (
@@ -1483,11 +1559,12 @@ export default function Home() {
   ]);
 
   useEffect(() => {
-    setSelectedOptionMargin(null);
+    setSelectedMarginPerLot(null);
 
     if (
       !connected ||
-      selected.type !== "OPTION" ||
+      (selected.type !== "OPTION" &&
+        selected.type !== "FUTURE") ||
       !selected.lotSize ||
       selected.lotSize <= 0
     ) {
@@ -1502,7 +1579,12 @@ export default function Home() {
       body: JSON.stringify({
         symbol: selected.symbol,
         qty: selected.lotSize,
-        side: -1,
+        side:
+          selected.type === "OPTION"
+            ? -1
+            : activePlannerPlan?.direction === "bearish"
+              ? -1
+              : 1,
         productType: "MARGIN"
       }),
       signal: controller.signal
@@ -1514,7 +1596,7 @@ export default function Home() {
           data?.ok &&
           Number(data.marginTotal) > 0
         ) {
-          setSelectedOptionMargin(Number(data.marginTotal));
+          setSelectedMarginPerLot(Number(data.marginTotal));
         }
       })
       .catch(() => {
@@ -1526,7 +1608,8 @@ export default function Home() {
     connected,
     selected.symbol,
     selected.type,
-    selected.lotSize
+    selected.lotSize,
+    activePlannerPlan?.direction
   ]);
 
   useEffect(() => {
@@ -2693,7 +2776,7 @@ export default function Home() {
           <div className="tradeCapitalInputWrap">
             <span>CAPITAL</span>
             <label>
-              <b>{selected.market === "KRAKEN" ? "$" : "₹"}</b>
+              <b>{capitalCurrency}</b>
               <input
                 inputMode="decimal"
                 value={tradeCapitalInput}
@@ -2781,6 +2864,177 @@ export default function Home() {
           })}
         </div>
 
+        <div className="capitalSizingSummary">
+          <div>
+            <span>CAPITAL ENTERED</span>
+            <strong>
+              {tradeCapital > 0
+                ? capitalCurrency +
+                  tradeCapital.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })
+                : "—"}
+            </strong>
+            <small>
+              {tradeCapital > 0
+                ? activePlannerPlan
+                  ? "Sizing against the confirmed setup"
+                  : "Capital saved — waiting for a confirmed setup"
+                : "Enter capital above"}
+            </small>
+          </div>
+
+          {!isDerivative ? (
+            <>
+              <div>
+                <span>MAX AFFORDABLE QTY</span>
+                <strong>
+                  {affordableUnits !== null
+                    ? selected.market === "KRAKEN"
+                      ? affordableUnits.toLocaleString("en-IN", {
+                          maximumFractionDigits: 6
+                        })
+                      : Math.floor(affordableUnits).toLocaleString(
+                          "en-IN"
+                        )
+                    : "—"}
+                </strong>
+                <small>
+                  {deployedCapital !== null
+                    ? "Deploys " +
+                      capitalCurrency +
+                      deployedCapital.toLocaleString("en-IN", {
+                        maximumFractionDigits: 2
+                      })
+                    : "Based on current/confirmed entry price"}
+                </small>
+              </div>
+              <div className="capitalRiskCell">
+                <span>MONEY AT STRICT SL</span>
+                <strong>
+                  {moneyRiskAtStop !== null
+                    ? "-" +
+                      capitalCurrency +
+                      moneyRiskAtStop.toLocaleString("en-IN", {
+                        maximumFractionDigits: 2
+                      })
+                    : "—"}
+                </strong>
+                <small>
+                  {activePlannerPlan
+                    ? "If the max affordable quantity is used"
+                    : "Appears when a trade becomes READY"}
+                </small>
+              </div>
+              {(["T1", "T2", "T3"] as const).map((label) => {
+                const amount =
+                  label === "T1"
+                    ? t1Money
+                    : label === "T2"
+                      ? t2Money
+                      : t3Money;
+                return (
+                  <div className="capitalProfitCell" key={label}>
+                    <span>PROJECTED {label} P/L</span>
+                    <strong>
+                      {amount !== null
+                        ? "+" +
+                          capitalCurrency +
+                          amount.toLocaleString("en-IN", {
+                            maximumFractionDigits: 2
+                          })
+                        : "—"}
+                    </strong>
+                    <small>
+                      {activePlannerPlan
+                        ? "At the strategy " + label + " level"
+                        : "Appears when a trade becomes READY"}
+                    </small>
+                  </div>
+                );
+              })}
+            </>
+          ) : (
+            <>
+              <div>
+                <span>
+                  {selected.type === "OPTION"
+                    ? "BUY · MAX LOTS"
+                    : "MAX FUTURES LOTS"}
+                </span>
+                <strong>
+                  {selected.type === "OPTION"
+                    ? maxBuyLots ?? "—"
+                    : maxMarginLots ?? "—"}
+                </strong>
+                <small>
+                  {selected.type === "OPTION"
+                    ? optionBuyCostPerLot
+                      ? "1 lot costs " +
+                        capitalCurrency +
+                        Math.round(
+                          optionBuyCostPerLot
+                        ).toLocaleString("en-IN")
+                      : "Needs live premium + lot size"
+                    : selectedMarginPerLot
+                      ? "FYERS margin/lot " +
+                        capitalCurrency +
+                        Math.round(
+                          selectedMarginPerLot
+                        ).toLocaleString("en-IN")
+                      : "Waiting for FYERS margin"}
+                </small>
+              </div>
+              {selected.type === "OPTION" ? (
+                <div>
+                  <span>SELL · MAX LOTS</span>
+                  <strong>{maxMarginLots ?? "—"}</strong>
+                  <small>
+                    {selectedMarginPerLot
+                      ? "FYERS margin/lot " +
+                        capitalCurrency +
+                        Math.round(
+                          selectedMarginPerLot
+                        ).toLocaleString("en-IN")
+                      : "Waiting for exact FYERS margin"}
+                  </small>
+                </div>
+              ) : null}
+              <div>
+                <span>CONTRACT QUANTITY</span>
+                <strong>
+                  {derivativeQuantity !== null
+                    ? derivativeQuantity.toLocaleString("en-IN")
+                    : "—"}
+                </strong>
+                <small>
+                  {selectedLotSize
+                    ? "Lot size " + selectedLotSize
+                    : "Lot size unavailable"}
+                </small>
+              </div>
+              <div>
+                <span>MONEY RISK / TARGETS</span>
+                <strong>
+                  {planMatchesSelectedPrice &&
+                  moneyRiskAtStop !== null
+                    ? "-" +
+                      capitalCurrency +
+                      moneyRiskAtStop.toLocaleString("en-IN", {
+                        maximumFractionDigits: 2
+                      })
+                    : "UNDERLYING LEVELS"}
+                </strong>
+                <small>
+                  {planMatchesSelectedPrice
+                    ? "Calculated from this contract's own confirmed setup"
+                    : "Not fabricated from underlying moves"}
+                </small>
+              </div>
+            </>
+          )}
+        </div>
+
         {selected.type === "OPTION" ? (
           <div className="optionCapitalGrid">
             <div>
@@ -2818,16 +3072,16 @@ export default function Home() {
             <div>
               <span>SELL · MARGIN / LOT</span>
               <strong>
-                {selectedOptionMargin
+                {selectedMarginPerLot
                   ? "₹" +
-                    Math.round(selectedOptionMargin).toLocaleString(
+                    Math.round(selectedMarginPerLot).toLocaleString(
                       "en-IN"
                     )
                   : "—"}
               </strong>
               <small>
-                {tradeCapital > 0 && maxSellLots !== null
-                  ? "Capital fits " + maxSellLots + " lot(s)"
+                {tradeCapital > 0 && maxMarginLots !== null
+                  ? "Capital fits " + maxMarginLots + " lot(s)"
                   : "Exact FYERS margin when available"}
               </small>
             </div>
@@ -2841,9 +3095,10 @@ export default function Home() {
 
         {selected.type === "OPTION" ? (
           <p className="tradeCapitalNote">
-            Option premium SL/targets are not fabricated from the underlying.
-            ALLINONEVIEW shows the real underlying entry, invalidation and targets,
-            plus the contract's live premium/capital requirement.
+            Capital sizing is live. For NSE/BSE options, the strategy is built on
+            the underlying, so premium SL/targets are deliberately not invented.
+            The contract's live premium, exact lot size, buy cost and FYERS sell
+            margin update independently.
           </p>
         ) : null}
       </section>
