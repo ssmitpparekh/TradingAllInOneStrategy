@@ -33,7 +33,7 @@ export default function Home() {
   const [resolution, setResolution] = useState<Resolution>("15");
   const [message, setMessage] = useState("Checking FYERS connection…");
   const [loadingQuote, setLoadingQuote] = useState(false);
-  const [loadingChart, setLoadingChart] = useState(false);
+  const [loadingChart, setLoadingChart] = useState(false);\n  const [streamConnected, setStreamConnected] = useState(false);\n  const [streamMessage, setStreamMessage] = useState("Stream waiting…");
 
   async function refreshStatus() {
     try {
@@ -110,13 +110,80 @@ export default function Home() {
 
     void fetchQuote(true);
     void fetchHistory(resolution);
-
-    const timer = window.setInterval(() => {
-      void fetchQuote(true);
-    }, 5000);
-
-    return () => window.clearInterval(timer);
   }, [connected, resolution]);
+
+  useEffect(() => {
+    if (!connected) return;
+
+    const source = new EventSource("/api/fyers/stream");
+
+    const onStatus = (event: MessageEvent<string>) => {
+      try {
+        const payload = JSON.parse(event.data);
+        setStreamConnected(Boolean(payload.connected));
+        setStreamMessage(
+          payload.connected
+            ? "FYERS Data Socket connected"
+            : payload.error || "FYERS Data Socket disconnected"
+        );
+      } catch {
+        setStreamConnected(false);
+        setStreamMessage("Unable to read stream status.");
+      }
+    };
+
+    const onTick = (event: MessageEvent<string>) => {
+      try {
+        const tick = JSON.parse(event.data);
+
+        if (typeof tick.ltp === "number") {
+          setQuote((current) =>
+            current
+              ? {
+                  ...current,
+                  lp: tick.ltp,
+                  ch:
+                    typeof tick.ch === "number" ? tick.ch : current.ch,
+                  chp:
+                    typeof tick.chp === "number" ? tick.chp : current.chp,
+                  open:
+                    typeof tick.open_price === "number"
+                      ? tick.open_price
+                      : current.open,
+                  high:
+                    typeof tick.high_price === "number"
+                      ? tick.high_price
+                      : current.high,
+                  low:
+                    typeof tick.low_price === "number"
+                      ? tick.low_price
+                      : current.low,
+                  previousClose:
+                    typeof tick.prev_close_price === "number"
+                      ? tick.prev_close_price
+                      : current.previousClose
+                }
+              : current
+          );
+        }
+      } catch {
+        // Ignore malformed vendor messages and keep the last good quote.
+      }
+    };
+
+    source.addEventListener("status", onStatus as EventListener);
+    source.addEventListener("tick", onTick as EventListener);
+
+    source.onerror = () => {
+      setStreamConnected(false);
+      setStreamMessage("Stream reconnecting…");
+    };
+
+    return () => {
+      source.close();
+      setStreamConnected(false);
+    };
+  }, [connected]);
 
   const changeClass = useMemo(() => {
     if (!quote) return "";
@@ -134,9 +201,15 @@ export default function Home() {
               Read-only analysis. FYERS market data. No order placement.
             </p>
           </div>
-          <div className={connected ? "connectionPill online" : "connectionPill"}>
-            <span className="dot" />
-            {connected ? "FYERS CONNECTED" : "FYERS OFFLINE"}
+          <div className="connectionStack">
+            <div className={connected ? "connectionPill online" : "connectionPill"}>
+              <span className="dot" />
+              {connected ? "FYERS CONNECTED" : "FYERS OFFLINE"}
+            </div>
+            <div className={streamConnected ? "connectionPill online" : "connectionPill"}>
+              <span className="dot" />
+              {streamConnected ? "LIVE SOCKET" : "SOCKET WAITING"}
+            </div>
           </div>
         </div>
       </section>
@@ -233,8 +306,7 @@ export default function Home() {
               PC <strong>{quote.previousClose.toLocaleString("en-IN")}</strong>
             </span>
             <span className="feedNote">
-              Quote refreshes automatically every 5 seconds. FYERS WebSocket is
-              the next data transport layer.
+              {streamMessage}. Historical candles come from FYERS History API.
             </span>
           </div>
         ) : null}
