@@ -78,21 +78,31 @@ export async function readStoredOrderFlow(input: {
     "lte." + Math.floor(input.to)
   );
   endpoint.searchParams.set("order", "bucket_time.asc");
-  endpoint.searchParams.set("limit", "20000");
 
-  const response = await fetch(endpoint, {
-    headers: headers(),
-    cache: "no-store"
-  });
+  const rows: StoredOrderFlowRow[] = [];
+  const pageSize = 1000;
 
-  if (!response.ok) {
-    throw new Error(
-      "Persistent order-flow read failed: HTTP " +
-        response.status
-    );
+  for (let offset = 0; offset < 100000; offset += pageSize) {
+    const response = await fetch(endpoint, {
+      headers: {
+        ...headers(),
+        Range: offset + "-" + (offset + pageSize - 1)
+      },
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        "Persistent order-flow read failed: HTTP " +
+          response.status
+      );
+    }
+
+    const page = (await response.json()) as StoredOrderFlowRow[];
+    rows.push(...page);
+
+    if (page.length < pageSize) break;
   }
-
-  const rows = (await response.json()) as StoredOrderFlowRow[];
 
   return {
     available: true,
