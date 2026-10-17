@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import MarketChart, { type ChartCandle } from "@/components/MarketChart";
 import { buildVolumeAnalytics } from "@/lib/analysis/volume";
+import { buildReversalEngine } from "@/lib/analysis/confluence";
 import {
   buildFibonacciSetup,
   buildImbalanceLiquiditySnapshot,
@@ -178,6 +179,37 @@ const LIVE_GLOBAL_SHORTCUTS: Instrument[] = [
   }
 ];
 
+function resolvePrimaryAnalysisSymbol(instrument: Instrument) {
+  if (instrument.market === "KRAKEN") return instrument.symbol;
+  if (instrument.market === "MCX") return instrument.symbol;
+  if (instrument.type !== "FUTURE" && instrument.type !== "OPTION") {
+    return instrument.symbol;
+  }
+
+  const underlying = instrument.underlying
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+
+  const known: Record<string, string> = {
+    NIFTY: "NSE:NIFTY50-INDEX",
+    NIFTY50: "NSE:NIFTY50-INDEX",
+    BANKNIFTY: "NSE:NIFTYBANK-INDEX",
+    NIFTYBANK: "NSE:NIFTYBANK-INDEX",
+    FINNIFTY: "NSE:FINNIFTY-INDEX",
+    MIDCPNIFTY: "NSE:NIFTYMIDSELECT-INDEX",
+    SENSEX: "BSE:SENSEX-INDEX",
+    BANKEX: "BSE:BANKEX-INDEX"
+  };
+
+  if (known[underlying]) return known[underlying];
+
+  if (instrument.market === "NSE" && instrument.underlying) {
+    return `NSE:${instrument.underlying.toUpperCase()}-EQ`;
+  }
+
+  return instrument.symbol;
+}
+
 function formatDate(timestamp: number | null) {
   if (!timestamp) return "—";
   return new Intl.DateTimeFormat("en-IN", {
@@ -227,9 +259,18 @@ export default function Home() {
   const [showProfile, setShowProfile] = useState(true);
   const [derivatives, setDerivatives] = useState<DerivativesData | null>(null);
   const [loadingDerivatives, setLoadingDerivatives] = useState(false);
+  const [context4h, setContext4h] = useState<ChartCandle[]>([]);
+  const [context1h, setContext1h] = useState<ChartCandle[]>([]);
+  const [context15m, setContext15m] = useState<ChartCandle[]>([]);
+  const [contextPrice, setContextPrice] = useState<number | null>(null);
+  const [loadingContext, setLoadingContext] = useState(false);
   const historyRequestId = useRef(0);
 
   const selectedIsKraken = selected.market === "KRAKEN";
+  const primaryAnalysisSymbol = useMemo(
+    () => resolvePrimaryAnalysisSymbol(selected),
+    [selected]
+  );
   const fibonacci = useMemo(
     () => buildFibonacciSetup(candles),
     [candles]
@@ -254,6 +295,162 @@ export default function Home() {
       }),
     [candles, selectedIsKraken, fibonacci.anchorA?.time]
   );
+  const htfFib = useMemo(
+    () => buildFibonacciSetup(context4h),
+    [context4h]
+  );
+  const htfStructure = useMemo(
+    () => buildMarketStructure(context4h),
+    [context4h]
+  );
+  const refineFib = useMemo(
+    () => buildFibonacciSetup(context1h),
+    [context1h]
+  );
+  const refineImbalance = useMemo(
+    () => buildImbalanceLiquiditySnapshot(context1h),
+    [context1h]
+  );
+  const refineOrderBlocks = useMemo(
+    () => buildOrderBlockSnapshot(context1h),
+    [context1h]
+  );
+  const refineVolume = useMemo(
+    () =>
+      buildVolumeAnalytics(context1h, {
+        timeZone: selectedIsKraken ? "UTC" : "Asia/Kolkata",
+        anchorTime: htfFib.anchorA?.time ?? null
+      }),
+    [context1h, selectedIsKraken, htfFib.anchorA?.time]
+  );
+  const confirmation15m = useMemo(
+    () => buildMarketStructure(context15m),
+    [context15m]
+  );
+  const reversalEngine = useMemo(
+    () =>
+      buildReversalEngine({
+        price:
+          contextPrice ??
+          context1h[context1h.length - 1]?.close ??
+          quote?.lp ??
+          0,
+        htfAtr: htfFib.atr14,
+        refineAtr: refineFib.atr14,
+        htfReady: context4h.length >= 30,
+        confirmation15mReady: context15m.length >= 30,
+        fibonacci: htfFib,
+        structure: htfStructure,
+        imbalance: refineImbalance,
+        orderBlocks: refineOrderBlocks,
+        volume: refineVolume,
+        confirmation15m,
+        derivatives: derivatives
+          ? {
+              available: derivatives.available,
+              future: derivatives.future
+                ? {
+                    change: derivatives.future.change,
+                    oiChange: derivatives.future.oiChange,
+                    oiChangePercent:
+                      derivatives.future.oiChangePercent
+                  }
+                : null,
+              options: derivatives.options
+                ? {
+                    pcr: derivatives.options.pcr,
+                    callOiBuild: derivatives.options.callOiBuild,
+                    putOiBuild: derivatives.options.putOiBuild
+                  }
+                : null
+            }
+          : null
+      }),
+    [
+      contextPrice,
+      context1h,
+      context4h,
+      context15m,
+      quote?.lp,
+      htfFib,
+      refineFib.atr14,
+      htfStructure,
+      refineImbalance,
+      refineOrderBlocks,
+      refineVolume,
+      confirmation15m,
+      derivatives
+    ]
+  );
+
+  async function fetchAnalysisContext(signal?: AbortSignal) {
+    if (!selectedIsKraken && !connected) {
+      setContext4h([]);
+      setContext1h([]);
+      setContext15m([]);
+      setContextPrice(null);
+      return;
+    }
+
+    setLoadingContext(true);
+
+    try {
+      const endpoint =
+        selectedIsKraken
+          ? "/api/kraken/history"
+          : "/api/fyers/history";
+      const quoteEndpoint =
+        selectedIsKraken
+          ? "/api/kraken/quote"
+          : "/api/fyers/quote";
+
+      const historyRequest = (
+        resolutionValue: string,
+        rangeValue: string
+      ) =>
+        fetch(
+          `${endpoint}?symbol=${encodeURIComponent(primaryAnalysisSymbol)}&resolution=${encodeURIComponent(resolutionValue)}&range=${encodeURIComponent(rangeValue)}`,
+          { cache: "no-store", signal }
+        ).then(async (response) => {
+          const data = await response.json();
+          if (!response.ok || !data.ok) {
+            throw new Error(
+              data.error || "Unable to load analysis context."
+            );
+          }
+          return data.candles as ChartCandle[];
+        });
+
+      const [h4, h1, m15, priceResponse] = await Promise.all([
+        historyRequest("240", "6M"),
+        historyRequest("60", "3M"),
+        historyRequest("15", "1M"),
+        fetch(
+          `${quoteEndpoint}?symbol=${encodeURIComponent(primaryAnalysisSymbol)}`,
+          { cache: "no-store", signal }
+        ).then((response) => response.json())
+      ]);
+
+      if (signal?.aborted) return;
+
+      setContext4h(h4);
+      setContext1h(h1);
+      setContext15m(m15);
+      setContextPrice(
+        priceResponse?.ok
+          ? Number(priceResponse.quote?.lp ?? 0) || null
+          : h1[h1.length - 1]?.close ?? null
+      );
+    } catch {
+      if (signal?.aborted) return;
+      setContext4h([]);
+      setContext1h([]);
+      setContext15m([]);
+      setContextPrice(null);
+    } finally {
+      if (!signal?.aborted) setLoadingContext(false);
+    }
+  }
 
   async function fetchDerivatives(
     silent = false,
@@ -674,6 +871,27 @@ export default function Home() {
   ]);
 
   useEffect(() => {
+    if (!selectedIsKraken && !connected) return;
+
+    const controller = new AbortController();
+
+    void fetchAnalysisContext(controller.signal);
+
+    const timer = window.setInterval(() => {
+      void fetchAnalysisContext();
+    }, 5 * 60_000);
+
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+    };
+  }, [
+    connected,
+    selectedIsKraken,
+    primaryAnalysisSymbol
+  ]);
+
+  useEffect(() => {
     const query = searchQuery.trim();
     if (!query) {
       setSearchResults([]);
@@ -1021,6 +1239,129 @@ export default function Home() {
             <span className="feedNote">{streamMessage}</span>
           </div>
         ) : null}
+      </section>
+
+      <section className="card reversalCard">
+        <div className="reversalHeader">
+          <div>
+            <p className="label">MULTI-TIMEFRAME REVERSAL ENGINE</p>
+            <h3>
+              {loadingContext
+                ? "Building 4H → 1H → 15m context…"
+                : `${reversalEngine.selected.classification} ${reversalEngine.selected.direction === "bullish" ? "Bullish" : "Bearish"} Setup`}
+            </h3>
+            <p className="contextSource">
+              Primary analysis: {primaryAnalysisSymbol} · 4H zone · 1H refinement · 15m confirmation
+            </p>
+          </div>
+          <div className={`scoreBadge ${reversalEngine.selected.classification.toLowerCase()}`}>
+            <strong>{reversalEngine.selected.score}</strong>
+            <span>/100</span>
+          </div>
+        </div>
+
+        <div className="directionScores">
+          <div className={reversalEngine.selected.direction === "bullish" ? "directionScore selected bullish" : "directionScore bullish"}>
+            <span>BULLISH</span>
+            <strong>{reversalEngine.bullish.score}</strong>
+          </div>
+          <div className={reversalEngine.selected.direction === "bearish" ? "directionScore selected bearish" : "directionScore bearish"}>
+            <span>BEARISH</span>
+            <strong>{reversalEngine.bearish.score}</strong>
+          </div>
+          <div className="entryStateBox">
+            <span>ENTRY CONFIRMATION</span>
+            <strong className={`entryState ${reversalEngine.selected.entryState.toLowerCase()}`}>
+              {reversalEngine.selected.entryState}
+            </strong>
+          </div>
+          <div>
+            <span>AVAILABLE WEIGHT</span>
+            <strong>
+              {reversalEngine.selected.availablePoints}/100
+            </strong>
+            <small>Missing inputs are redistributed</small>
+          </div>
+        </div>
+
+        <div className="scoreBreakdown">
+          {reversalEngine.selected.components.map((component) => (
+            <div
+              className={
+                component.available
+                  ? "scoreComponent"
+                  : "scoreComponent unavailable"
+              }
+              key={component.key}
+            >
+              <div>
+                <span>{component.label}</span>
+                <strong>
+                  {component.available
+                    ? `${component.points}/${component.maxPoints}`
+                    : "N/A"}
+                </strong>
+              </div>
+              <p>{component.detail}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="reversalPlan">
+          <div>
+            <span>REVERSAL ZONE</span>
+            <strong>
+              {reversalEngine.selected.reversalZone
+                ? `${reversalEngine.selected.reversalZone.low.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })} – ${reversalEngine.selected.reversalZone.high.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })}`
+                : "—"}
+            </strong>
+          </div>
+          <div>
+            <span>INVALIDATION</span>
+            <strong>
+              {reversalEngine.selected.invalidation !== null
+                ? reversalEngine.selected.invalidation.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })
+                : "—"}
+            </strong>
+          </div>
+          <div>
+            <span>ATR-BUFFERED SL</span>
+            <strong>
+              {reversalEngine.selected.stopLoss !== null
+                ? reversalEngine.selected.stopLoss.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })
+                : "—"}
+            </strong>
+            <small>0.25× ATR beyond invalidation</small>
+          </div>
+        </div>
+
+        {reversalEngine.selected.targets.length ? (
+          <div className="targetGrid">
+            {reversalEngine.selected.targets.map((target) => (
+              <div key={target.label}>
+                <span>{target.label}</span>
+                <strong>
+                  {target.price.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })}
+                </strong>
+                <small>{target.source}</small>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="analysisWaiting">
+            Targets will appear when confirmed directional structure provides valid levels.
+          </p>
+        )}
       </section>
 
       <section className="card analysisCard">
