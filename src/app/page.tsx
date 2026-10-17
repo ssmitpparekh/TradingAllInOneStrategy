@@ -2216,6 +2216,12 @@ export default function Home() {
                 existing.sellVolume +
                 (trade.side === "sell" ? qty : 0),
               trades: existing.trades + 1,
+              buyTrades:
+                existing.buyTrades +
+                (trade.side === "buy" ? 1 : 0),
+              sellTrades:
+                existing.sellTrades +
+                (trade.side === "sell" ? 1 : 0),
               partial: existing.partial || isPartial
             };
           } else {
@@ -2224,6 +2230,8 @@ export default function Home() {
               buyVolume: trade.side === "buy" ? qty : 0,
               sellVolume: trade.side === "sell" ? qty : 0,
               trades: 1,
+              buyTrades: trade.side === "buy" ? 1 : 0,
+              sellTrades: trade.side === "sell" ? 1 : 0,
               partial: isPartial,
               quality: "exact",
               source: "Kraken taker-side trades"
