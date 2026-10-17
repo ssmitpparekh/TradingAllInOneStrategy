@@ -1947,7 +1947,11 @@ export default function Home() {
       const saved = window.localStorage.getItem(key);
       const parsed = saved ? JSON.parse(saved) : [];
       localBuckets = Array.isArray(parsed)
-        ? (parsed as OrderFlowBucket[])
+        ? (parsed as OrderFlowBucket[]).map((bucket) => ({
+            ...bucket,
+            buyTrades: Number(bucket.buyTrades ?? 0),
+            sellTrades: Number(bucket.sellTrades ?? 0)
+          }))
         : [];
     } catch {
       localBuckets = [];
@@ -2217,10 +2221,10 @@ export default function Home() {
                 (trade.side === "sell" ? qty : 0),
               trades: existing.trades + 1,
               buyTrades:
-                existing.buyTrades +
+                (existing.buyTrades ?? 0) +
                 (trade.side === "buy" ? 1 : 0),
               sellTrades:
-                existing.sellTrades +
+                (existing.sellTrades ?? 0) +
                 (trade.side === "sell" ? 1 : 0),
               partial: existing.partial || isPartial
             };
