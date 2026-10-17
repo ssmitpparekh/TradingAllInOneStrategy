@@ -1211,6 +1211,17 @@ export default function Home() {
     return quote.ch >= 0 ? "positive" : "negative";
   }, [quote]);
 
+  if (!viewReady) {
+    return (
+      <main className="shell wide">
+        <section className="card restoringView">
+          <p className="eyebrow">ALLINONEVIEW</p>
+          <h2>Restoring your last chart…</h2>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="shell wide">
       <section className="hero compactHero">
@@ -2684,11 +2695,12 @@ export default function Home() {
       ) : null}
 
       <section className="card roadmap">
-        <p className="label">Next layer</p>
+        <p className="label">PLATFORM RULE</p>
         <p>
-          Auto swing detection → Fib / Trend Fib → BOS/CHoCH → Order Blocks/FVG
-          → liquidity → futures VWAP/volume profile → OI/ΔOI → reversal score,
-          invalidation, SL and targets.
+          ALLINONEVIEW uses real market data and deterministic analysis. The simple
+          plan stays in WAIT / NO TRADE unless the required trend, retracement,
+          liquidity or Order Block trigger, confirmation, invalidation and
+          reward/risk conditions are actually present.
         </p>
       </section>
     </main>
