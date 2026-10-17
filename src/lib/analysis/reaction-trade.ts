@@ -22,6 +22,7 @@ export type ReactionTradePlan = {
   signalTime: number | null;
   trigger: "LIQUIDITY SWEEP REVERSAL" | null;
   score: number;
+  moveClass: "TACTICAL" | "MAJOR" | null;
   reason: string;
 };
 
@@ -125,6 +126,7 @@ export function buildReactionTradePlan(input: {
     signalTime: null,
     trigger: null,
     score: 0,
+    moveClass: null,
     reason
   });
 
@@ -314,6 +316,10 @@ export function buildReactionTradePlan(input: {
     90,
     75 + Math.max(0, Math.floor((finalRr - 2.5) * 4))
   );
+  const moveDistanceAtr =
+    atr > 0 ? Math.abs(finalTarget - price) / atr : 0;
+  const moveClass: "TACTICAL" | "MAJOR" =
+    finalRr >= 4 && moveDistanceAtr >= 3 ? "MAJOR" : "TACTICAL";
 
   return {
     available: true,
@@ -331,6 +337,7 @@ export function buildReactionTradePlan(input: {
     signalTime: sweep.time,
     trigger: "LIQUIDITY SWEEP REVERSAL",
     score,
+    moveClass,
     reason:
       "Fresh 15m liquidity sweep + reclaim/reversal candle + tight invalidation + " +
       finalRr.toFixed(1) +
