@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import MarketChart, { type ChartCandle } from "@/components/MarketChart";
+import PwaInstallButton from "@/components/PwaInstallButton";
 import { buildVolumeAnalytics } from "@/lib/analysis/volume";
 import {
   buildFibonacciSetup,
@@ -757,6 +758,7 @@ export default function Home() {
             </p>
           </div>
           <div className="connectionStack">
+            <PwaInstallButton />
             <div className={connected ? "connectionPill online" : "connectionPill"}>
               <span className="dot" />
               {connected ? "FYERS CONNECTED" : "FYERS OFFLINE"}
