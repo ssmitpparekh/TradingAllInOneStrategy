@@ -36,7 +36,28 @@ function istParts(timestamp: number) {
   };
 }
 
-function inOpeningWindow(timestamp: number) {
+export function indianSessionOpenEpoch(timestamp: number) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date(timestamp * 1000));
+
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value ?? 0);
+
+  const year = get("year");
+  const month = get("month");
+  const day = get("day");
+
+  if (!year || !month || !day) return null;
+
+  // 09:15 IST = 03:45 UTC. India has no daylight-saving shift.
+  return Math.floor(Date.UTC(year, month - 1, day, 3, 45, 0) / 1000);
+}
+
+export function isIndianOpeningWindow(timestamp: number) {
   const now = istParts(timestamp);
   if (now.weekday === "Sat" || now.weekday === "Sun") return false;
 
@@ -105,7 +126,7 @@ export function buildOpeningConfirmation(input: {
     latestTime === null ||
     direction === "neutral" ||
     (market !== "NSE" && market !== "BSE") ||
-    !inOpeningWindow(latestTime)
+    !isIndianOpeningWindow(latestTime)
   ) {
     return {
       active: false,
