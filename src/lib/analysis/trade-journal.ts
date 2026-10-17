@@ -48,14 +48,12 @@ export function makeTradeId(input: {
   symbol: string;
   direction: JournalDirection;
   signalTime: number;
-  entry: number;
 }) {
   return [
     input.market,
     input.symbol,
     input.direction,
-    input.signalTime,
-    input.entry.toFixed(8)
+    input.signalTime
   ].join("|");
 }
 
