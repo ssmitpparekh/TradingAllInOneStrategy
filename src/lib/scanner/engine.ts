@@ -312,7 +312,15 @@ export function evaluateScannerContext(
     score: selected.score,
     price: live.price,
     trigger,
-    reason: selected.summary,
+    reason: [
+      selected.classification,
+      selected.entryState,
+      ...selected.components
+        .filter((component) => component.available && component.points > 0)
+        .sort((a, b) => b.points - a.points)
+        .slice(0, 2)
+        .map((component) => component.detail)
+    ].join(" · "),
     zone,
     observedSweep: sweep,
     updatedAt: live.updatedAt
