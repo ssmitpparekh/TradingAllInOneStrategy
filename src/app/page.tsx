@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import MarketChart, { type ChartCandle } from "@/components/MarketChart";
 
 type Quote = {
@@ -31,7 +31,7 @@ type Instrument = {
 
 type Resolution =
   | "1" | "2" | "3" | "5" | "10" | "15" | "20" | "30" | "45"
-  | "60" | "120" | "240" | "1D" | "1W" | "1M";
+  | "60" | "120" | "180" | "240" | "1D" | "1W" | "1M";
 
 type RangeKey = "1D" | "5D" | "1M" | "3M" | "6M" | "1Y" | "5Y" | "MAX";
 
@@ -59,6 +59,7 @@ const RESOLUTIONS: Array<{ value: Resolution; label: string }> = [
   { value: "45", label: "45m" },
   { value: "60", label: "1H" },
   { value: "120", label: "2H" },
+  { value: "180", label: "3H" },
   { value: "240", label: "4H" },
   { value: "1D", label: "1D" },
   { value: "1W", label: "1W" },
@@ -105,6 +106,8 @@ export default function Home() {
   const [searching, setSearching] = useState(false);
   const [fitNonce, setFitNonce] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const historyRequestId = useRef(0);
 
   async function refreshStatus() {
     try {
@@ -152,20 +155,27 @@ export default function Home() {
   async function fetchHistory(
     nextResolution = resolution,
     nextRange = range,
-    symbol = selected.symbol
+    symbol = selected.symbol,
+    signal?: AbortSignal
   ) {
+    const requestId = ++historyRequestId.current;
     setLoadingChart(true);
+    setHistoryError(null);
+    setCandles([]);
+    setHistoryMeta({ from: null, to: null, note: null });
 
     try {
       const response = await fetch(
         `/api/fyers/history?symbol=${encodeURIComponent(symbol)}&resolution=${encodeURIComponent(nextResolution)}&range=${encodeURIComponent(nextRange)}`,
-        { cache: "no-store" }
+        { cache: "no-store", signal }
       );
       const data = await response.json();
 
       if (!response.ok || !data.ok) {
         throw new Error(data.error || "Historical candle request failed.");
       }
+
+      if (requestId !== historyRequestId.current || signal?.aborted) return;
 
       setCandles(data.candles);
       setHistoryMeta({
@@ -174,9 +184,17 @@ export default function Home() {
         note: data.appliedLimit ?? null
       });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to load candles.");
+      if (signal?.aborted) return;
+      const detail =
+        error instanceof Error ? error.message : "Unable to load candles.";
+      if (requestId === historyRequestId.current) {
+        setHistoryError(detail);
+        setMessage(detail);
+      }
     } finally {
-      setLoadingChart(false);
+      if (requestId === historyRequestId.current && !signal?.aborted) {
+        setLoadingChart(false);
+      }
     }
   }
 
@@ -215,8 +233,17 @@ export default function Home() {
   useEffect(() => {
     if (!connected) return;
 
+    const controller = new AbortController();
+
     void fetchQuote(true, selected.symbol);
-    void fetchHistory(resolution, range, selected.symbol);
+    void fetchHistory(
+      resolution,
+      range,
+      selected.symbol,
+      controller.signal
+    );
+
+    return () => controller.abort();
   }, [connected, selected.symbol, resolution, range]);
 
   useEffect(() => {
@@ -517,11 +544,20 @@ export default function Home() {
           </div>
 
           <div className="historyStatus">
-            <span>{loadingChart ? "Loading…" : `${candles.length.toLocaleString()} candles`}</span>
+            <span>
+              {loadingChart
+                ? `Loading ${RESOLUTIONS.find((item) => item.value === resolution)?.label ?? resolution}…`
+                : `${candles.length.toLocaleString()} candles · ${RESOLUTIONS.find((item) => item.value === resolution)?.label ?? resolution}`}
+            </span>
             <span>{formatDate(historyMeta.from)} → {formatDate(historyMeta.to)}</span>
           </div>
         </div>
 
+        {historyError ? (
+          <div className="historyError">
+            Candle request failed for {resolution}: {historyError}
+          </div>
+        ) : null}
         {historyMeta.note ? <div className="historyNotice">{historyMeta.note}</div> : null}
 
         <MarketChart candles={candles} fitNonce={fitNonce} />
