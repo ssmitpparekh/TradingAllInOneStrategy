@@ -6,6 +6,7 @@ import MarketChart, {
   type TradeChartMarker
 } from "@/components/MarketChart";
 import PwaInstallButton from "@/components/PwaInstallButton";
+import OpportunityScanner from "@/components/OpportunityScanner";
 import { buildTechnicalContext } from "@/lib/analysis/indicators";
 import { buildVolumeAnalytics } from "@/lib/analysis/volume";
 import { buildReversalEngine } from "@/lib/analysis/confluence";
@@ -123,6 +124,8 @@ type Instrument = {
   expiry: string | null;
   strike: number | null;
   optionType: string | null;
+  lotSize?: number | null;
+  tickSize?: number | null;
 };
 
 type Resolution =
@@ -1777,7 +1780,7 @@ export default function Home() {
   }
 
   return (
-    <main className="shell wide">
+    <main className="shell wide scannerLayout">
       <section className="hero compactHero">
         <p className="eyebrow">ALL MARKETS · ONE VIEW</p>
         <div className="heroRow">
@@ -1936,6 +1939,13 @@ export default function Home() {
           </div>
         ) : null}
       </section>
+
+      <OpportunityScanner
+        fyersConnected={Boolean(connected)}
+        onOpen={(instrument) =>
+          void selectInstrument(instrument as Instrument)
+        }
+      />
 
       <section className="terminalCard" id="market-terminal">
         <div className="marketHeader">
