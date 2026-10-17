@@ -405,9 +405,19 @@ export default function Home() {
     () => buildTechnicalContext(candles),
     [candles]
   );
+  const closedContext1m = useMemo(() => {
+    const now = Math.floor(Date.now() / 1000);
+    return context1m.filter((candle) => candle.time + 60 <= now);
+  }, [context1m]);
+
+  const closedContext5m = useMemo(() => {
+    const now = Math.floor(Date.now() / 1000);
+    return context5m.filter((candle) => candle.time + 5 * 60 <= now);
+  }, [context5m]);
+
   const fastLatestTime =
-    context1m[context1m.length - 1]?.time ??
-    context5m[context5m.length - 1]?.time ??
+    closedContext1m[closedContext1m.length - 1]?.time ??
+    closedContext5m[closedContext5m.length - 1]?.time ??
     null;
   const openingSessionStart = useMemo(() => {
     if (
@@ -474,24 +484,24 @@ export default function Home() {
     [context15m]
   );
   const structure5m = useMemo(
-    () => buildMarketStructure(context5m, { confirmationBars: 2 }),
-    [context5m]
+    () => buildMarketStructure(closedContext5m, { confirmationBars: 2 }),
+    [closedContext5m]
   );
   const structure1m = useMemo(
-    () => buildMarketStructure(context1m, { confirmationBars: 2 }),
-    [context1m]
+    () => buildMarketStructure(closedContext1m, { confirmationBars: 2 }),
+    [closedContext1m]
   );
   const imbalance5m = useMemo(
-    () => buildImbalanceLiquiditySnapshot(context5m),
-    [context5m]
+    () => buildImbalanceLiquiditySnapshot(closedContext5m),
+    [closedContext5m]
   );
   const imbalance1m = useMemo(
-    () => buildImbalanceLiquiditySnapshot(context1m),
-    [context1m]
+    () => buildImbalanceLiquiditySnapshot(closedContext1m),
+    [closedContext1m]
   );
   const orderBlocks5m = useMemo(
-    () => buildOrderBlockSnapshot(context5m),
-    [context5m]
+    () => buildOrderBlockSnapshot(closedContext5m),
+    [closedContext5m]
   );
   const reversalEngine = useMemo(
     () =>
@@ -582,7 +592,9 @@ export default function Home() {
           quote?.lp ??
           0,
         latestTime:
-          context1h[context1h.length - 1]?.time ?? null,
+          fastLatestTime ??
+          context1h[context1h.length - 1]?.time ??
+          null,
         htfTechnical,
         htfStructure,
         fibonacci: htfFib,
@@ -596,6 +608,7 @@ export default function Home() {
     [
       contextPrice,
       context1h,
+      fastLatestTime,
       quote?.lp,
       htfTechnical,
       htfStructure,
@@ -718,6 +731,49 @@ export default function Home() {
       setContextPrice(null);
     } finally {
       if (!signal?.aborted) setLoadingContext(false);
+    }
+  }
+
+  async function fetchFastOpeningContext(
+    signal?: AbortSignal
+  ) {
+    if (
+      !viewReady ||
+      !connected ||
+      (selected.market !== "NSE" && selected.market !== "BSE")
+    ) {
+      return;
+    }
+
+    try {
+      const endpoint = "/api/fyers/history";
+      const request = (resolutionValue: string) =>
+        fetch(
+          endpoint +
+            "?symbol=" +
+            encodeURIComponent(primaryAnalysisSymbol) +
+            "&resolution=" +
+            encodeURIComponent(resolutionValue) +
+            "&range=5D",
+          { cache: "no-store", signal }
+        ).then(async (response) => {
+          const data = await response.json();
+          if (!response.ok || !data.ok) {
+            throw new Error("Unable to refresh fast opening context.");
+          }
+          return data.candles as ChartCandle[];
+        });
+
+      const [m1, m5] = await Promise.all([
+        request("1"),
+        request("5")
+      ]);
+
+      if (signal?.aborted) return;
+      setContext1m(m1);
+      setContext5m(m5);
+    } catch {
+      // Fast opening refresh failure must not destroy the slower context.
     }
   }
 
@@ -1025,6 +1081,18 @@ export default function Home() {
       return;
     }
 
+    const now = Math.floor(Date.now() / 1000);
+    const maxSignalAge =
+      simpleTradePlan.confirmationTimeframe === "1m"
+        ? 3 * 60
+        : simpleTradePlan.confirmationTimeframe === "5m"
+          ? 12 * 60
+          : 35 * 60;
+
+    if (now - simpleTradePlan.signalTime > maxSignalAge) {
+      return;
+    }
+
     const direction =
       simpleTradePlan.trend === "bullish" ? "long" : "short";
     const id = makeTradeId({
@@ -1106,7 +1174,7 @@ export default function Home() {
   useEffect(() => {
     if (
       !journalReady ||
-      context1m.length === 0 ||
+      closedContext1m.length === 0 ||
       !primaryAnalysisSymbol
     ) {
       return;
@@ -1123,7 +1191,7 @@ export default function Home() {
           return trade;
         }
 
-        const relevant = context1m.filter(
+        const relevant = closedContext1m.filter(
           (candle) => candle.time >= trade.signalTime
         );
         if (!relevant.length) return trade;
@@ -1149,7 +1217,7 @@ export default function Home() {
     });
   }, [
     journalReady,
-    context1m,
+    closedContext1m,
     primaryAnalysisSymbol
   ]);
 
@@ -1501,6 +1569,38 @@ export default function Home() {
     viewReady,
     connected,
     selectedIsKraken,
+    primaryAnalysisSymbol
+  ]);
+
+  useEffect(() => {
+    if (
+      !viewReady ||
+      !connected ||
+      (selected.market !== "NSE" && selected.market !== "BSE")
+    ) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const refreshIfOpening = () => {
+      const now = Math.floor(Date.now() / 1000);
+      if (isIndianOpeningWindow(now)) {
+        void fetchFastOpeningContext(controller.signal);
+      }
+    };
+
+    refreshIfOpening();
+    const timer = window.setInterval(refreshIfOpening, 15_000);
+
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+    };
+  }, [
+    viewReady,
+    connected,
+    selected.market,
     primaryAnalysisSymbol
   ]);
 
