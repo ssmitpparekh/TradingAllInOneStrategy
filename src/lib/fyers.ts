@@ -137,3 +137,66 @@ export async function getQuote(
     timestamp: v.tt ?? 0
   };
 }
+
+
+export type FyersCandle = {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  oi?: number;
+};
+
+export async function getHistory(
+  accessToken: string,
+  options: {
+    symbol?: string;
+    resolution?: string;
+    from: number;
+    to: number;
+    includeOi?: boolean;
+  }
+): Promise<FyersCandle[]> {
+  const { appId } = getFyersConfig();
+  const symbol = options.symbol ?? "NSE:NIFTY50-INDEX";
+  const resolution = options.resolution ?? "15";
+
+  const url = new URL(`${FYERS_DATA_BASE}/history`);
+  url.searchParams.set("symbol", symbol);
+  url.searchParams.set("resolution", resolution);
+  url.searchParams.set("date_format", "0");
+  url.searchParams.set("range_from", String(options.from));
+  url.searchParams.set("range_to", String(options.to));
+  url.searchParams.set("cont_flag", "1");
+  if (options.includeOi) {
+    url.searchParams.set("oi_flag", "1");
+  }
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `${appId}:${accessToken}`,
+      Accept: "application/json"
+    },
+    cache: "no-store"
+  });
+
+  const body = await response.json();
+
+  if (!response.ok || body?.s !== "ok" || !Array.isArray(body?.candles)) {
+    const message = body?.message || `HTTP ${response.status}`;
+    throw new Error(`FYERS history request failed: ${message}`);
+  }
+
+  return body.candles.map((row: unknown[]) => ({
+    time: Number(row[0]),
+    open: Number(row[1]),
+    high: Number(row[2]),
+    low: Number(row[3]),
+    close: Number(row[4]),
+    volume: Number(row[5] ?? 0),
+    ...(row.length > 6 ? { oi: Number(row[6] ?? 0) } : {})
+  }));
+}
