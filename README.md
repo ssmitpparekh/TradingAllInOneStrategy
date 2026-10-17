@@ -23,6 +23,8 @@ The project must not be called finished until these agreed items are implemented
 - Reversal confluence scoring, invalidation, stop-loss logic and targets
 - Provider-aware behavior across Indian and global markets
 - Final regression, performance and data-consistency validation
+- Installable mobile experience on both iOS and Android
+- PWA support (home-screen install / standalone app shell) plus a maintained path to native App Store / Google Play packaging from the same ALLINONEVIEW codebase
 
 ## Security
 Never commit:
