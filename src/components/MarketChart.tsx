@@ -55,6 +55,9 @@ type Props = {
   showVwap?: boolean;
   showProfile?: boolean;
   showEma?: boolean;
+  market?: string;
+  resolution?: string;
+  showSessionBreaks?: boolean;
 };
 
 function formatIst(timestamp: number) {
@@ -83,6 +86,26 @@ function chartHeightForHost(host: HTMLDivElement) {
   }
 
   return Math.max(520, host.clientHeight || 560);
+}
+
+function sessionKey(timestamp: number, market: string) {
+  const timeZone = market === "KRAKEN" ? "UTC" : "Asia/Kolkata";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date(timestamp * 1000));
+
+  const year = parts.find((part) => part.type === "year")?.value ?? "";
+  const month = parts.find((part) => part.type === "month")?.value ?? "";
+  const day = parts.find((part) => part.type === "day")?.value ?? "";
+
+  return `${year}-${month}-${day}`;
+}
+
+function isIntradayResolution(resolution: string) {
+  return !["1D", "1W", "1M"].includes(resolution);
 }
 
 function toEpoch(time: Time): number | null {
@@ -117,7 +140,10 @@ export default function MarketChart({
   showVolume = true,
   showVwap = true,
   showProfile = true,
-  showEma = true
+  showEma = true,
+  market = "NSE",
+  resolution = "15",
+  showSessionBreaks = true
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -130,11 +156,39 @@ export default function MarketChart({
   const ema200SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const analysisLinesRef = useRef<IPriceLine[]>([]);
   const [hovered, setHovered] = useState<ChartCandle | null>(null);
+  const [sessionBreakPositions, setSessionBreakPositions] = useState<
+    Array<{ time: number; x: number }>
+  >([]);
 
   const latest = useMemo(
     () => liveCandle ?? (candles.length ? candles[candles.length - 1] : null),
     [candles, liveCandle]
   );
+
+  const sessionBreakTimes = useMemo(() => {
+    if (!showSessionBreaks || !isIntradayResolution(resolution)) return [];
+
+    const source =
+      liveCandle &&
+      (!candles.length || liveCandle.time > candles[candles.length - 1].time)
+        ? [...candles, liveCandle]
+        : candles;
+
+    if (source.length < 2) return [];
+
+    const breaks: number[] = [];
+    let previousSession = sessionKey(source[0].time, market);
+
+    for (let index = 1; index < source.length; index += 1) {
+      const currentSession = sessionKey(source[index].time, market);
+      if (currentSession !== previousSession) {
+        breaks.push(source[index].time);
+        previousSession = currentSession;
+      }
+    }
+
+    return breaks;
+  }, [candles, liveCandle, market, resolution, showSessionBreaks]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -379,6 +433,45 @@ export default function MarketChart({
       to: lastTime as Time
     });
   }, [candles, rangeKey]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const host = hostRef.current;
+
+    if (
+      !chart ||
+      !host ||
+      !showSessionBreaks ||
+      sessionBreakTimes.length === 0
+    ) {
+      setSessionBreakPositions([]);
+      return;
+    }
+
+    const updatePositions = () => {
+      const width = host.clientWidth;
+      const positions = sessionBreakTimes
+        .map((time) => ({
+          time,
+          x: chart.timeScale().timeToCoordinate(time as Time)
+        }))
+        .filter(
+          (item): item is { time: number; x: number } =>
+            item.x !== null && item.x >= 0 && item.x <= width
+        );
+
+      setSessionBreakPositions(positions);
+    };
+
+    updatePositions();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(updatePositions);
+    window.addEventListener("resize", updatePositions);
+
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updatePositions);
+      window.removeEventListener("resize", updatePositions);
+    };
+  }, [sessionBreakTimes, showSessionBreaks]);
 
   useEffect(() => {
     if (!liveCandle || !seriesRef.current) return;
@@ -748,6 +841,17 @@ export default function MarketChart({
           <span>H <strong>{readout.high.toLocaleString("en-IN")}</strong></span>
           <span>L <strong>{readout.low.toLocaleString("en-IN")}</strong></span>
           <span>C <strong>{readout.close.toLocaleString("en-IN")}</strong></span>
+        </div>
+      ) : null}
+      {showSessionBreaks ? (
+        <div className="sessionBreakLayer" aria-hidden="true">
+          {sessionBreakPositions.map((item) => (
+            <span
+              className="sessionBreakLine"
+              key={item.time}
+              style={{ left: item.x }}
+            />
+          ))}
         </div>
       ) : null}
       <div ref={hostRef} className="marketChart" />
