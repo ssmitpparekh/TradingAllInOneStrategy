@@ -8,6 +8,7 @@ import {
   LineSeries,
   createChart,
   type CandlestickData,
+  type Coordinate,
   type IChartApi,
   LineStyle,
   type IPriceLine,
@@ -35,6 +36,26 @@ export type ChartCandle = {
   close: number;
   volume?: number;
   oi?: number;
+};
+
+type DrawingTool =
+  | "cursor"
+  | "trend"
+  | "horizontal"
+  | "measure"
+  | "text"
+  | "note";
+
+type DrawingPoint = {
+  time: number;
+  price: number;
+};
+
+type ChartDrawing = {
+  id: string;
+  type: Exclude<DrawingTool, "cursor">;
+  points: DrawingPoint[];
+  text?: string;
 };
 
 export type TradeChartMarker = {
@@ -72,6 +93,8 @@ type Props = {
   orderFlowBuckets?: OrderFlowBucket[];
   showOrderFlow?: boolean;
   tradeMarkers?: TradeChartMarker[];
+  theme?: "dark" | "light";
+  instrumentKey?: string;
 };
 
 function formatIst(timestamp: number) {
@@ -159,7 +182,9 @@ export default function MarketChart({
   showSessionBreaks = true,
   orderFlowBuckets = [],
   showOrderFlow = true,
-  tradeMarkers = []
+  tradeMarkers = [],
+  theme = "dark",
+  instrumentKey = "default"
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -188,6 +213,33 @@ export default function MarketChart({
   const [tradeMarkerPositions, setTradeMarkerPositions] = useState<
     Array<TradeChartMarker & { x: number; y: number }>
   >([]);
+  const [drawingTool, setDrawingTool] = useState<DrawingTool>("cursor");
+  const [drawings, setDrawings] = useState<ChartDrawing[]>([]);
+  const [pendingDrawingPoint, setPendingDrawingPoint] =
+    useState<DrawingPoint | null>(null);
+  const [drawingRevision, setDrawingRevision] = useState(0);
+
+  const drawingsStorageKey =
+    "allinoneview:drawings:v1:" + instrumentKey;
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(drawingsStorageKey);
+      const parsed = saved ? JSON.parse(saved) : [];
+      setDrawings(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setDrawings([]);
+    }
+    setPendingDrawingPoint(null);
+    setDrawingTool("cursor");
+  }, [drawingsStorageKey]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      drawingsStorageKey,
+      JSON.stringify(drawings)
+    );
+  }, [drawingsStorageKey, drawings]);
 
   const orderFlowByTime = useMemo(
     () => new Map(orderFlowBuckets.map((bucket) => [bucket.time, bucket])),
@@ -228,12 +280,16 @@ export default function MarketChart({
     const host = hostRef.current;
     if (!host) return;
 
+    const isLight = theme === "light";
     const chart = createChart(host, {
       width: host.clientWidth,
       height: chartHeightForHost(host),
       layout: {
-        background: { type: ColorType.Solid, color: "#0a0f16" },
-        textColor: "#9ca8ba",
+        background: {
+          type: ColorType.Solid,
+          color: isLight ? "#ffffff" : "#0a0f16"
+        },
+        textColor: isLight ? "#475569" : "#9ca8ba",
         attributionLogo: true
       },
       localization: {
@@ -244,15 +300,15 @@ export default function MarketChart({
         }
       },
       grid: {
-        vertLines: { color: "#15202e" },
-        horzLines: { color: "#15202e" }
+        vertLines: { color: isLight ? "#e5e7eb" : "#15202e" },
+        horzLines: { color: isLight ? "#e5e7eb" : "#15202e" }
       },
       rightPriceScale: {
-        borderColor: "#263143",
+        borderColor: isLight ? "#cbd5e1" : "#263143",
         autoScale: true
       },
       timeScale: {
-        borderColor: "#263143",
+        borderColor: isLight ? "#cbd5e1" : "#263143",
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 8,
@@ -277,14 +333,14 @@ export default function MarketChart({
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: {
-          color: "#77839a",
+          color: isLight ? "#64748b" : "#77839a",
           width: 1,
-          labelBackgroundColor: "#263143"
+          labelBackgroundColor: isLight ? "#64748b" : "#263143"
         },
         horzLine: {
-          color: "#77839a",
+          color: isLight ? "#64748b" : "#77839a",
           width: 1,
-          labelBackgroundColor: "#263143"
+          labelBackgroundColor: isLight ? "#64748b" : "#263143"
         }
       },
       handleScroll: {
@@ -391,6 +447,7 @@ export default function MarketChart({
         width: host.clientWidth,
         height: chartHeightForHost(host)
       });
+      setDrawingRevision((value) => value + 1);
     });
     observer.observe(host);
 
@@ -446,6 +503,47 @@ export default function MarketChart({
       ema200SeriesRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    const isLight = theme === "light";
+
+    chart.applyOptions({
+      layout: {
+        background: {
+          type: ColorType.Solid,
+          color: isLight ? "#ffffff" : "#0a0f16"
+        },
+        textColor: isLight ? "#475569" : "#9ca8ba",
+        attributionLogo: true
+      },
+      grid: {
+        vertLines: { color: isLight ? "#e5e7eb" : "#15202e" },
+        horzLines: { color: isLight ? "#e5e7eb" : "#15202e" }
+      },
+      rightPriceScale: {
+        borderColor: isLight ? "#cbd5e1" : "#263143"
+      },
+      timeScale: {
+        borderColor: isLight ? "#cbd5e1" : "#263143"
+      },
+      crosshair: {
+        mode: CrosshairMode.Normal,
+        vertLine: {
+          color: isLight ? "#64748b" : "#77839a",
+          width: 1,
+          labelBackgroundColor: isLight ? "#64748b" : "#263143"
+        },
+        horzLine: {
+          color: isLight ? "#64748b" : "#77839a",
+          width: 1,
+          labelBackgroundColor: isLight ? "#64748b" : "#263143"
+        }
+      }
+    });
+  }, [theme]);
 
   useEffect(() => {
     if (!seriesRef.current) return;
@@ -591,6 +689,20 @@ export default function MarketChart({
       window.removeEventListener("resize", updateMarkers);
     };
   }, [tradeMarkers, candles, liveCandle]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    const redraw = () => {
+      setDrawingRevision((value) => value + 1);
+    };
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(redraw);
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(redraw);
+    };
+  }, []);
 
   useEffect(() => {
     if (!liveCandle || !seriesRef.current) return;
@@ -1024,6 +1136,108 @@ export default function MarketChart({
     }
   }, [fitNonce]);
 
+  const toDrawingPoint = (
+    clientX: number,
+    clientY: number
+  ): DrawingPoint | null => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const host = hostRef.current;
+    if (!chart || !series || !host) return null;
+
+    const rect = host.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const time = chart.timeScale().coordinateToTime(x as Coordinate);
+    const price = series.coordinateToPrice(y as Coordinate);
+    const epoch = time ? toEpoch(time) : null;
+
+    if (epoch === null || price === null) return null;
+    return { time: epoch, price: Number(price) };
+  };
+
+  const handleDrawingPointerDown = (
+    event: React.PointerEvent<HTMLDivElement>
+  ) => {
+    if (drawingTool === "cursor") return;
+
+    const point = toDrawingPoint(event.clientX, event.clientY);
+    if (!point) return;
+
+    if (drawingTool === "horizontal") {
+      setDrawings((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          type: "horizontal",
+          points: [point]
+        }
+      ]);
+      return;
+    }
+
+    if (drawingTool === "text" || drawingTool === "note") {
+      const text = window.prompt(
+        drawingTool === "text" ? "Chart text" : "Chart note"
+      );
+      if (!text?.trim()) return;
+
+      setDrawings((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          type: drawingTool,
+          points: [point],
+          text: text.trim()
+        }
+      ]);
+      return;
+    }
+
+    if (!pendingDrawingPoint) {
+      setPendingDrawingPoint(point);
+      return;
+    }
+
+    setDrawings((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        type: drawingTool,
+        points: [pendingDrawingPoint, point]
+      }
+    ]);
+    setPendingDrawingPoint(null);
+  };
+
+  void drawingRevision;
+
+  const drawingGeometry = drawings.flatMap((drawing) => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const host = hostRef.current;
+    if (!chart || !series || !host) return [];
+
+    const points = drawing.points.flatMap((point) => {
+      const x = chart.timeScale().timeToCoordinate(point.time as Time);
+      const y = series.priceToCoordinate(point.price);
+      return x === null || y === null
+        ? []
+        : [{ x: Number(x), y: Number(y), ...point }];
+    });
+
+    if (points.length !== drawing.points.length) return [];
+
+    return [
+      {
+        drawing,
+        points,
+        width: host.clientWidth,
+        height: host.clientHeight
+      }
+    ];
+  });
+
   const readout = hovered ?? latest;
   const readoutOrderFlow = readout
     ? orderFlowByTime.get(readout.time) ?? null
@@ -1059,6 +1273,160 @@ export default function MarketChart({
           ) : null}
         </div>
       ) : null}
+      <div className="chartToolRail" aria-label="Chart tools">
+        {[
+          ["cursor", "↖", "Cursor"],
+          ["trend", "╱", "Trend line"],
+          ["horizontal", "—", "Horizontal line"],
+          ["measure", "↔", "Measure"],
+          ["text", "T", "Text"],
+          ["note", "✎", "Note"]
+        ].map(([tool, icon, label]) => (
+          <button
+            type="button"
+            key={tool}
+            className={
+              drawingTool === tool
+                ? "chartTool active"
+                : "chartTool"
+            }
+            title={label}
+            onClick={() => {
+              setDrawingTool(tool as DrawingTool);
+              setPendingDrawingPoint(null);
+            }}
+          >
+            {icon}
+          </button>
+        ))}
+        <button
+          type="button"
+          className="chartTool danger"
+          title="Clear drawings"
+          onClick={() => {
+            setDrawings([]);
+            setPendingDrawingPoint(null);
+            setDrawingTool("cursor");
+          }}
+        >
+          ⌫
+        </button>
+      </div>
+
+      <div
+        className={
+          drawingTool === "cursor"
+            ? "drawingInteractionLayer inactive"
+            : "drawingInteractionLayer"
+        }
+        onPointerDown={handleDrawingPointerDown}
+        aria-hidden="true"
+      />
+
+      <svg
+        className="drawingSvgLayer"
+        aria-hidden="true"
+      >
+        {drawingGeometry.map(({ drawing, points, width }) => {
+          const stroke =
+            drawing.type === "measure"
+              ? "#f5b942"
+              : drawing.type === "horizontal"
+                ? "#7c8cff"
+                : "#58a6ff";
+
+          if (drawing.type === "horizontal") {
+            const point = points[0];
+            return (
+              <g key={drawing.id}>
+                <line
+                  x1={0}
+                  y1={point.y}
+                  x2={width}
+                  y2={point.y}
+                  stroke={stroke}
+                  strokeWidth={1.5}
+                  strokeDasharray="6 4"
+                />
+                <text
+                  x={8}
+                  y={Math.max(12, point.y - 5)}
+                  className="drawingText"
+                >
+                  {point.price.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })}
+                </text>
+              </g>
+            );
+          }
+
+          if (
+            drawing.type === "text" ||
+            drawing.type === "note"
+          ) {
+            const point = points[0];
+            return (
+              <g key={drawing.id}>
+                <circle
+                  cx={point.x}
+                  cy={point.y}
+                  r={3}
+                  fill={stroke}
+                />
+                <text
+                  x={point.x + 7}
+                  y={point.y - 7}
+                  className="drawingText"
+                >
+                  {drawing.text}
+                </text>
+              </g>
+            );
+          }
+
+          const [start, end] = points;
+          const priceMove = end.price - start.price;
+          const percentMove =
+            start.price !== 0
+              ? (priceMove / start.price) * 100
+              : 0;
+
+          return (
+            <g key={drawing.id}>
+              <line
+                x1={start.x}
+                y1={start.y}
+                x2={end.x}
+                y2={end.y}
+                stroke={stroke}
+                strokeWidth={1.7}
+                strokeDasharray={
+                  drawing.type === "measure" ? "5 4" : undefined
+                }
+              />
+              <circle cx={start.x} cy={start.y} r={3} fill={stroke} />
+              <circle cx={end.x} cy={end.y} r={3} fill={stroke} />
+              {drawing.type === "measure" ? (
+                <text
+                  x={(start.x + end.x) / 2 + 6}
+                  y={(start.y + end.y) / 2 - 6}
+                  className="drawingText"
+                >
+                  {priceMove >= 0 ? "+" : ""}
+                  {priceMove.toLocaleString("en-IN", {
+                    maximumFractionDigits: 2
+                  })}
+                  {" · "}
+                  {percentMove >= 0 ? "+" : ""}
+                  {percentMove.toFixed(2)}%
+                </text>
+              ) : null}
+            </g>
+          );
+        })}
+      </svg>
+
       {tradeMarkerPositions.length ? (
         <div className="tradeMarkerLayer" aria-hidden="true">
           {tradeMarkerPositions.map((marker) => (
