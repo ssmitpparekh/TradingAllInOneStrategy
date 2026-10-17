@@ -1728,3 +1728,78 @@ h2 {
     margin-top: 8px;
   }
 }
+
+
+/* Phase 6b: technical context */
+.technicalStrip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.technicalStrip > div {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid #202937;
+  border-radius: 10px;
+  background: #090e15;
+}
+
+.technicalStrip span,
+.technicalStrip small {
+  display: block;
+}
+
+.technicalStrip span {
+  margin-bottom: 5px;
+  color: #66758b;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+}
+
+.technicalStrip strong {
+  display: block;
+  color: #e8eef7;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.technicalStrip small {
+  margin-top: 4px;
+  color: #677489;
+  font-size: 9px;
+}
+
+.technicalTrend.strong_bullish,
+.technicalTrend.bullish {
+  color: #74e39b;
+}
+
+.technicalTrend.strong_bearish,
+.technicalTrend.bearish {
+  color: #ff8587;
+}
+
+.technicalTrend.neutral {
+  color: #8a97aa;
+}
+
+@media (max-width: 1200px) {
+  .technicalStrip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .technicalStrip {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .technicalStrip {
+    grid-template-columns: 1fr;
+  }
+}
