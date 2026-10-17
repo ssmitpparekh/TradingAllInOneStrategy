@@ -54,8 +54,28 @@ export async function GET(request: NextRequest) {
 
       try {
         socket = fyersDataSocket.getInstance(websocketToken, "", false);
-        socket.autoreconnect(10);
+
+        // FYERS has shipped both autoReconnect() and autoreconnect()
+        // spellings across Node SDK/docs. Support either without crashing.
+        if (typeof socket.autoReconnect === "function") {
+          socket.autoReconnect(10);
+        } else if (typeof socket.autoreconnect === "function") {
+          socket.autoreconnect(10);
+        }
+
         socket.setQueueProcessInterval?.(200);
+
+        safeEnqueue(
+          sse(
+            {
+              connected: false,
+              opening: true,
+              symbol,
+              transport: "FYERS Data Socket"
+            },
+            "status"
+          )
+        );
 
         socket.on("connect", () => {
           socket?.subscribe([symbol]);
@@ -72,21 +92,37 @@ export async function GET(request: NextRequest) {
         });
 
         socket.on("error", (error: unknown) => {
+          const detail =
+            error instanceof Error
+              ? error.message
+              : typeof error === "string"
+                ? error
+                : JSON.stringify(error ?? {});
           safeEnqueue(
             sse(
               {
                 connected: false,
-                error:
-                  error instanceof Error ? error.message : String(error ?? "")
+                error: detail || "FYERS Data Socket error"
               },
               "status"
             )
           );
         });
 
-        socket.on("close", () => {
+        socket.on("close", (reason?: unknown) => {
           safeEnqueue(
-            sse({ connected: false, symbol, closed: true }, "status")
+            sse(
+              {
+                connected: false,
+                symbol,
+                closed: true,
+                error:
+                  typeof reason === "string"
+                    ? reason
+                    : "FYERS Data Socket closed"
+              },
+              "status"
+            )
           );
         });
 
