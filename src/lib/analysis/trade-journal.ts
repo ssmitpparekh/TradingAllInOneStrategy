@@ -21,6 +21,7 @@ export type JournalTrade = {
   name: string;
   market: string;
   setupType?: "PRIMARY" | "REACTION";
+  moveClass?: "TACTICAL" | "MAJOR";
   direction: JournalDirection;
   signalTime: number;
   confirmationTimeframe: "1m" | "5m" | "15m";
