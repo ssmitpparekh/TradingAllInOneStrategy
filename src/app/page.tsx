@@ -67,8 +67,48 @@ const RESOLUTIONS: Array<{ value: Resolution; label: string }> = [
 ];
 
 const RANGES: RangeKey[] = ["1D", "5D", "1M", "3M", "6M", "1Y", "5Y", "MAX"];
-const MARKET_FILTERS = ["ALL", "NSE", "BSE", "MCX"];
-const TYPE_FILTERS = ["ALL", "INDEX", "EQUITY", "ETF", "SGB", "MF", "FUTURE", "OPTION", "COMMODITY", "CURRENCY"];
+const MARKET_FILTERS = ["ALL", "NSE", "BSE", "MCX", "KRAKEN"];
+const TYPE_FILTERS = ["ALL", "INDEX", "EQUITY", "ETF", "SGB", "MF", "FUTURE", "OPTION", "COMMODITY", "CURRENCY", "CRYPTO"];
+
+const KRAKEN_RESOLUTIONS = new Set<Resolution>([
+  "1", "5", "15", "30", "60", "240", "1D", "1W"
+]);
+
+const LIVE_GLOBAL_SHORTCUTS: Instrument[] = [
+  {
+    symbol: "BTC/USD",
+    name: "BTC / USD",
+    market: "KRAKEN",
+    segment: "SPOT",
+    type: "CRYPTO",
+    underlying: "BTC",
+    expiry: null,
+    strike: null,
+    optionType: null
+  },
+  {
+    symbol: "ETH/USD",
+    name: "ETH / USD",
+    market: "KRAKEN",
+    segment: "SPOT",
+    type: "CRYPTO",
+    underlying: "ETH",
+    expiry: null,
+    strike: null,
+    optionType: null
+  },
+  {
+    symbol: "SOL/USD",
+    name: "SOL / USD",
+    market: "KRAKEN",
+    segment: "SPOT",
+    type: "CRYPTO",
+    underlying: "SOL",
+    expiry: null,
+    strike: null,
+    optionType: null
+  }
+];
 
 function formatDate(timestamp: number | null) {
   if (!timestamp) return "—";
@@ -107,7 +147,10 @@ export default function Home() {
   const [fitNonce, setFitNonce] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [liveCandle, setLiveCandle] = useState<ChartCandle | null>(null);
   const historyRequestId = useRef(0);
+
+  const selectedIsKraken = selected.market === "KRAKEN";
 
   async function refreshStatus() {
     try {
@@ -126,12 +169,21 @@ export default function Home() {
     }
   }
 
-  async function fetchQuote(silent = false, symbol = selected.symbol) {
+  async function fetchQuote(
+    silent = false,
+    symbol = selected.symbol,
+    market = selected.market
+  ) {
     if (!silent) setLoadingQuote(true);
 
     try {
+      const endpoint =
+        market === "KRAKEN"
+          ? "/api/kraken/quote"
+          : "/api/fyers/quote";
+
       const response = await fetch(
-        `/api/fyers/quote?symbol=${encodeURIComponent(symbol)}`,
+        `${endpoint}?symbol=${encodeURIComponent(symbol)}`,
         { cache: "no-store" }
       );
       const data = await response.json();
@@ -141,8 +193,14 @@ export default function Home() {
       }
 
       setQuote(data.quote);
-      setConnected(true);
-      if (!silent) setMessage("FYERS quote received successfully.");
+      if (market !== "KRAKEN") {
+        setConnected(true);
+      }
+      if (!silent) {
+        setMessage(
+          `${market === "KRAKEN" ? "Kraken" : "FYERS"} quote received successfully.`
+        );
+      }
     } catch (error) {
       if (!silent) {
         setMessage(error instanceof Error ? error.message : "Unable to fetch the quote.");
@@ -156,7 +214,8 @@ export default function Home() {
     nextResolution = resolution,
     nextRange = range,
     symbol = selected.symbol,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    market = selected.market
   ) {
     const requestId = ++historyRequestId.current;
     setLoadingChart(true);
@@ -165,8 +224,13 @@ export default function Home() {
     setHistoryMeta({ from: null, to: null, note: null });
 
     try {
+      const endpoint =
+        market === "KRAKEN"
+          ? "/api/kraken/history"
+          : "/api/fyers/history";
+
       const response = await fetch(
-        `/api/fyers/history?symbol=${encodeURIComponent(symbol)}&resolution=${encodeURIComponent(nextResolution)}&range=${encodeURIComponent(nextRange)}`,
+        `${endpoint}?symbol=${encodeURIComponent(symbol)}&resolution=${encodeURIComponent(nextResolution)}&range=${encodeURIComponent(nextRange)}`,
         { cache: "no-store", signal }
       );
       const data = await response.json();
@@ -181,7 +245,7 @@ export default function Home() {
       setHistoryMeta({
         from: data.candles?.[0]?.time ?? data.from ?? null,
         to: data.candles?.[data.candles.length - 1]?.time ?? data.to ?? null,
-        note: data.appliedLimit ?? null
+        note: data.appliedLimit ?? data.note ?? null
       });
     } catch (error) {
       if (signal?.aborted) return;
@@ -204,7 +268,15 @@ export default function Home() {
     setSearchResults([]);
     setQuote(null);
     setCandles([]);
+    setLiveCandle(null);
     setHistoryMeta({ from: null, to: null, note: null });
+
+    if (
+      instrument.market === "KRAKEN" &&
+      !KRAKEN_RESOLUTIONS.has(resolution)
+    ) {
+      setResolution("15");
+    }
   }
 
   async function toggleFullscreen() {
@@ -231,32 +303,51 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!connected) return;
+    if (!selectedIsKraken && !connected) return;
 
     const controller = new AbortController();
 
-    void fetchQuote(true, selected.symbol);
+    void fetchQuote(true, selected.symbol, selected.market);
     void fetchHistory(
       resolution,
       range,
       selected.symbol,
-      controller.signal
+      controller.signal,
+      selected.market
     );
 
     return () => controller.abort();
-  }, [connected, selected.symbol, resolution, range]);
+  }, [
+    connected,
+    selected.symbol,
+    selected.market,
+    selectedIsKraken,
+    resolution,
+    range
+  ]);
 
   useEffect(() => {
-    if (!connected) return;
+    if (!selectedIsKraken && !connected) return;
 
-    void fetch("/api/fyers/socket-diagnostic", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((data) => setSocketDiagnostic(data))
-      .catch(() => setSocketDiagnostic({ ok: false, problem: "Diagnostic request failed." }));
+    setLiveCandle(null);
 
-    const source = new EventSource(
-      `/api/fyers/stream?symbol=${encodeURIComponent(selected.symbol)}`
-    );
+    if (!selectedIsKraken) {
+      void fetch("/api/fyers/socket-diagnostic", { cache: "no-store" })
+        .then((response) => response.json())
+        .then((data) => setSocketDiagnostic(data))
+        .catch(() =>
+          setSocketDiagnostic({
+            ok: false,
+            problem: "Diagnostic request failed."
+          })
+        );
+    }
+
+    const endpoint = selectedIsKraken
+      ? `/api/kraken/stream?symbol=${encodeURIComponent(selected.symbol)}&resolution=${encodeURIComponent(resolution)}`
+      : `/api/fyers/stream?symbol=${encodeURIComponent(selected.symbol)}`;
+
+    const source = new EventSource(endpoint);
 
     const onStatus = (event: MessageEvent<string>) => {
       try {
@@ -266,8 +357,9 @@ export default function Home() {
           payload.connected
             ? `Live: ${selected.symbol}`
             : payload.opening
-              ? "Opening FYERS Data Socket…"
-              : payload.error || "FYERS Data Socket disconnected"
+              ? `Opening ${selectedIsKraken ? "Kraken" : "FYERS"} stream…`
+              : payload.error ||
+                `${selectedIsKraken ? "Kraken" : "FYERS"} stream disconnected`
         );
       } catch {
         setStreamConnected(false);
@@ -275,7 +367,7 @@ export default function Home() {
       }
     };
 
-    const onTick = (event: MessageEvent<string>) => {
+    const onFyersTick = (event: MessageEvent<string>) => {
       try {
         const tick = JSON.parse(event.data);
         if (tick.symbol && tick.symbol !== selected.symbol) return;
@@ -288,9 +380,18 @@ export default function Home() {
                   lp: tick.ltp,
                   ch: typeof tick.ch === "number" ? tick.ch : current.ch,
                   chp: typeof tick.chp === "number" ? tick.chp : current.chp,
-                  open: typeof tick.open_price === "number" ? tick.open_price : current.open,
-                  high: typeof tick.high_price === "number" ? tick.high_price : current.high,
-                  low: typeof tick.low_price === "number" ? tick.low_price : current.low,
+                  open:
+                    typeof tick.open_price === "number"
+                      ? tick.open_price
+                      : current.open,
+                  high:
+                    typeof tick.high_price === "number"
+                      ? tick.high_price
+                      : current.high,
+                  low:
+                    typeof tick.low_price === "number"
+                      ? tick.low_price
+                      : current.low,
                   previousClose:
                     typeof tick.prev_close_price === "number"
                       ? tick.prev_close_price
@@ -310,19 +411,87 @@ export default function Home() {
       }
     };
 
+    const onKrakenTicker = (event: MessageEvent<string>) => {
+      try {
+        const tick = JSON.parse(event.data);
+        if (tick.symbol && tick.symbol !== selected.symbol) return;
+
+        const last = Number(tick.last ?? 0);
+        const change = Number(tick.change ?? 0);
+        const changePct = Number(tick.change_pct ?? 0);
+
+        setQuote((current) => ({
+          symbol: selected.symbol,
+          lp: last || current?.lp || 0,
+          ch: change,
+          chp: changePct,
+          open:
+            current?.open ||
+            (last && Number.isFinite(change) ? last - change : 0),
+          high: Number(tick.high ?? current?.high ?? 0),
+          low: Number(tick.low ?? current?.low ?? 0),
+          previousClose:
+            current?.previousClose ||
+            (last && Number.isFinite(change) ? last - change : 0),
+          volume: Number(tick.volume ?? current?.volume ?? 0),
+          bid: Number(tick.bid ?? current?.bid ?? 0),
+          ask: Number(tick.ask ?? current?.ask ?? 0)
+        }));
+      } catch {
+        // Keep last good quote.
+      }
+    };
+
+    const onKrakenCandle = (event: MessageEvent<string>) => {
+      try {
+        const candle = JSON.parse(event.data) as ChartCandle & {
+          symbol?: string;
+        };
+
+        if (candle.symbol && candle.symbol !== selected.symbol) return;
+
+        if (
+          Number.isFinite(candle.time) &&
+          Number.isFinite(candle.open) &&
+          Number.isFinite(candle.high) &&
+          Number.isFinite(candle.low) &&
+          Number.isFinite(candle.close)
+        ) {
+          setLiveCandle(candle);
+        }
+      } catch {
+        // Ignore malformed candle updates.
+      }
+    };
+
     source.addEventListener("status", onStatus as EventListener);
-    source.addEventListener("tick", onTick as EventListener);
+
+    if (selectedIsKraken) {
+      source.addEventListener("ticker", onKrakenTicker as EventListener);
+      source.addEventListener("candle", onKrakenCandle as EventListener);
+    } else {
+      source.addEventListener("tick", onFyersTick as EventListener);
+    }
 
     source.onerror = () => {
       setStreamConnected(false);
-      setStreamMessage("Live stream reconnecting…");
+      setStreamMessage(
+        `${selectedIsKraken ? "Kraken" : "FYERS"} live stream reconnecting…`
+      );
     };
 
     return () => {
       source.close();
       setStreamConnected(false);
+      setLiveCandle(null);
     };
-  }, [connected, selected.symbol]);
+  }, [
+    connected,
+    selected.symbol,
+    selected.market,
+    selectedIsKraken,
+    resolution
+  ]);
 
   useEffect(() => {
     const query = searchQuery.trim();
@@ -333,16 +502,58 @@ export default function Home() {
     }
 
     setSearching(true);
+
     const timer = window.setTimeout(() => {
-      void fetch(
-        `/api/fyers/instruments?q=${encodeURIComponent(query)}&market=${encodeURIComponent(marketFilter)}&type=${encodeURIComponent(typeFilter)}`,
-        { cache: "no-store" }
-      )
-        .then((response) => response.json())
-        .then((data) => {
-          setSearchResults(data.ok ? data.instruments : []);
+      const wantsKraken =
+        (marketFilter === "ALL" || marketFilter === "KRAKEN") &&
+        (typeFilter === "ALL" || typeFilter === "CRYPTO");
+
+      const wantsFyers =
+        marketFilter !== "KRAKEN" &&
+        typeFilter !== "CRYPTO";
+
+      const requests: Promise<Instrument[]>[] = [];
+
+      if (wantsFyers) {
+        const fyersMarket =
+          marketFilter === "ALL" ? "ALL" : marketFilter;
+        requests.push(
+          fetch(
+            `/api/fyers/instruments?q=${encodeURIComponent(query)}&market=${encodeURIComponent(fyersMarket)}&type=${encodeURIComponent(typeFilter)}`,
+            { cache: "no-store" }
+          )
+            .then((response) => response.json())
+            .then((data) => (data.ok ? data.instruments : []))
+            .catch(() => [])
+        );
+      }
+
+      if (wantsKraken) {
+        requests.push(
+          fetch(
+            `/api/kraken/instruments?q=${encodeURIComponent(query)}`,
+            { cache: "no-store" }
+          )
+            .then((response) => response.json())
+            .then((data) => (data.ok ? data.instruments : []))
+            .catch(() => [])
+        );
+      }
+
+      void Promise.all(requests)
+        .then((groups) => {
+          const merged = groups.flat();
+          const unique = [
+            ...new Map(
+              merged.map((item) => [
+                `${item.market}:${item.symbol}`,
+                item
+              ])
+            ).values()
+          ].slice(0, 100);
+
+          setSearchResults(unique);
         })
-        .catch(() => setSearchResults([]))
         .finally(() => setSearching(false));
     }, 250);
 
@@ -362,7 +573,7 @@ export default function Home() {
           <div>
             <h1>ALLINONEVIEW</h1>
             <p className="lead">
-              Read-only analysis across supported NSE, BSE and MCX instruments.
+              Read-only analysis across Indian markets and connected global data providers.
             </p>
           </div>
           <div className="connectionStack">
@@ -372,13 +583,19 @@ export default function Home() {
             </div>
             <div className={streamConnected ? "connectionPill online" : "connectionPill"}>
               <span className="dot" />
-              {streamConnected ? "LIVE SOCKET" : "SOCKET WAITING"}
+              {streamConnected
+                ? selectedIsKraken
+                  ? "KRAKEN LIVE"
+                  : "LIVE SOCKET"
+                : selectedIsKraken
+                  ? "KRAKEN WAITING"
+                  : "SOCKET WAITING"}
             </div>
           </div>
         </div>
       </section>
 
-      {!connected ? (
+      {!connected && !selectedIsKraken ? (
         <section className="card">
           <div className="row">
             <div>
@@ -400,7 +617,7 @@ export default function Home() {
             <input
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search NIFTY, Reliance, Gold, Crude, expiry, strike…"
+              placeholder="Search NIFTY, Reliance, Gold, Crude, BTC/USD, ETH/USD…"
               autoComplete="off"
             />
             {searching ? <span className="searching">Searching…</span> : null}
@@ -413,6 +630,27 @@ export default function Home() {
                 onClick={() => setMarketFilter(item)}
               >
                 {item}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="liveNowRow">
+          <span className="toolbarLabel">LIVE NOW · 24/7 GLOBAL TEST</span>
+          <div className="filterRow">
+            {LIVE_GLOBAL_SHORTCUTS.map((instrument) => (
+              <button
+                key={instrument.symbol}
+                className={
+                  selected.market === "KRAKEN" &&
+                  selected.symbol === instrument.symbol
+                    ? "liveShortcut active"
+                    : "liveShortcut"
+                }
+                onClick={() => void selectInstrument(instrument)}
+              >
+                <span className="liveDot" />
+                {instrument.symbol}
               </button>
             ))}
           </div>
@@ -504,7 +742,9 @@ export default function Home() {
             </button>
             <button
               className="button secondary compactButton"
-              onClick={() => void fetchQuote()}
+              onClick={() =>
+                void fetchQuote(false, selected.symbol, selected.market)
+              }
               disabled={loadingQuote}
             >
               {loadingQuote ? "Refreshing…" : "Refresh"}
@@ -521,6 +761,16 @@ export default function Home() {
                   key={item.value}
                   className={resolution === item.value ? "timeframe active" : "timeframe"}
                   onClick={() => setResolution(item.value)}
+                  disabled={
+                    selectedIsKraken &&
+                    !KRAKEN_RESOLUTIONS.has(item.value)
+                  }
+                  title={
+                    selectedIsKraken &&
+                    !KRAKEN_RESOLUTIONS.has(item.value)
+                      ? "Kraken does not stream this candle interval."
+                      : undefined
+                  }
                 >
                   {item.label}
                 </button>
@@ -560,7 +810,12 @@ export default function Home() {
         ) : null}
         {historyMeta.note ? <div className="historyNotice">{historyMeta.note}</div> : null}
 
-        <MarketChart candles={candles} fitNonce={fitNonce} rangeKey={range} />
+        <MarketChart
+          candles={candles}
+          liveCandle={liveCandle}
+          fitNonce={fitNonce}
+          rangeKey={range}
+        />
 
         {quote ? (
           <div className="ohlcStrip">
@@ -574,7 +829,7 @@ export default function Home() {
         ) : null}
       </section>
 
-      {connected && !streamConnected && socketDiagnostic ? (
+      {!selectedIsKraken && connected && !streamConnected && socketDiagnostic ? (
         <section className="card">
           <p className="label">Safe socket diagnostic</p>
           <div className="quoteGrid">
