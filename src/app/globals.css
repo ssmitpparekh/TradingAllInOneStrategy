@@ -2498,3 +2498,190 @@ button {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+
+/* Clarity-first default view */
+.advancedHidden {
+  display: none !important;
+}
+
+.simplePlanCard {
+  padding: 18px;
+  border-color: #27344a;
+  background:
+    linear-gradient(180deg, rgba(49, 65, 96, 0.12), transparent 170px),
+    rgba(13, 18, 26, 0.96);
+}
+
+.simplePlanCard.ready {
+  border-color: rgba(116, 227, 155, 0.42);
+}
+
+.simplePlanCard.no_trade {
+  border-color: rgba(148, 160, 180, 0.25);
+}
+
+.simplePlanHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.simplePlanHeader h3 {
+  margin: 3px 0 6px;
+  font-size: clamp(22px, 2.4vw, 30px);
+  letter-spacing: -0.025em;
+}
+
+.simplePlanHeader p {
+  max-width: 820px;
+  margin: 0;
+  color: #8f9caf;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.simpleTrend {
+  min-width: 150px;
+  padding: 12px;
+  border: 1px solid #293548;
+  border-radius: 12px;
+  background: #090e15;
+  text-align: right;
+}
+
+.simpleTrend span,
+.simpleTrend small {
+  display: block;
+}
+
+.simpleTrend span {
+  color: #657287;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.simpleTrend strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 18px;
+}
+
+.simpleTrend small {
+  margin-top: 4px;
+  color: #6f7d91;
+  font-size: 9px;
+}
+
+.simpleTrend.bullish strong {
+  color: #74e39b;
+}
+
+.simpleTrend.bearish strong {
+  color: #ff8587;
+}
+
+.simpleTrend.neutral strong {
+  color: #9aa6b8;
+}
+
+.simplePlanGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 15px;
+}
+
+.simplePlanGrid > div,
+.simpleTargets > div {
+  padding: 12px;
+  border: 1px solid #202937;
+  border-radius: 10px;
+  background: #090e15;
+}
+
+.simplePlanGrid span,
+.simplePlanGrid small,
+.simpleTargets span,
+.simpleTargets small {
+  display: block;
+}
+
+.simplePlanGrid span,
+.simpleTargets span {
+  margin-bottom: 6px;
+  color: #66758b;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.simplePlanGrid strong,
+.simpleTargets strong {
+  color: #edf2f8;
+  font-size: 15px;
+}
+
+.simplePlanGrid small,
+.simpleTargets small {
+  margin-top: 5px;
+  color: #66748a;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.simpleTargets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 9px;
+}
+
+.simplePlanFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.simplePlanFooter p {
+  margin: 0;
+  color: #748196;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.simplePlanCard.ready .simplePlanHeader h3 {
+  color: #74e39b;
+}
+
+.simplePlanCard.wait_retrace .simplePlanHeader h3,
+.simplePlanCard.wait_confirmation .simplePlanHeader h3 {
+  color: #e8b955;
+}
+
+.simplePlanCard.no_trade .simplePlanHeader h3,
+.simplePlanCard.wait_trend .simplePlanHeader h3 {
+  color: #9aa6b8;
+}
+
+@media (max-width: 780px) {
+  .simplePlanHeader,
+  .simplePlanFooter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .simpleTrend {
+    min-width: 0;
+    text-align: left;
+  }
+
+  .simplePlanGrid,
+  .simpleTargets {
+    grid-template-columns: 1fr;
+  }
+}
