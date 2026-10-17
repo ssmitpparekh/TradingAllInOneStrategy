@@ -93,6 +93,17 @@ export async function GET(request: NextRequest) {
               }
             })
           );
+
+          upstream?.send(
+            JSON.stringify({
+              method: "subscribe",
+              params: {
+                channel: "trade",
+                symbol: [symbol],
+                snapshot: false
+              }
+            })
+          );
         });
 
         upstream.addEventListener("message", (event) => {
@@ -102,6 +113,42 @@ export async function GET(request: NextRequest) {
             if (message?.channel === "ticker" && Array.isArray(message.data)) {
               for (const item of message.data) {
                 safeEnqueue(sse(item, "ticker"));
+              }
+              return;
+            }
+
+            if (message?.channel === "trade" && Array.isArray(message.data)) {
+              for (const item of message.data) {
+                const timestamp = Date.parse(String(item.timestamp ?? ""));
+                const qty = Number(item.qty ?? 0);
+                const price = Number(item.price ?? 0);
+                const side = item.side === "buy" || item.side === "sell"
+                  ? item.side
+                  : null;
+
+                if (
+                  !Number.isFinite(timestamp) ||
+                  !(qty > 0) ||
+                  !(price > 0) ||
+                  !side
+                ) {
+                  continue;
+                }
+
+                safeEnqueue(
+                  sse(
+                    {
+                      symbol: item.symbol,
+                      side,
+                      qty,
+                      price,
+                      time: Math.floor(timestamp / 1000),
+                      tradeId: item.trade_id ?? null,
+                      ordType: item.ord_type ?? null
+                    },
+                    "trade"
+                  )
+                );
               }
               return;
             }
