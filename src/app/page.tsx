@@ -261,32 +261,51 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!connected) return;
+    if (!selectedIsKraken && !connected) return;
 
     const controller = new AbortController();
 
-    void fetchQuote(true, selected.symbol);
+    void fetchQuote(true, selected.symbol, selected.market);
     void fetchHistory(
       resolution,
       range,
       selected.symbol,
-      controller.signal
+      controller.signal,
+      selected.market
     );
 
     return () => controller.abort();
-  }, [connected, selected.symbol, resolution, range]);
+  }, [
+    connected,
+    selected.symbol,
+    selected.market,
+    selectedIsKraken,
+    resolution,
+    range
+  ]);
 
   useEffect(() => {
-    if (!connected) return;
+    if (!selectedIsKraken && !connected) return;
 
-    void fetch("/api/fyers/socket-diagnostic", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((data) => setSocketDiagnostic(data))
-      .catch(() => setSocketDiagnostic({ ok: false, problem: "Diagnostic request failed." }));
+    setLiveCandle(null);
 
-    const source = new EventSource(
-      `/api/fyers/stream?symbol=${encodeURIComponent(selected.symbol)}`
-    );
+    if (!selectedIsKraken) {
+      void fetch("/api/fyers/socket-diagnostic", { cache: "no-store" })
+        .then((response) => response.json())
+        .then((data) => setSocketDiagnostic(data))
+        .catch(() =>
+          setSocketDiagnostic({
+            ok: false,
+            problem: "Diagnostic request failed."
+          })
+        );
+    }
+
+    const endpoint = selectedIsKraken
+      ? `/api/kraken/stream?symbol=${encodeURIComponent(selected.symbol)}&resolution=${encodeURIComponent(resolution)}`
+      : `/api/fyers/stream?symbol=${encodeURIComponent(selected.symbol)}`;
+
+    const source = new EventSource(endpoint);
 
     const onStatus = (event: MessageEvent<string>) => {
       try {
@@ -296,8 +315,9 @@ export default function Home() {
           payload.connected
             ? `Live: ${selected.symbol}`
             : payload.opening
-              ? "Opening FYERS Data Socket…"
-              : payload.error || "FYERS Data Socket disconnected"
+              ? `Opening ${selectedIsKraken ? "Kraken" : "FYERS"} stream…`
+              : payload.error ||
+                `${selectedIsKraken ? "Kraken" : "FYERS"} stream disconnected`
         );
       } catch {
         setStreamConnected(false);
@@ -305,7 +325,7 @@ export default function Home() {
       }
     };
 
-    const onTick = (event: MessageEvent<string>) => {
+    const onFyersTick = (event: MessageEvent<string>) => {
       try {
         const tick = JSON.parse(event.data);
         if (tick.symbol && tick.symbol !== selected.symbol) return;
@@ -318,9 +338,18 @@ export default function Home() {
                   lp: tick.ltp,
                   ch: typeof tick.ch === "number" ? tick.ch : current.ch,
                   chp: typeof tick.chp === "number" ? tick.chp : current.chp,
-                  open: typeof tick.open_price === "number" ? tick.open_price : current.open,
-                  high: typeof tick.high_price === "number" ? tick.high_price : current.high,
-                  low: typeof tick.low_price === "number" ? tick.low_price : current.low,
+                  open:
+                    typeof tick.open_price === "number"
+                      ? tick.open_price
+                      : current.open,
+                  high:
+                    typeof tick.high_price === "number"
+                      ? tick.high_price
+                      : current.high,
+                  low:
+                    typeof tick.low_price === "number"
+                      ? tick.low_price
+                      : current.low,
                   previousClose:
                     typeof tick.prev_close_price === "number"
                       ? tick.prev_close_price
@@ -340,19 +369,87 @@ export default function Home() {
       }
     };
 
+    const onKrakenTicker = (event: MessageEvent<string>) => {
+      try {
+        const tick = JSON.parse(event.data);
+        if (tick.symbol && tick.symbol !== selected.symbol) return;
+
+        const last = Number(tick.last ?? 0);
+        const change = Number(tick.change ?? 0);
+        const changePct = Number(tick.change_pct ?? 0);
+
+        setQuote((current) => ({
+          symbol: selected.symbol,
+          lp: last || current?.lp || 0,
+          ch: change,
+          chp: changePct,
+          open:
+            current?.open ||
+            (last && Number.isFinite(change) ? last - change : 0),
+          high: Number(tick.high ?? current?.high ?? 0),
+          low: Number(tick.low ?? current?.low ?? 0),
+          previousClose:
+            current?.previousClose ||
+            (last && Number.isFinite(change) ? last - change : 0),
+          volume: Number(tick.volume ?? current?.volume ?? 0),
+          bid: Number(tick.bid ?? current?.bid ?? 0),
+          ask: Number(tick.ask ?? current?.ask ?? 0)
+        }));
+      } catch {
+        // Keep last good quote.
+      }
+    };
+
+    const onKrakenCandle = (event: MessageEvent<string>) => {
+      try {
+        const candle = JSON.parse(event.data) as ChartCandle & {
+          symbol?: string;
+        };
+
+        if (candle.symbol && candle.symbol !== selected.symbol) return;
+
+        if (
+          Number.isFinite(candle.time) &&
+          Number.isFinite(candle.open) &&
+          Number.isFinite(candle.high) &&
+          Number.isFinite(candle.low) &&
+          Number.isFinite(candle.close)
+        ) {
+          setLiveCandle(candle);
+        }
+      } catch {
+        // Ignore malformed candle updates.
+      }
+    };
+
     source.addEventListener("status", onStatus as EventListener);
-    source.addEventListener("tick", onTick as EventListener);
+
+    if (selectedIsKraken) {
+      source.addEventListener("ticker", onKrakenTicker as EventListener);
+      source.addEventListener("candle", onKrakenCandle as EventListener);
+    } else {
+      source.addEventListener("tick", onFyersTick as EventListener);
+    }
 
     source.onerror = () => {
       setStreamConnected(false);
-      setStreamMessage("Live stream reconnecting…");
+      setStreamMessage(
+        `${selectedIsKraken ? "Kraken" : "FYERS"} live stream reconnecting…`
+      );
     };
 
     return () => {
       source.close();
       setStreamConnected(false);
+      setLiveCandle(null);
     };
-  }, [connected, selected.symbol]);
+  }, [
+    connected,
+    selected.symbol,
+    selected.market,
+    selectedIsKraken,
+    resolution
+  ]);
 
   useEffect(() => {
     const query = searchQuery.trim();
