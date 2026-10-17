@@ -5,6 +5,10 @@ import MarketChart, { type ChartCandle } from "@/components/MarketChart";
 import { buildVolumeAnalytics } from "@/lib/analysis/volume";
 import { buildReversalEngine } from "@/lib/analysis/confluence";
 import {
+  calculateCandleClock,
+  formatCountdown
+} from "@/lib/market/candle-clock";
+import {
   buildFibonacciSetup,
   buildImbalanceLiquiditySnapshot,
   buildMarketStructure,
@@ -264,9 +268,29 @@ export default function Home() {
   const [context15m, setContext15m] = useState<ChartCandle[]>([]);
   const [contextPrice, setContextPrice] = useState<number | null>(null);
   const [loadingContext, setLoadingContext] = useState(false);
+  const [clockNow, setClockNow] = useState(Date.now());
   const historyRequestId = useRef(0);
 
   const selectedIsKraken = selected.market === "KRAKEN";
+  const currentCandleStart =
+    liveCandle?.time ??
+    candles[candles.length - 1]?.time ??
+    null;
+  const candleClock = useMemo(
+    () =>
+      calculateCandleClock({
+        nowMs: clockNow,
+        candleStart: currentCandleStart,
+        resolution,
+        market: selected.market
+      }),
+    [
+      clockNow,
+      currentCandleStart,
+      resolution,
+      selected.market
+    ]
+  );
   const primaryAnalysisSymbol = useMemo(
     () => resolvePrimaryAnalysisSymbol(selected),
     [selected]
@@ -648,6 +672,14 @@ export default function Home() {
       setMessage("Your browser blocked fullscreen mode.");
     }
   }
+
+  useEffect(() => {
+    const clockTimer = window.setInterval(() => {
+      setClockNow(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(clockTimer);
+  }, []);
 
   useEffect(() => {
     void refreshStatus();
@@ -1130,6 +1162,17 @@ export default function Home() {
               )}
             </div>
             <p className="symbolLine">{selected.symbol}</p>
+            <div className="candleClock">
+              <span className="clockDot" />
+              <span>CANDLE CLOSE</span>
+              <strong>
+                {candleClock.status === "counting"
+                  ? formatCountdown(candleClock.remainingSeconds)
+                  : candleClock.status === "market_closed"
+                    ? "MARKET CLOSED"
+                    : "WAITING"}
+              </strong>
+            </div>
           </div>
 
           <div className="headerActions">
