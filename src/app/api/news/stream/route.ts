@@ -35,6 +35,36 @@ const OFFICIAL_FEEDS: FeedDefinition[] = [
     tier: "OFFICIAL"
   },
   {
+    name: "NSE Corporate Announcements",
+    url: "https://nsearchives.nseindia.com/content/RSS/Online_announcements.xml",
+    region: "INDIA",
+    tier: "OFFICIAL"
+  },
+  {
+    name: "NSE Corporate Actions",
+    url: "https://nsearchives.nseindia.com/content/RSS/Corporate_action.xml",
+    region: "INDIA",
+    tier: "OFFICIAL"
+  },
+  {
+    name: "NSE Board Meetings",
+    url: "https://nsearchives.nseindia.com/content/RSS/Board_Meetings.xml",
+    region: "INDIA",
+    tier: "OFFICIAL"
+  },
+  {
+    name: "BSE Notices",
+    url: "https://www.bseindia.com/data/xml/notices.xml",
+    region: "INDIA",
+    tier: "OFFICIAL"
+  },
+  {
+    name: "PIB Economic",
+    url: "https://www.pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=3&reg=3",
+    region: "INDIA",
+    tier: "OFFICIAL"
+  },
+  {
     name: "Federal Reserve Monetary Policy",
     url: "https://www.federalreserve.gov/feeds/press_monetary.xml",
     region: "US",
