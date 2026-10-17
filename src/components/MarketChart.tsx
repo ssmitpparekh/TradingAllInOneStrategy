@@ -66,6 +66,22 @@ function formatIst(timestamp: number) {
   }).format(new Date(timestamp * 1000));
 }
 
+function chartHeightForHost(host: HTMLDivElement) {
+  if (document.fullscreenElement) {
+    return Math.max(320, host.clientHeight || window.innerHeight - 180);
+  }
+
+  if (window.innerWidth <= 380) {
+    return Math.max(350, Math.min(500, Math.round(window.innerHeight * 0.5)));
+  }
+
+  if (window.innerWidth <= 900) {
+    return Math.max(380, Math.min(600, Math.round(window.innerHeight * 0.57)));
+  }
+
+  return Math.max(520, host.clientHeight || 560);
+}
+
 function toEpoch(time: Time): number | null {
   if (typeof time === "number") return time;
   if (typeof time === "string") {
@@ -118,7 +134,7 @@ export default function MarketChart({
 
     const chart = createChart(host, {
       width: host.clientWidth,
-      height: Math.max(520, host.clientHeight || 520),
+      height: chartHeightForHost(host),
       layout: {
         background: { type: ColorType.Solid, color: "#0a0f16" },
         textColor: "#9ca8ba",
@@ -263,7 +279,7 @@ export default function MarketChart({
     const observer = new ResizeObserver(() => {
       chart.applyOptions({
         width: host.clientWidth,
-        height: Math.max(520, host.clientHeight || 520)
+        height: chartHeightForHost(host)
       });
     });
     observer.observe(host);
