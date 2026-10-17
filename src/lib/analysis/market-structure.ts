@@ -60,6 +60,24 @@ export type ImbalanceLiquiditySnapshot = {
   latestSweep: LiquiditySweep | null;
 };
 
+export type OrderBlock = {
+  direction: "bullish" | "bearish";
+  sourceTime: number;
+  createdByEventTime: number;
+  createdByEventType: "BOS" | "CHoCH";
+  lower: number;
+  upper: number;
+  midpoint: number;
+  status: "active" | "touched" | "invalidated";
+  firstTouchTime: number | null;
+  invalidatedTime: number | null;
+};
+
+export type OrderBlockSnapshot = {
+  recentBlocks: OrderBlock[];
+  activeBlocks: OrderBlock[];
+};
+
 export type FibonacciLevel = {
   ratio: number;
   price: number;
@@ -560,6 +578,143 @@ export function buildImbalanceLiquiditySnapshot(
       .slice(-6),
     recentSweeps,
     latestSweep: recentSweeps[recentSweeps.length - 1] ?? null
+  };
+}
+
+
+export function detectOrderBlocks(
+  candles: AnalysisCandle[],
+  options?: {
+    maxLookbackBars?: number;
+    maxRecent?: number;
+    displacementAtr?: number;
+  }
+): OrderBlock[] {
+  if (candles.length < 20) return [];
+
+  const maxLookbackBars = Math.max(3, options?.maxLookbackBars ?? 12);
+  const maxRecent = Math.max(1, options?.maxRecent ?? 16);
+  const displacementAtr = Math.max(
+    0.1,
+    options?.displacementAtr ?? 0.5
+  );
+
+  const recentCandles =
+    candles.length > 1200 ? candles.slice(-1200) : candles;
+  const structure = buildMarketStructure(recentCandles, {
+    maxEvents: 40
+  });
+  const atr = calculateAtr(recentCandles) ?? 0;
+  const blocks = new Map<string, OrderBlock>();
+
+  for (const event of structure.recentEvents) {
+    const eventIndex = recentCandles.findIndex(
+      (candle) => candle.time === event.time
+    );
+
+    if (eventIndex < 1) continue;
+
+    const eventCandle = recentCandles[eventIndex];
+    const eventBody = Math.abs(
+      eventCandle.close - eventCandle.open
+    );
+    const breakDistance = Math.abs(
+      eventCandle.close - event.brokenLevel
+    );
+
+    if (
+      atr > 0 &&
+      eventBody < atr * displacementAtr &&
+      breakDistance < atr * 0.2
+    ) {
+      continue;
+    }
+
+    const earliest = Math.max(
+      0,
+      eventIndex - maxLookbackBars
+    );
+    let sourceIndex = -1;
+
+    for (
+      let index = eventIndex - 1;
+      index >= earliest;
+      index -= 1
+    ) {
+      const candle = recentCandles[index];
+      const oppositeCandle =
+        event.direction === "bullish"
+          ? candle.close < candle.open
+          : candle.close > candle.open;
+
+      if (oppositeCandle) {
+        sourceIndex = index;
+        break;
+      }
+    }
+
+    if (sourceIndex < 0) continue;
+
+    const source = recentCandles[sourceIndex];
+    const block: OrderBlock = {
+      direction: event.direction,
+      sourceTime: source.time,
+      createdByEventTime: event.time,
+      createdByEventType: event.type,
+      lower: source.low,
+      upper: source.high,
+      midpoint: (source.low + source.high) / 2,
+      status: "active",
+      firstTouchTime: null,
+      invalidatedTime: null
+    };
+
+    for (
+      let futureIndex = eventIndex + 1;
+      futureIndex < recentCandles.length;
+      futureIndex += 1
+    ) {
+      const future = recentCandles[futureIndex];
+      const intersects =
+        future.high >= block.lower &&
+        future.low <= block.upper;
+
+      if (intersects && block.firstTouchTime === null) {
+        block.status = "touched";
+        block.firstTouchTime = future.time;
+      }
+
+      const invalidated =
+        block.direction === "bullish"
+          ? future.close < block.lower
+          : future.close > block.upper;
+
+      if (invalidated) {
+        block.status = "invalidated";
+        block.invalidatedTime = future.time;
+        break;
+      }
+    }
+
+    const key = `${block.direction}-${block.sourceTime}`;
+    blocks.set(key, block);
+  }
+
+  return [...blocks.values()]
+    .sort((a, b) => a.createdByEventTime - b.createdByEventTime)
+    .slice(-maxRecent);
+}
+
+export function buildOrderBlockSnapshot(
+  candles: AnalysisCandle[]
+): OrderBlockSnapshot {
+  const recentBlocks = detectOrderBlocks(candles);
+
+  return {
+    recentBlocks,
+    activeBlocks: recentBlocks
+      .filter((block) => block.status !== "invalidated")
+      .slice(-6)
   };
 }
 

@@ -5,7 +5,8 @@ import MarketChart, { type ChartCandle } from "@/components/MarketChart";
 import {
   buildFibonacciSetup,
   buildImbalanceLiquiditySnapshot,
-  buildMarketStructure
+  buildMarketStructure,
+  buildOrderBlockSnapshot
 } from "@/lib/analysis/market-structure";
 
 type Quote = {
@@ -158,6 +159,7 @@ export default function Home() {
   const [showStructure, setShowStructure] = useState(true);
   const [showFvg, setShowFvg] = useState(true);
   const [showLiquidity, setShowLiquidity] = useState(true);
+  const [showOrderBlocks, setShowOrderBlocks] = useState(true);
   const historyRequestId = useRef(0);
 
   const selectedIsKraken = selected.market === "KRAKEN";
@@ -171,6 +173,10 @@ export default function Home() {
   );
   const imbalance = useMemo(
     () => buildImbalanceLiquiditySnapshot(candles),
+    [candles]
+  );
+  const orderBlocks = useMemo(
+    () => buildOrderBlockSnapshot(candles),
     [candles]
   );
 
@@ -840,11 +846,13 @@ export default function Home() {
           fibonacci={fibonacci}
           structure={structure}
           imbalance={imbalance}
+          orderBlocks={orderBlocks}
           showFib={showFib}
           showTrendFib={showTrendFib}
           showStructure={showStructure}
           showFvg={showFvg}
           showLiquidity={showLiquidity}
+          showOrderBlocks={showOrderBlocks}
         />
 
         {quote ? (
@@ -913,6 +921,16 @@ export default function Home() {
               onClick={() => setShowLiquidity((value) => !value)}
             >
               Liquidity {showLiquidity ? "ON" : "OFF"}
+            </button>
+            <button
+              className={
+                showOrderBlocks
+                  ? "analysisToggle active"
+                  : "analysisToggle"
+              }
+              onClick={() => setShowOrderBlocks((value) => !value)}
+            >
+              Order Blocks {showOrderBlocks ? "ON" : "OFF"}
             </button>
           </div>
         </div>
@@ -991,6 +1009,31 @@ export default function Home() {
               {imbalance.activeFvgs.length
                 ? `${imbalance.activeFvgs.filter((gap) => gap.status === "active").length} active · ${imbalance.activeFvgs.filter((gap) => gap.status === "touched").length} touched`
                 : "None nearby"}
+            </strong>
+          </div>
+        </div>
+
+        <div className="orderBlockStrip">
+          <div>
+            <span>VALID ORDER BLOCKS</span>
+            <strong>{orderBlocks.activeBlocks.length}</strong>
+          </div>
+          <div>
+            <span>BULLISH OBs</span>
+            <strong>
+              {orderBlocks.activeBlocks.filter((block) => block.direction === "bullish").length}
+            </strong>
+          </div>
+          <div>
+            <span>BEARISH OBs</span>
+            <strong>
+              {orderBlocks.activeBlocks.filter((block) => block.direction === "bearish").length}
+            </strong>
+          </div>
+          <div>
+            <span>TOUCHED</span>
+            <strong>
+              {orderBlocks.activeBlocks.filter((block) => block.status === "touched").length}
             </strong>
           </div>
         </div>
@@ -1140,6 +1183,41 @@ export default function Home() {
             be selected.
           </p>
         )}
+
+        {orderBlocks.activeBlocks.length ? (
+          <div className="orderBlockPanel">
+            <span className="toolbarLabel">VALID / TOUCHED ORDER BLOCKS</span>
+            <div className="orderBlockRows">
+              {orderBlocks.activeBlocks
+                .slice()
+                .reverse()
+                .map((block) => (
+                  <div
+                    className={`orderBlockRow ${block.direction} ${block.status}`}
+                    key={`${block.sourceTime}-${block.direction}`}
+                  >
+                    <div>
+                      <strong>
+                        {block.direction === "bullish" ? "Bull OB" : "Bear OB"}
+                      </strong>
+                      <span>
+                        {block.createdByEventType} · {block.status.toUpperCase()}
+                      </span>
+                    </div>
+                    <div>
+                      {block.lower.toLocaleString("en-IN", {
+                        maximumFractionDigits: 2
+                      })}
+                      {" – "}
+                      {block.upper.toLocaleString("en-IN", {
+                        maximumFractionDigits: 2
+                      })}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        ) : null}
 
         {imbalance.activeFvgs.length ? (
           <div className="imbalanceGrid">

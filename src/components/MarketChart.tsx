@@ -16,7 +16,8 @@ import {
 import type {
   FibonacciSetup,
   ImbalanceLiquiditySnapshot,
-  MarketStructureSnapshot
+  MarketStructureSnapshot,
+  OrderBlockSnapshot
 } from "@/lib/analysis/market-structure";
 
 export type ChartCandle = {
@@ -37,11 +38,13 @@ type Props = {
   fibonacci?: FibonacciSetup | null;
   structure?: MarketStructureSnapshot | null;
   imbalance?: ImbalanceLiquiditySnapshot | null;
+  orderBlocks?: OrderBlockSnapshot | null;
   showFib?: boolean;
   showTrendFib?: boolean;
   showStructure?: boolean;
   showFvg?: boolean;
   showLiquidity?: boolean;
+  showOrderBlocks?: boolean;
 };
 
 function formatIst(timestamp: number) {
@@ -76,11 +79,13 @@ export default function MarketChart({
   fibonacci = null,
   structure = null,
   imbalance = null,
+  orderBlocks = null,
   showFib = true,
   showTrendFib = true,
   showStructure = true,
   showFvg = true,
-  showLiquidity = true
+  showLiquidity = true,
+  showOrderBlocks = true
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -395,6 +400,37 @@ export default function MarketChart({
       );
     }
 
+    if (showOrderBlocks && orderBlocks) {
+      for (const block of orderBlocks.activeBlocks.slice(-3)) {
+        const color =
+          block.direction === "bullish" ? "#5cbf8a" : "#dc7377";
+        const prefix =
+          block.direction === "bullish" ? "Bull OB" : "Bear OB";
+
+        analysisLinesRef.current.push(
+          series.createPriceLine({
+            price: block.lower,
+            color,
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: false,
+            title: `${prefix} L`
+          })
+        );
+
+        analysisLinesRef.current.push(
+          series.createPriceLine({
+            price: block.upper,
+            color,
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: false,
+            title: `${prefix} H`
+          })
+        );
+      }
+    }
+
     if (!fibonacci) return;
 
     if (showFib) {
@@ -451,11 +487,13 @@ export default function MarketChart({
     fibonacci,
     structure,
     imbalance,
+    orderBlocks,
     showFib,
     showTrendFib,
     showStructure,
     showFvg,
-    showLiquidity
+    showLiquidity,
+    showOrderBlocks
   ]);
 
   useEffect(() => {
