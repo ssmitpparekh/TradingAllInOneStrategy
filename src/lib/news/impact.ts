@@ -200,12 +200,40 @@ function inferBias(text: string): NewsBias {
   return "UNKNOWN";
 }
 
-function inferTags(text: string, region: NewsImpactEvent["region"]) {
+function inferTags(
+  text: string,
+  region: NewsImpactEvent["region"],
+  source: string
+) {
   const tags = new Set<string>();
 
   if (region === "INDIA") {
     tags.add("INDIA");
-    tags.add("NIFTY");
+
+    if (
+      /^RBI\b/i.test(source) ||
+      /\b(repo rate|monetary policy|inflation|gdp|fiscal|budget|rupee|liquidity)\b/i.test(
+        text
+      )
+    ) {
+      tags.add("INDIA_MACRO");
+      tags.add("NIFTY");
+    }
+
+    if (
+      /^SEBI\b/i.test(source) &&
+      /\b(circular|regulation|derivative|f&o|margin|short selling|market|mutual fund)\b/i.test(
+        text
+      )
+    ) {
+      tags.add("INDIA_MARKET_RULE");
+      tags.add("NIFTY");
+    }
+
+    if (/^PIB Economic/i.test(source)) {
+      tags.add("INDIA_MACRO");
+      tags.add("NIFTY");
+    }
   }
   if (region === "US") {
     tags.add("US");
@@ -345,7 +373,7 @@ export function analyzeNewsItem(raw: RawNewsItem): NewsImpactEvent {
     raw.sourceTier
   );
   const horizon = horizonFor(severity, text);
-  const tags = inferTags(text, raw.region);
+  const tags = inferTags(text, raw.region, raw.source);
   const symbols = inferSymbols(raw.headline);
   const publishedAt =
     raw.publishedAt && raw.publishedAt > 0 ? raw.publishedAt : null;
@@ -420,7 +448,9 @@ function eventAppliesTo(
   if (market === "KRAKEN" && tags.has("CRYPTO")) return true;
   if (
     (market === "NSE" || market === "BSE" || market === "MCX") &&
-    (tags.has("INDIA") || tags.has("GLOBAL_RISK"))
+    (tags.has("INDIA_MACRO") ||
+      tags.has("INDIA_MARKET_RULE") ||
+      tags.has("GLOBAL_RISK"))
   ) {
     return true;
   }
