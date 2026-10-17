@@ -1803,3 +1803,539 @@ h2 {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Production + mobile foundation */
+html {
+  min-width: 320px;
+  background: #080b10;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  overflow-x: hidden;
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a,
+input {
+  touch-action: manipulation;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: 2px solid #7f95ff;
+  outline-offset: 2px;
+}
+
+button {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.shell,
+.shell.wide {
+  padding-bottom: max(40px, env(safe-area-inset-bottom));
+}
+
+.instrumentPanel,
+.terminalCard,
+.card,
+.analysisCard {
+  min-width: 0;
+}
+
+.searchResults,
+.timeframes,
+.filterRow,
+.analysisToggles,
+.eventChips,
+.swingChips {
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.timeframes,
+.filterRow,
+.analysisToggles {
+  overscroll-behavior-inline: contain;
+}
+
+.timeframe,
+.filterChip,
+.liveShortcut,
+.analysisToggle,
+.compactButton {
+  min-height: 44px;
+}
+
+.marketChartShell,
+.marketChart {
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+.productionState {
+  display: grid;
+  min-height: 100svh;
+  place-items: center;
+  padding-top: max(24px, env(safe-area-inset-top));
+}
+
+.productionMessage {
+  width: min(680px, 100%);
+}
+
+.productionMessage h1 {
+  font-size: clamp(32px, 9vw, 58px);
+}
+
+.productionMessage p {
+  color: #9ca8ba;
+  line-height: 1.6;
+}
+
+@media (max-width: 900px) {
+  .shell,
+  .shell.wide {
+    width: min(100% - 20px, 1440px);
+    padding-top: max(18px, env(safe-area-inset-top));
+  }
+
+  .hero,
+  .compactHero {
+    margin-bottom: 14px;
+  }
+
+  .compactHero h1 {
+    font-size: clamp(38px, 12vw, 62px);
+    overflow-wrap: anywhere;
+  }
+
+  .lead {
+    margin-top: 12px;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .heroRow {
+    gap: 14px;
+  }
+
+  .connectionStack {
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .connectionPill {
+    min-height: 40px;
+    white-space: nowrap;
+  }
+
+  .instrumentPanel {
+    padding: 10px;
+    border-radius: 13px;
+  }
+
+  .instrumentSearchRow {
+    gap: 9px;
+  }
+
+  .searchBox input {
+    height: 48px;
+    padding-right: 86px;
+    font-size: 16px;
+  }
+
+  .instrumentSearchRow > .filterRow,
+  .typeFilters,
+  .liveNowRow .filterRow {
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .filterChip,
+  .liveShortcut {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .searchResults {
+    position: fixed;
+    z-index: 100;
+    top: max(82px, calc(env(safe-area-inset-top) + 70px));
+    right: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    left: 10px;
+    max-height: none;
+    border-radius: 14px;
+  }
+
+  .instrumentResult {
+    min-height: 62px;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .instrumentBadges {
+    justify-content: flex-start;
+  }
+
+  .marketHeader {
+    padding: 14px;
+    gap: 12px;
+  }
+
+  .priceRow {
+    gap: 6px 12px;
+  }
+
+  .priceRow h2 {
+    width: 100%;
+    font-size: 22px;
+  }
+
+  .bigPrice {
+    font-size: 24px;
+  }
+
+  .headerActions {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .marketHeader .headerActions .button {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 8px;
+    font-size: 12px;
+  }
+
+  .chartToolbar,
+  .stackedToolbar {
+    display: block;
+    padding: 10px;
+  }
+
+  .toolbarGroup + .toolbarGroup {
+    margin-top: 9px;
+  }
+
+  .timeframes,
+  .timeframes.scrollable {
+    width: 100%;
+    max-width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 0 0 5px;
+  }
+
+  .timeframe {
+    flex: 0 0 auto;
+    min-width: 48px;
+    padding-inline: 10px;
+  }
+
+  .historyStatus {
+    width: 100%;
+    margin-top: 7px;
+  }
+
+  .historyNotice,
+  .historyError {
+    padding: 9px 10px;
+    line-height: 1.4;
+  }
+
+  .marketChartShell,
+  .marketChart {
+    min-height: 420px;
+    height: clamp(420px, 57svh, 600px);
+  }
+
+  .crosshairReadout {
+    top: 6px;
+    left: 6px;
+    right: 6px;
+    gap: 5px 9px;
+    max-width: calc(100% - 12px);
+    overflow: hidden;
+    font-size: 10px;
+  }
+
+  .ohlcStrip {
+    gap: 8px 14px;
+    padding: 10px;
+    font-size: 11px;
+  }
+
+  .feedNote {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .analysisCard {
+    padding: 13px;
+  }
+
+  .analysisHeader {
+    gap: 10px;
+  }
+
+  .analysisHeader h3 {
+    font-size: 19px;
+  }
+
+  .analysisToggles {
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .analysisToggle {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .analysisSummary,
+  .structureStrip,
+  .imbalanceStrip,
+  .orderBlockStrip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .analysisSummary > div,
+  .structureStrip > div,
+  .imbalanceStrip > div,
+  .orderBlockStrip > div {
+    padding: 10px;
+  }
+
+  .fibTables,
+  .imbalanceGrid,
+  .orderBlockRows {
+    grid-template-columns: 1fr;
+  }
+
+  .fvgRow,
+  .orderBlockRow {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .eventChips,
+  .swingChips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .eventChip,
+  .swingChip {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .terminalCard:fullscreen {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .terminalCard:fullscreen .marketHeader {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .terminalCard:fullscreen .marketChartShell,
+  .terminalCard:fullscreen .marketChart {
+    min-height: 0;
+    height: auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .shell,
+  .shell.wide {
+    width: min(100% - 12px, 1440px);
+  }
+
+  .eyebrow,
+  .label {
+    font-size: 10px;
+  }
+
+  .connectionPill {
+    padding: 8px 10px;
+    font-size: 10px;
+  }
+
+  .liveNowRow {
+    gap: 7px;
+  }
+
+  .headerActions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .headerActions .button:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .marketChartShell,
+  .marketChart {
+    min-height: 380px;
+    height: clamp(380px, 54svh, 520px);
+  }
+
+  .analysisSummary,
+  .structureStrip,
+  .imbalanceStrip,
+  .orderBlockStrip {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .analysisSummary strong,
+  .structureStrip strong,
+  .imbalanceStrip strong,
+  .orderBlockStrip strong {
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+
+  .card {
+    border-radius: 13px;
+  }
+}
+
+@media (max-width: 380px) {
+  .analysisSummary,
+  .structureStrip,
+  .imbalanceStrip,
+  .orderBlockStrip {
+    grid-template-columns: 1fr;
+  }
+
+  .marketChartShell,
+  .marketChart {
+    min-height: 350px;
+    height: 50svh;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .timeframe:hover,
+  .filterChip:hover,
+  .liveShortcut:hover,
+  .instrumentResult:hover {
+    background: initial;
+  }
+
+  .timeframe.active {
+    background: #202b3b;
+  }
+
+  .filterChip.active,
+  .liveShortcut.active {
+    background: #1b2850;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+
+.appInstall {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.appInstallButton,
+.appInstallStatus {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px solid rgba(127, 149, 255, 0.34);
+  border-radius: 999px;
+  background: rgba(77, 107, 255, 0.12);
+  color: #bcc7ff;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.appInstallButton {
+  cursor: pointer;
+}
+
+.appInstallButton:hover {
+  background: rgba(77, 107, 255, 0.2);
+}
+
+.appInstallStatus {
+  border-color: rgba(116, 227, 155, 0.3);
+  background: rgba(116, 227, 155, 0.08);
+  color: #74e39b;
+}
+
+.appInstallHint {
+  position: absolute;
+  z-index: 120;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(300px, calc(100vw - 28px));
+  padding: 10px 12px;
+  border: 1px solid #2a3548;
+  border-radius: 10px;
+  background: #0c121b;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.42);
+  color: #aeb8c8;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+@media (max-width: 900px) {
+  .appInstall {
+    flex: 0 0 auto;
+  }
+
+  .appInstallButton,
+  .appInstallStatus {
+    min-height: 40px;
+  }
+
+  .appInstallHint {
+    right: auto;
+    left: 0;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .appInstallButton:hover {
+    background: rgba(77, 107, 255, 0.12);
+  }
+}

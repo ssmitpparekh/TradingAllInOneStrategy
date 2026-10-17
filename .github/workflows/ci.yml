@@ -15,3 +15,21 @@ jobs:
       - run: npm install
       - run: npm run typecheck
       - run: npm run build
+      - name: Production smoke test
+        shell: bash
+        run: |
+          npm run start > /tmp/allinoneview.log 2>&1 &
+          APP_PID=$!
+          trap 'kill $APP_PID || true' EXIT
+
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8080/api/health > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          curl --fail --silent http://127.0.0.1:8080/ > /dev/null
+          curl --fail --silent http://127.0.0.1:8080/api/health | grep '"ok":true'
+          curl --fail --silent http://127.0.0.1:8080/manifest.webmanifest | grep 'ALLINONEVIEW'
+          curl --fail --silent http://127.0.0.1:8080/sw.js | grep 'allinoneview-shell-v1'
