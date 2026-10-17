@@ -264,6 +264,7 @@ export default function Home() {
   const [showVwap, setShowVwap] = useState(true);
   const [showProfile, setShowProfile] = useState(true);
   const [showEma, setShowEma] = useState(true);
+  const [showSessionBreaks, setShowSessionBreaks] = useState(true);
   const [derivatives, setDerivatives] = useState<DerivativesData | null>(null);
   const [loadingDerivatives, setLoadingDerivatives] = useState(false);
   const [context4h, setContext4h] = useState<ChartCandle[]>([]);
@@ -1287,6 +1288,9 @@ export default function Home() {
           showVwap={showVwap}
           showProfile={showProfile}
           showEma={showEma}
+          market={selected.market}
+          resolution={resolution}
+          showSessionBreaks={showSessionBreaks}
         />
 
         {quote ? (
@@ -1521,6 +1525,16 @@ export default function Home() {
               onClick={() => setShowEma((value) => !value)}
             >
               EMA {showEma ? "ON" : "OFF"}
+            </button>
+            <button
+              className={
+                showSessionBreaks
+                  ? "analysisToggle active"
+                  : "analysisToggle"
+              }
+              onClick={() => setShowSessionBreaks((value) => !value)}
+            >
+              Sessions {showSessionBreaks ? "ON" : "OFF"}
             </button>
           </div>
         </div>
