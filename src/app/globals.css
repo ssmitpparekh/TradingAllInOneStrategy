@@ -2703,11 +2703,12 @@ button {
   position: absolute;
   bottom: 0;
   display: flex;
-  min-width: 3px;
+  min-width: 5px;
   overflow: visible;
   flex-direction: column;
   justify-content: flex-end;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
   opacity: 0.86;
   transform: translateZ(0);
   outline: none;
@@ -2784,13 +2785,13 @@ button {
 }
 
 .exactVolumeBar:hover,
-.exactVolumeBar:focus-visible {
+.exactVolumeBar.active {
   z-index: 30;
   opacity: 1;
 }
 
 .exactVolumeBar:hover .exactVolumeTooltip,
-.exactVolumeBar:focus-visible .exactVolumeTooltip {
+.exactVolumeBar.active .exactVolumeTooltip {
   opacity: 1;
   transform: translate(-50%, 0);
 }
@@ -5473,46 +5474,6 @@ html[data-theme="light"] .optionCapitalGrid strong {
 
 
 
-.orderFlowHoverCard {
-  position: absolute;
-  z-index: 40;
-  display: grid;
-  min-width: 220px;
-  max-width: 280px;
-  gap: 4px;
-  padding: 10px 11px;
-  border: 1px solid rgba(100, 116, 139, 0.42);
-  border-radius: 9px;
-  background: rgba(9, 14, 21, 0.97);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.34);
-  color: #cbd5e1;
-  font-size: 10px;
-  line-height: 1.35;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.orderFlowHoverCard strong {
-  color: #f8fafc;
-}
-
-.orderFlowHoverCard .flowBuy {
-  color: #74e39b;
-}
-
-.orderFlowHoverCard .flowSell {
-  color: #ff8587;
-}
-
-.orderFlowHoverCard small {
-  margin-top: 2px;
-  color: #94a3b8;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-}
-
-
 /* Full platform trade history */
 .performanceHeaderRow,
 .tradeHistoryHero,
@@ -5712,4 +5673,193 @@ html[data-theme="light"] .tradeHistorySummaryCard strong,
 html[data-theme="light"] .tradeHistoryHero h1,
 html[data-theme="light"] .tradeHistoryFullHeader h2 {
   color: #0f172a;
+}
+
+
+/* Historical market-structure event segments */
+.structureHistoryLayer {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.structureHistoryEvent {
+  position: absolute;
+  height: 18px;
+  transform: translateY(-9px);
+}
+
+.structureHistoryLine {
+  position: absolute;
+  top: 9px;
+  right: 0;
+  left: 0;
+  border-top: 2px solid currentColor;
+}
+
+.structureHistoryLabel {
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(8, 13, 20, 0.78);
+  color: currentColor;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  line-height: 1.35;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.structureHistoryEvent.bullish {
+  color: #2fc477;
+}
+
+.structureHistoryEvent.bearish {
+  color: #ed5b62;
+}
+
+.structureHistoryEvent.choch .structureHistoryLine {
+  border-top-style: dashed;
+}
+
+.structureHistoryEvent.bos .structureHistoryLine {
+  border-top-style: solid;
+}
+
+/* Chart feature dropdown */
+.chartViewActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chartFeaturesMenu {
+  position: relative;
+}
+
+.chartFeaturesMenu > summary {
+  list-style: none;
+}
+
+.chartFeaturesMenu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.chartFeaturesSummary {
+  cursor: pointer;
+}
+
+.chartFeaturesSummary::after {
+  margin-left: 6px;
+  content: "▾";
+  font-size: 9px;
+}
+
+.chartFeaturesMenu[open] .chartFeaturesSummary {
+  background: #202b3b;
+  color: #ffffff;
+}
+
+.chartFeaturesDropdown {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 7px);
+  right: 0;
+  display: grid;
+  width: 230px;
+  gap: 4px;
+  padding: 7px;
+  border: 1px solid #293244;
+  border-radius: 9px;
+  background: rgba(8, 13, 20, 0.98);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.36);
+}
+
+.chartFeatureOption {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #8c98aa;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.chartFeatureOption:hover {
+  background: #151e2b;
+  color: #eef4fb;
+}
+
+.chartFeatureOption.active {
+  background: rgba(77, 141, 255, 0.14);
+  color: #ffffff;
+}
+
+.chartFeatureOption strong {
+  color: #68768a;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+}
+
+.chartFeatureOption.active strong {
+  color: #73a4ff;
+}
+
+.chartFeatureOption:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+html[data-theme="light"] .structureHistoryLabel {
+  background: rgba(255, 255, 255, 0.86);
+}
+
+html[data-theme="light"] .chartFeaturesMenu[open] .chartFeaturesSummary {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+html[data-theme="light"] .chartFeaturesDropdown {
+  border-color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.14);
+}
+
+html[data-theme="light"] .chartFeatureOption {
+  color: #64748b;
+}
+
+html[data-theme="light"] .chartFeatureOption:hover,
+html[data-theme="light"] .chartFeatureOption.active {
+  background: #eef3fb;
+  color: #0f172a;
+}
+
+@media (max-width: 760px) {
+  .chartFeaturesDropdown {
+    position: fixed;
+    top: auto;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: auto;
+    max-height: min(70vh, 520px);
+    overflow-y: auto;
+  }
+
+  .chartViewActions {
+    align-items: stretch;
+  }
 }
