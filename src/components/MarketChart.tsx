@@ -17,6 +17,7 @@ import {
 } from "lightweight-charts";
 import { emaSeries } from "@/lib/analysis/indicators";
 import type { OrderFlowBucket } from "@/lib/analysis/order-flow";
+import type { DailyPivotLevels } from "@/lib/analysis/pivots";
 import {
   calculateVwapOverlay,
   type VolumeAnalytics,
@@ -82,6 +83,7 @@ type Props = {
   volumeAnalytics?: VolumeAnalytics | null;
   emaPeriods?: number[];
   vwapSettings?: VwapSettings;
+  pivotSets?: DailyPivotLevels[];
   showFib?: boolean;
   showTrendFib?: boolean;
   showStructure?: boolean;
@@ -90,6 +92,7 @@ type Props = {
   showOrderBlocks?: boolean;
   showVwap?: boolean;
   showProfile?: boolean;
+  showPivots?: boolean;
   showEma?: boolean;
   market?: string;
   resolution?: string;
@@ -172,6 +175,7 @@ export default function MarketChart({
   orderBlocks = null,
   volumeAnalytics = null,
   emaPeriods = [],
+  pivotSets = [],
   vwapSettings = {
     hideOnDailyOrAbove: true,
     anchorPeriod: "session",
@@ -192,6 +196,7 @@ export default function MarketChart({
   showOrderBlocks = true,
   showVwap = true,
   showProfile = true,
+  showPivots = false,
   showEma = true,
   market = "NSE",
   resolution = "15",
@@ -234,6 +239,17 @@ export default function MarketChart({
       side: "buy" | "sell";
       importance: "minor" | "major";
       level: number;
+    }>
+  >([]);
+  const [pivotLinePositions, setPivotLinePositions] = useState<
+    Array<{
+      key: string;
+      left: number;
+      width: number;
+      top: number;
+      label: string;
+      value: number;
+      kind: "pivot" | "resistance" | "support";
     }>
   >([]);
   const [sessionBreakPositions, setSessionBreakPositions] = useState<
@@ -939,6 +955,96 @@ export default function MarketChart({
     const series = seriesRef.current;
     const host = hostRef.current;
 
+    if (!chart || !series || !host || !showPivots || !pivotSets.length) {
+      setPivotLinePositions([]);
+      return;
+    }
+
+    const updatePivots = () => {
+      const hostWidth = host.clientWidth;
+      const positions: Array<{
+        key: string;
+        left: number;
+        width: number;
+        top: number;
+        label: string;
+        value: number;
+        kind: "pivot" | "resistance" | "support";
+      }> = [];
+
+      for (const set of pivotSets) {
+        const startX = chart.timeScale().timeToCoordinate(
+          set.sessionStart as Time
+        );
+        const endX =
+          set.sessionEnd === null
+            ? hostWidth
+            : chart.timeScale().timeToCoordinate(set.sessionEnd as Time);
+
+        if (startX === null) continue;
+
+        const rawLeft = Number(startX);
+        const rawRight = endX === null ? hostWidth : Number(endX);
+
+        if (rawRight < -20 || rawLeft > hostWidth + 20) continue;
+
+        const left = Math.max(0, rawLeft);
+        const right = Math.min(hostWidth, Math.max(rawLeft, rawRight));
+
+        if (right - left < 2) continue;
+
+        const levels: Array<{
+          label: string;
+          value: number;
+          kind: "pivot" | "resistance" | "support";
+        }> = [
+          { label: "R5", value: set.r5, kind: "resistance" },
+          { label: "R4", value: set.r4, kind: "resistance" },
+          { label: "R3", value: set.r3, kind: "resistance" },
+          { label: "R2", value: set.r2, kind: "resistance" },
+          { label: "R1", value: set.r1, kind: "resistance" },
+          { label: "P", value: set.p, kind: "pivot" },
+          { label: "S1", value: set.s1, kind: "support" },
+          { label: "S2", value: set.s2, kind: "support" },
+          { label: "S3", value: set.s3, kind: "support" },
+          { label: "S4", value: set.s4, kind: "support" },
+          { label: "S5", value: set.s5, kind: "support" }
+        ];
+
+        for (const level of levels) {
+          const y = series.priceToCoordinate(level.value);
+          if (y === null) continue;
+
+          positions.push({
+            key: `${set.sessionKey}:${level.label}`,
+            left,
+            width: right - left,
+            top: Number(y),
+            label: level.label,
+            value: level.value,
+            kind: level.kind
+          });
+        }
+      }
+
+      setPivotLinePositions(positions);
+    };
+
+    updatePivots();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(updatePivots);
+    window.addEventListener("resize", updatePivots);
+
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updatePivots);
+      window.removeEventListener("resize", updatePivots);
+    };
+  }, [showPivots, pivotSets, drawingRevision]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const host = hostRef.current;
+
     if (
       !chart ||
       !series ||
@@ -1604,6 +1710,29 @@ export default function MarketChart({
         })}
       </svg>
 
+      {showPivots && pivotLinePositions.length ? (
+        <div className="pivotLevelLayer" aria-hidden="true">
+          {pivotLinePositions.map((level) => (
+            <div
+              className={"pivotLevel " + level.kind}
+              key={level.key}
+              style={{
+                left: level.left,
+                top: level.top,
+                width: level.width
+              }}
+            >
+              <span className="pivotLevelLine" />
+              <span className="pivotLevelLabel">
+                {level.label}{" "}
+                {level.value.toLocaleString("en-IN", {
+                  maximumFractionDigits: 2
+                })}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {showLiquidity && liquidityLevelPositions.length ? (
         <div className="liquidityLevelLayer" aria-hidden="true">
           {liquidityLevelPositions.map((level) => (
