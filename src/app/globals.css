@@ -6406,3 +6406,224 @@ html[data-theme="light"] .volumeProfileLevel span {
   font-size: 8px;
   font-weight: 900;
 }
+
+
+/* FYERS-style technical meters built from existing calculations */
+.technicalMetersPanel {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr 0.9fr 1.35fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.technicalMeterCard,
+.technicalMaCard {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid #202937;
+  border-radius: 10px;
+  background: #090e15;
+}
+
+.technicalMeterHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.technicalMeterHeader > span {
+  color: #68768a;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.075em;
+}
+
+.technicalMeterHeader > strong {
+  color: #e7edf6;
+  font-size: 11px;
+}
+
+.technicalMeterCard > small {
+  display: block;
+  margin-top: 8px;
+  color: #657287;
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.fiveStateMeter {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 3px;
+  margin-top: 10px;
+}
+
+.fiveStateMeter i {
+  height: 8px;
+  border-radius: 999px;
+  background: #1b2431;
+  opacity: 0.7;
+}
+
+.fiveStateMeter i.strong_bearish,
+.fiveStateMeter i.bearish {
+  background: #6f3038;
+}
+
+.fiveStateMeter i.neutral {
+  background: #555f70;
+}
+
+.fiveStateMeter i.bullish,
+.fiveStateMeter i.strong_bullish {
+  background: #285b47;
+}
+
+.fiveStateMeter i.active {
+  opacity: 1;
+  box-shadow: 0 0 0 1px currentColor, 0 0 12px rgba(255, 255, 255, 0.08);
+}
+
+.fiveStateMeter i.active.strong_bearish,
+.fiveStateMeter i.active.bearish {
+  background: #e35d67;
+}
+
+.fiveStateMeter i.active.neutral {
+  background: #94a3b8;
+}
+
+.fiveStateMeter i.active.bullish,
+.fiveStateMeter i.active.strong_bullish {
+  background: #35b977;
+}
+
+.technicalLinearMeter {
+  height: 8px;
+  margin-top: 11px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(227, 93, 103, 0.7) 0 30%,
+    rgba(148, 163, 184, 0.35) 30% 70%,
+    rgba(53, 185, 119, 0.7) 70% 100%
+  );
+}
+
+.technicalLinearMeter.adx {
+  background: #1b2431;
+}
+
+.technicalLinearMeter > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: rgba(77, 141, 255, 0.92);
+  box-shadow: 0 0 10px rgba(77, 141, 255, 0.28);
+}
+
+.volatilityBadge {
+  display: inline-flex;
+  margin-top: 10px;
+  padding: 5px 8px;
+  border: 1px solid #2b3548;
+  border-radius: 999px;
+  color: #aab5c5;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.065em;
+}
+
+.volatilityBadge.low {
+  color: #82a7ff;
+}
+
+.volatilityBadge.normal {
+  color: #e4bd61;
+}
+
+.volatilityBadge.high {
+  color: #ff8587;
+}
+
+.technicalMaCard {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+}
+
+.technicalMaRow {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-top: 1px solid #182232;
+}
+
+.technicalMaRow span {
+  color: #8592a5;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.technicalMaRow strong {
+  color: #e5ebf4;
+  font-size: 10px;
+}
+
+.technicalMaRow b {
+  min-width: 46px;
+  text-align: right;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.technicalMaRow b.buy {
+  color: #74e39b;
+}
+
+.technicalMaRow b.sell {
+  color: #ff8587;
+}
+
+.technicalMaRow b.neutral {
+  color: #8a97aa;
+}
+
+html[data-theme="light"] .technicalMeterCard,
+html[data-theme="light"] .technicalMaCard {
+  border-color: #d5deea;
+  background: #ffffff;
+}
+
+html[data-theme="light"] .technicalMeterHeader > strong,
+html[data-theme="light"] .technicalMaRow strong {
+  color: #0f172a;
+}
+
+html[data-theme="light"] .technicalMaRow {
+  border-color: #e2e8f0;
+}
+
+@media (max-width: 1180px) {
+  .technicalMetersPanel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .technicalMaCard {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 620px) {
+  .technicalMetersPanel {
+    grid-template-columns: 1fr;
+  }
+
+  .technicalMaCard {
+    grid-column: auto;
+  }
+}
