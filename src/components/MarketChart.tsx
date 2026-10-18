@@ -2050,6 +2050,122 @@ export default function MarketChart({
         })}
       </svg>
 
+      {showFib && fibLevelPositions.length ? (
+        <div className="fibOverlayLayer" aria-hidden="true">
+          {fibGoldenZonePosition ? (
+            <div
+              className="fibGoldenZone"
+              style={{
+                left: fibGoldenZonePosition.left,
+                top: fibGoldenZonePosition.top,
+                width: fibGoldenZonePosition.width,
+                height: fibGoldenZonePosition.height
+              }}
+            />
+          ) : null}
+          {fibLevelPositions.map((level) => (
+            <div
+              className={
+                "fibOverlayLevel " +
+                (level.important ? "important " : "") +
+                (level.anchor ? "anchor" : "")
+              }
+              key={level.key}
+              style={{
+                left: level.left,
+                top: level.top,
+                width: level.width
+              }}
+            >
+              <span className="fibOverlayLine" />
+              <span className="fibOverlayLabel">{level.label}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {showTrendFib && trendFibLevelPositions.length ? (
+        <div className="trendFibOverlayLayer" aria-hidden="true">
+          {trendFibLevelPositions.map((level) => (
+            <div
+              className={
+                "trendFibOverlayLevel " +
+                (level.important ? "important" : "")
+              }
+              key={level.key}
+              style={{
+                left: level.left,
+                top: level.top,
+                width: level.width
+              }}
+            >
+              <span className="trendFibOverlayLine" />
+              <span className="trendFibOverlayLabel">{level.label}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {showOrderBlocks && orderBlockZonePositions.length ? (
+        <div className="orderBlockZoneLayer" aria-hidden="true">
+          {orderBlockZonePositions.map((block) => (
+            <div
+              className={"orderBlockZone " + block.direction}
+              key={block.key}
+              style={{
+                left: block.left,
+                top: block.top,
+                width: block.width,
+                height: block.height
+              }}
+            >
+              <span className="orderBlockZoneLabel">
+                {block.direction === "bullish" ? "BUY OB" : "SELL OB"}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {showProfile && volumeProfilePositions.length ? (
+        <div className="volumeProfileLayer" aria-hidden="true">
+          {volumeProfilePositions.map((bin) => (
+            <div
+              className="volumeProfileBin"
+              key={bin.key}
+              style={{
+                left: bin.left,
+                top: bin.top,
+                width: bin.totalWidth,
+                height: bin.height
+              }}
+            >
+              <span
+                className="volumeProfileSell"
+                style={{ width: bin.sellWidth }}
+              />
+              <span
+                className="volumeProfileBuy"
+                style={{ width: bin.buyWidth }}
+              />
+            </div>
+          ))}
+          {volumeProfileLevelPositions.map((level) => (
+            <div
+              className={"volumeProfileLevel " + level.label.toLowerCase()}
+              key={level.key}
+              style={{
+                left: level.left,
+                top: level.top,
+                width: level.width
+              }}
+            >
+              <span>{level.label}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       {showFvg && fvgZonePositions.length ? (
         <div className="fvgZoneLayer" aria-hidden="true">
           {fvgZonePositions.map((gap) => (
@@ -2084,8 +2200,7 @@ export default function MarketChart({
               style={{
                 left: level.left,
                 top: level.top,
-                width: level.width,
-                height: level.height
+                width: level.width
               }}
             >
               <span className="pivotLevelLine" />
@@ -2113,7 +2228,8 @@ export default function MarketChart({
               style={{
                 left: level.left,
                 top: level.top,
-                width: level.width
+                width: level.width,
+                height: level.height
               }}
             >
               <span className="liquidityLevelLine" />
