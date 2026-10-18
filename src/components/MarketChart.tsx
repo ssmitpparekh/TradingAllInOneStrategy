@@ -11,7 +11,6 @@ import {
   type Coordinate,
   type IChartApi,
   LineStyle,
-  type IPriceLine,
   type ISeriesApi,
   type Time
 } from "lightweight-charts";
@@ -215,11 +214,67 @@ export default function MarketChart({
     Map<string, ISeriesApi<"Line">>
   >(new Map());
   const emaSeriesRefs = useRef<Map<number, ISeriesApi<"Line">>>(new Map());
-  const analysisLinesRef = useRef<IPriceLine[]>([]);
   const [hovered, setHovered] = useState<ChartCandle | null>(null);
   const [activeOrderFlowTime, setActiveOrderFlowTime] = useState<number | null>(
     null
   );
+  const [fibLevelPositions, setFibLevelPositions] = useState<
+    Array<{
+      key: string;
+      left: number;
+      width: number;
+      top: number;
+      label: string;
+      important: boolean;
+      anchor: boolean;
+    }>
+  >([]);
+  const [fibGoldenZonePosition, setFibGoldenZonePosition] = useState<{
+    left: number;
+    width: number;
+    top: number;
+    height: number;
+  } | null>(null);
+  const [trendFibLevelPositions, setTrendFibLevelPositions] = useState<
+    Array<{
+      key: string;
+      left: number;
+      width: number;
+      top: number;
+      label: string;
+      important: boolean;
+    }>
+  >([]);
+  const [orderBlockZonePositions, setOrderBlockZonePositions] = useState<
+    Array<{
+      key: string;
+      left: number;
+      width: number;
+      top: number;
+      height: number;
+      direction: "bullish" | "bearish";
+    }>
+  >([]);
+  const [volumeProfilePositions, setVolumeProfilePositions] = useState<
+    Array<{
+      key: string;
+      left: number;
+      top: number;
+      height: number;
+      buyWidth: number;
+      sellWidth: number;
+      totalWidth: number;
+    }>
+  >([]);
+  const [volumeProfileLevelPositions, setVolumeProfileLevelPositions] = useState<
+    Array<{
+      key: string;
+      left: number;
+      width: number;
+      top: number;
+      label: "POC" | "VAH" | "VAL";
+    }>
+  >([]);
   const [structureEventPositions, setStructureEventPositions] = useState<
     Array<{
       key: string;
@@ -773,161 +828,6 @@ export default function MarketChart({
     });
   }, [liveCandle, candles]);
 
-  useEffect(() => {
-    const series = seriesRef.current;
-    if (!series) return;
-
-    for (const line of analysisLinesRef.current) {
-      try {
-        series.removePriceLine(line);
-      } catch {
-        // A chart reset can remove a line before this cleanup runs.
-      }
-    }
-    analysisLinesRef.current = [];
-
-    if (showOrderBlocks && orderBlocks) {
-      for (const block of orderBlocks.activeBlocks.slice(-3)) {
-        const color =
-          block.direction === "bullish" ? "#5cbf8a" : "#dc7377";
-        const prefix =
-          block.direction === "bullish" ? "Bull OB" : "Bear OB";
-
-        analysisLinesRef.current.push(
-          series.createPriceLine({
-            price: block.lower,
-            color,
-            lineWidth: 1,
-            lineStyle: LineStyle.Dashed,
-            axisLabelVisible: false,
-            title: `${prefix} L`
-          })
-        );
-
-        analysisLinesRef.current.push(
-          series.createPriceLine({
-            price: block.upper,
-            color,
-            lineWidth: 1,
-            lineStyle: LineStyle.Dashed,
-            axisLabelVisible: false,
-            title: `${prefix} H`
-          })
-        );
-      }
-    }
-
-    if (
-      showProfile &&
-      volumeAnalytics?.available &&
-      volumeAnalytics.profile.poc !== null
-    ) {
-      const profileLevels = [
-        {
-          title: "POC",
-          price: volumeAnalytics.profile.poc,
-          color: "#f5b942",
-          width: 2 as const
-        },
-        {
-          title: "VAH",
-          price: volumeAnalytics.profile.vah,
-          color: "#7d8ba1",
-          width: 1 as const
-        },
-        {
-          title: "VAL",
-          price: volumeAnalytics.profile.val,
-          color: "#7d8ba1",
-          width: 1 as const
-        }
-      ];
-
-      for (const level of profileLevels) {
-        if (level.price === null) continue;
-
-        analysisLinesRef.current.push(
-          series.createPriceLine({
-            price: level.price,
-            color: level.color,
-            lineWidth: level.width,
-            lineStyle:
-              level.title === "POC"
-                ? LineStyle.Solid
-                : LineStyle.Dashed,
-            axisLabelVisible: true,
-            title: level.title
-          })
-        );
-      }
-    }
-
-    if (!fibonacci) return;
-
-    if (showFib) {
-      for (const level of fibonacci.retracements) {
-        const important =
-          level.ratio === 0.618 ||
-          level.ratio === 0.705 ||
-          level.ratio === 0.786;
-
-        analysisLinesRef.current.push(
-          series.createPriceLine({
-            price: level.price,
-            color: important ? "#f5b942" : "#667085",
-            lineWidth: important ? 2 : 1,
-            lineStyle: important ? LineStyle.Solid : LineStyle.Dashed,
-            axisLabelVisible: true,
-            title: `Fib ${level.label}`
-          })
-        );
-      }
-    }
-
-    if (showTrendFib && fibonacci.trendExtension) {
-      for (const level of fibonacci.trendExtension.levels) {
-        const important = level.ratio === 1.272 || level.ratio === 1.618;
-
-        analysisLinesRef.current.push(
-          series.createPriceLine({
-            price: level.price,
-            color: important ? "#8b7cff" : "#536079",
-            lineWidth: important ? 2 : 1,
-            lineStyle: important ? LineStyle.Solid : LineStyle.Dotted,
-            axisLabelVisible: true,
-            title: `Trend ${level.label}`
-          })
-        );
-      }
-    }
-
-    return () => {
-      const activeSeries = seriesRef.current;
-      if (!activeSeries) return;
-
-      for (const line of analysisLinesRef.current) {
-        try {
-          activeSeries.removePriceLine(line);
-        } catch {
-          // no-op
-        }
-      }
-      analysisLinesRef.current = [];
-    };
-  }, [
-    fibonacci,
-    structure,
-    imbalance,
-    orderBlocks,
-    volumeAnalytics,
-    showFib,
-    showTrendFib,
-    showStructure,
-    showFvg,
-    showLiquidity,
-    showOrderBlocks,
-    showProfile
-  ]);
 
   useEffect(() => {
     const chart = chartRef.current;
