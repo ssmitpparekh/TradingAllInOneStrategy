@@ -8865,3 +8865,302 @@ html[data-theme="light"] .analyticsTabs button {
     grid-template-columns: minmax(0, 1fr) 72px minmax(0, 1fr);
   }
 }
+
+
+/* Utility analytics pages */
+.cryptoSignalGrid,
+.watchlistGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.cryptoSignalCard,
+.watchlistCard {
+  padding: 16px;
+}
+
+.cryptoSignalHeader,
+.watchlistCard {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cryptoSignalHeader h2,
+.watchlistCard h2 {
+  margin-top: 4px;
+  color: #edf2f8;
+  font-size: 18px;
+}
+
+.cryptoSignalPrice {
+  margin: 18px 0;
+  color: #f4f7fb;
+  font-size: 30px;
+  font-weight: 900;
+}
+
+.cryptoSignalState {
+  display: grid;
+  gap: 4px;
+  padding: 11px;
+  border: 1px solid #263143;
+  border-radius: 9px;
+  background: #090f17;
+}
+
+.cryptoSignalState.bullish {
+  border-color: rgba(54, 201, 135, .35);
+  background: rgba(54, 201, 135, .09);
+}
+
+.cryptoSignalState.bearish {
+  border-color: rgba(239, 107, 117, .35);
+  background: rgba(239, 107, 117, .09);
+}
+
+.cryptoSignalState strong {
+  font-size: 10px;
+}
+
+.cryptoSignalState span,
+.cryptoSignalState small {
+  color: #7f8ca0;
+  font-size: 9px;
+}
+
+.watchlistAddCard {
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.watchlistAddForm {
+  display: grid;
+  grid-template-columns: 150px minmax(220px, 1fr) minmax(180px, .7fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.watchlistAddForm label {
+  display: grid;
+  gap: 5px;
+}
+
+.watchlistAddForm label span {
+  color: #68758a;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.watchlistAddForm input,
+.watchlistAddForm select,
+.calculatorFormGrid input,
+.calculatorFormGrid select {
+  min-height: 39px;
+  width: 100%;
+  border: 1px solid #263143;
+  border-radius: 8px;
+  background: #090f17;
+  color: #eaf0f7;
+  padding: 0 10px;
+}
+
+.watchlistCard {
+  position: relative;
+  align-items: center;
+}
+
+.watchlistCard > div:first-child {
+  min-width: 0;
+}
+
+.watchlistCard > div:first-child small {
+  display: block;
+  margin-top: 4px;
+  color: #68758a;
+  font-size: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.watchlistQuote {
+  text-align: right;
+}
+
+.watchlistQuote strong,
+.watchlistQuote span {
+  display: block;
+}
+
+.watchlistQuote strong {
+  color: #eef3f8;
+  font-size: 18px;
+}
+
+.watchlistQuote span {
+  margin-top: 4px;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.watchlistRemove {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  border: 0;
+  background: transparent;
+  color: #67758a;
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.calculatorGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(340px, .85fr);
+  gap: 12px;
+}
+
+.calculatorInputs,
+.calculatorResults {
+  padding: 18px;
+}
+
+.calculatorFormGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.calculatorFormGrid label {
+  display: grid;
+  gap: 5px;
+}
+
+.calculatorFormGrid label span {
+  color: #68758a;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.calculatorResultGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.calculatorResultGrid > div {
+  padding: 10px;
+  border: 1px solid #1d2735;
+  border-radius: 8px;
+  background: #090f17;
+}
+
+.calculatorResultGrid span,
+.calculatorResultGrid strong {
+  display: block;
+}
+
+.calculatorResultGrid span {
+  color: #68758a;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.calculatorResultGrid strong {
+  margin-top: 5px;
+  color: #eef3f8;
+  font-size: 14px;
+}
+
+.dataSourcePendingCard {
+  padding: 20px;
+}
+
+.dataSourcePendingCard h2 {
+  margin-top: 5px;
+  color: #eef3f8;
+  font-size: 26px;
+}
+
+.dataSourcePendingCard > p:not(.label) {
+  max-width: 760px;
+  margin-top: 10px;
+  color: #8895a8;
+  line-height: 1.55;
+}
+
+.dataSourcePendingGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.dataSourcePendingGrid > div {
+  padding: 12px;
+  border: 1px solid #1d2735;
+  border-radius: 8px;
+  background: #090f17;
+}
+
+.dataSourcePendingGrid span,
+.dataSourcePendingGrid strong {
+  display: block;
+}
+
+.dataSourcePendingGrid span {
+  color: #68758a;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.dataSourcePendingGrid strong {
+  margin-top: 5px;
+  color: #dfe6ef;
+  font-size: 11px;
+}
+
+html[data-theme="light"] .cryptoSignalCard h2,
+html[data-theme="light"] .watchlistCard h2,
+html[data-theme="light"] .watchlistQuote strong,
+html[data-theme="light"] .calculatorResultGrid strong,
+html[data-theme="light"] .dataSourcePendingCard h2,
+html[data-theme="light"] .dataSourcePendingGrid strong {
+  color: #0f172a;
+}
+
+html[data-theme="light"] .cryptoSignalState,
+html[data-theme="light"] .watchlistAddForm input,
+html[data-theme="light"] .watchlistAddForm select,
+html[data-theme="light"] .calculatorFormGrid input,
+html[data-theme="light"] .calculatorFormGrid select,
+html[data-theme="light"] .calculatorResultGrid > div,
+html[data-theme="light"] .dataSourcePendingGrid > div {
+  border-color: #d8e0eb;
+  background: #ffffff;
+  color: #0f172a;
+}
+
+@media (max-width: 900px) {
+  .watchlistAddForm,
+  .calculatorGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .dataSourcePendingGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .calculatorFormGrid,
+  .calculatorResultGrid,
+  .dataSourcePendingGrid {
+    grid-template-columns: 1fr;
+  }
+}
