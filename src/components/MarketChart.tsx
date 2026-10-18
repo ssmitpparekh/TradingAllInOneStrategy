@@ -137,8 +137,14 @@ function chartHeightForHost(host: HTMLDivElement) {
   return Math.max(520, host.clientHeight || 560);
 }
 
+function marketTimeZone(market: string) {
+  if (market === "KRAKEN") return "UTC";
+  if (market === "OANDA") return "America/New_York";
+  return "Asia/Kolkata";
+}
+
 function sessionKey(timestamp: number, market: string) {
-  const timeZone = market === "KRAKEN" ? "UTC" : "Asia/Kolkata";
+  const timeZone = marketTimeZone(market);
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
     year: "numeric",
@@ -203,6 +209,15 @@ function indianMarketMinute(timestamp: number) {
   };
 }
 
+function marketWeekday(timestamp: number, timeZone: string) {
+  return (
+    new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      weekday: "short"
+    }).format(new Date(timestamp * 1000)) || ""
+  );
+}
+
 function futureAxisTimes(
   lastTime: number,
   market: string,
@@ -236,6 +251,17 @@ function futureAxisTimes(
       continue;
     }
 
+    if (market === "OANDA") {
+      const weekday = marketWeekday(
+        candidate,
+        "America/New_York"
+      );
+      if (weekday !== "Sat" && weekday !== "Sun") {
+        output.push(candidate);
+      }
+      continue;
+    }
+
     const local = indianMarketMinute(candidate);
     const weekdayOkay =
       local.weekday !== "Sat" && local.weekday !== "Sun";
@@ -256,7 +282,7 @@ function formatAxisTick(
   market: string,
   resolution: string
 ) {
-  const timeZone = market === "KRAKEN" ? "UTC" : "Asia/Kolkata";
+  const timeZone = marketTimeZone(market);
 
   if (isIntradayResolution(resolution)) {
     return new Intl.DateTimeFormat("en-GB", {
@@ -837,7 +863,7 @@ export default function MarketChart({
     const chart = chartRef.current;
     if (!chart) return;
 
-    const timeZone = market === "KRAKEN" ? "UTC" : "Asia/Kolkata";
+    const timeZone = marketTimeZone(market);
 
     chart.applyOptions({
       localization: {
@@ -1879,7 +1905,7 @@ export default function MarketChart({
     const overlay = calculateVwapOverlay(
       source,
       vwapSettings,
-      market === "KRAKEN" ? "UTC" : "Asia/Kolkata"
+      marketTimeZone(market)
     );
 
     vwapSeries.setData(
