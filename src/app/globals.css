@@ -5900,11 +5900,11 @@ html[data-theme="light"] .chartFeatureOption.active {
 }
 
 .liquidityLevel.buy {
-  color: #f0a15a;
+  color: #e35d67;
 }
 
 .liquidityLevel.sell {
-  color: #52c8b3;
+  color: #35b977;
 }
 
 .liquidityLevelLabel {
@@ -6150,4 +6150,54 @@ html[data-theme="light"] .featureOffButton {
 
 html[data-theme="light"] .pivotLevelLabel {
   background: rgba(255, 255, 255, 0.9);
+}
+
+
+/* Fair Value Gap zones */
+.fvgZoneLayer {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.fvgZone {
+  position: absolute;
+  min-height: 2px;
+  border: 1px solid currentColor;
+  border-right: 0;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  color: #35b977;
+}
+
+.fvgZone.bearish {
+  color: #e35d67;
+}
+
+.fvgZone.touched {
+  opacity: 0.72;
+}
+
+.fvgZone.filled {
+  opacity: 0.24;
+}
+
+.fvgZoneLabel {
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(8, 13, 20, 0.72);
+  color: currentColor;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+html[data-theme="light"] .fvgZoneLabel {
+  background: rgba(255, 255, 255, 0.78);
 }
