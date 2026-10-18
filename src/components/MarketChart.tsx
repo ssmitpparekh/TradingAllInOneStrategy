@@ -247,6 +247,7 @@ export default function MarketChart({
       left: number;
       width: number;
       top: number;
+      height: number;
       side: "buy" | "sell";
       importance: "minor" | "major";
       level: number;
@@ -1118,9 +1119,10 @@ export default function MarketChart({
         const sourceX = chart.timeScale().timeToCoordinate(
           level.sourceSwing.time as Time
         );
-        const y = series.priceToCoordinate(level.level);
+        const upperY = series.priceToCoordinate(level.zoneUpper);
+        const lowerY = series.priceToCoordinate(level.zoneLower);
 
-        if (sourceX === null || y === null) return [];
+        if (sourceX === null || upperY === null || lowerY === null) return [];
 
         const rawLeft = Number(sourceX);
 
@@ -1131,6 +1133,9 @@ export default function MarketChart({
 
         if (right - left < 2) return [];
 
+        const top = Math.min(Number(upperY), Number(lowerY));
+        const bottom = Math.max(Number(upperY), Number(lowerY));
+
         return [{
           key:
             level.importance +
@@ -1140,7 +1145,11 @@ export default function MarketChart({
             level.sourceSwing.time,
           left,
           width: right - left,
-          top: Number(y),
+          top,
+          height: Math.max(
+            level.importance === "major" ? 7 : 4,
+            bottom - top
+          ),
           side: level.side,
           importance: level.importance,
           level: level.level
@@ -1799,7 +1808,8 @@ export default function MarketChart({
               style={{
                 left: level.left,
                 top: level.top,
-                width: level.width
+                width: level.width,
+                height: level.height
               }}
             >
               <span className="pivotLevelLine" />
