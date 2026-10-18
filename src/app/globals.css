@@ -5772,7 +5772,12 @@ html[data-theme="light"] .tradeHistoryFullHeader h2 {
   top: calc(100% + 7px);
   right: 0;
   display: grid;
-  width: 230px;
+  width: 250px;
+  max-height: min(72vh, 640px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  touch-action: pan-y;
   gap: 4px;
   padding: 7px;
   border: 1px solid #293244;
@@ -6120,7 +6125,7 @@ html[data-theme="light"] .liquidityLevelLabel {
 .pivotLevelLabel {
   position: absolute;
   top: -3px;
-  right: 3px;
+  left: 3px;
   padding: 1px 4px;
   border-radius: 3px;
   background: rgba(8, 13, 20, 0.86);
@@ -6208,4 +6213,196 @@ html[data-theme="light"] .pivotLevelLabel {
 
 html[data-theme="light"] .fvgZoneLabel {
   background: rgba(255, 255, 255, 0.78);
+}
+
+
+/* Bounded Fibonacci overlays */
+.fibOverlayLayer,
+.trendFibOverlayLayer,
+.orderBlockZoneLayer,
+.volumeProfileLayer {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.fibOverlayLevel,
+.trendFibOverlayLevel {
+  position: absolute;
+  height: 16px;
+  transform: translateY(-8px);
+}
+
+.fibOverlayLine,
+.trendFibOverlayLine {
+  position: absolute;
+  top: 8px;
+  right: 0;
+  left: 0;
+  border-top: 1px dashed currentColor;
+}
+
+.fibOverlayLevel {
+  color: #778397;
+}
+
+.fibOverlayLevel.important {
+  color: #d9a934;
+}
+
+.fibOverlayLevel.anchor {
+  color: #50617b;
+}
+
+.fibOverlayLevel.important .fibOverlayLine,
+.fibOverlayLevel.anchor .fibOverlayLine {
+  border-top-style: solid;
+}
+
+.fibOverlayLabel,
+.trendFibOverlayLabel {
+  position: absolute;
+  top: -3px;
+  left: 4px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(8, 13, 20, 0.78);
+  color: currentColor;
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.fibGoldenZone {
+  position: absolute;
+  border: 1px solid rgba(217, 169, 52, 0.22);
+  background: rgba(217, 169, 52, 0.07);
+}
+
+.trendFibOverlayLevel {
+  color: #6f7f9b;
+}
+
+.trendFibOverlayLevel.important {
+  color: #7f69ff;
+}
+
+.trendFibOverlayLevel.important .trendFibOverlayLine {
+  border-top-style: solid;
+  border-top-width: 2px;
+}
+
+html[data-theme="light"] .fibOverlayLabel,
+html[data-theme="light"] .trendFibOverlayLabel {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+/* Virgin order-block zones */
+.orderBlockZone {
+  position: absolute;
+  min-height: 4px;
+  border: 1px solid currentColor;
+  border-right: 0;
+  background: color-mix(in srgb, currentColor 15%, transparent);
+}
+
+.orderBlockZone.bullish {
+  color: #2fb879;
+}
+
+.orderBlockZone.bearish {
+  color: #df5d67;
+}
+
+.orderBlockZoneLabel {
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(8, 13, 20, 0.76);
+  color: currentColor;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+html[data-theme="light"] .orderBlockZoneLabel {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+/* Compact right-side volume profile: max 10% of plot width */
+.volumeProfileBin {
+  position: absolute;
+  display: flex;
+  justify-content: flex-end;
+  min-height: 2px;
+  overflow: hidden;
+  opacity: 0.78;
+}
+
+.volumeProfileSell {
+  display: block;
+  height: 100%;
+  background: #e54867;
+}
+
+.volumeProfileBuy {
+  display: block;
+  height: 100%;
+  background: #20b97a;
+}
+
+.volumeProfileLevel {
+  position: absolute;
+  height: 14px;
+  transform: translateY(-7px);
+  border-top: 1px dashed #7d8ba1;
+}
+
+.volumeProfileLevel.poc {
+  border-top: 2px solid #e3a824;
+}
+
+.volumeProfileLevel span {
+  position: absolute;
+  top: -12px;
+  left: 0;
+  padding: 0 3px;
+  background: rgba(8, 13, 20, 0.78);
+  color: #8fa0b6;
+  font-size: 7px;
+  font-weight: 900;
+}
+
+.volumeProfileLevel.poc span {
+  color: #e3a824;
+}
+
+html[data-theme="light"] .volumeProfileLevel span {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+/* Feature editor footer controls */
+.featureEditorActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.featureDoneButton {
+  min-height: 29px;
+  padding: 0 9px;
+  border: 1px solid #4d8dff;
+  border-radius: 6px;
+  background: rgba(77, 141, 255, 0.12);
+  color: #dfe9ff;
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 900;
 }
