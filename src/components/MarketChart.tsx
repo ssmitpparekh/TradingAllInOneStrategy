@@ -317,7 +317,7 @@ export default function MarketChart({
   instrumentKey = "default"
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<IChartApi<Time> | null>(null);
+  const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const vwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const futureAxisSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
@@ -821,13 +821,15 @@ export default function MarketChart({
       }
     });
 
-    chart.timeScale().applyOptions({
-      timeVisible: true,
-      secondsVisible: false,
-      ignoreWhitespaceIndices: false,
-      tickMarkFormatter: (time: Time) => {
-        const epoch = toEpoch(time);
-        return epoch ? formatAxisTick(epoch, market, resolution) : "";
+    chart.applyOptions({
+      timeScale: {
+        timeVisible: true,
+        secondsVisible: false,
+        ignoreWhitespaceIndices: false,
+        tickMarkFormatter: (time: Time) => {
+          const epoch = toEpoch(time);
+          return epoch ? formatAxisTick(epoch, market, resolution) : "";
+        }
       }
     });
   }, [market, resolution]);
@@ -1884,18 +1886,19 @@ export default function MarketChart({
       for (const side of ["upper", "lower"] as const) {
         const key = `${bandNumber}:${side}`;
         wanted.add(key);
-        let series = vwapBandSeriesRefs.current.get(key);
-
-        if (!series) {
-          const bandColors = ["#4d8dff", "#8b7cff", "#94a3b8"];
-          series = chart.addSeries(LineSeries, {
-            color: bandColors[index] ?? "#94a3b8",
+        const existingSeries = vwapBandSeriesRefs.current.get(key);
+        const series =
+          existingSeries ??
+          chart.addSeries(LineSeries, {
+            color: ["#4d8dff", "#8b7cff", "#94a3b8"][index] ?? "#94a3b8",
             lineWidth: 1,
             lineStyle: LineStyle.Dashed,
             priceLineVisible: false,
             lastValueVisible: false,
             title: `VWAP B${bandNumber} ${side === "upper" ? "+" : "-"}`
           });
+
+        if (!existingSeries) {
           vwapBandSeriesRefs.current.set(key, series);
         }
 
@@ -1959,17 +1962,18 @@ export default function MarketChart({
         : candles;
 
     for (const period of normalizedPeriods) {
-      let series = emaSeriesRefs.current.get(period);
-
-      if (!series) {
-        const hue = (period * 47) % 360;
-        series = chart.addSeries(LineSeries, {
-          color: `hsl(${hue} 78% 55%)`,
+      const existingSeries = emaSeriesRefs.current.get(period);
+      const series =
+        existingSeries ??
+        chart.addSeries(LineSeries, {
+          color: `hsl(${(period * 47) % 360} 78% 55%)`,
           lineWidth: 2,
           priceLineVisible: false,
           lastValueVisible: true,
           title: `EMA ${period}`
         });
+
+      if (!existingSeries) {
         emaSeriesRefs.current.set(period, series);
       }
 
