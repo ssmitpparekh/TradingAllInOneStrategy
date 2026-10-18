@@ -506,7 +506,55 @@ export function detectLiquidityLevels(
     }
   ];
 
-  const allLevels: LiquidityLevel[] = [];
+  type Candidate = LiquidityLevel & {
+    confirmationIndex: number;
+    sweptIndex: number | null;
+  };
+
+  const chooseStickyActive = (
+    candidates: Candidate[]
+  ): Candidate | null => {
+    const ordered = candidates
+      .slice()
+      .sort(
+        (a, b) =>
+          a.confirmationIndex - b.confirmationIndex ||
+          a.sourceSwing.time - b.sourceSwing.time
+      );
+
+    let active: Candidate | null = null;
+
+    for (let index = 0; index < candles.length; index += 1) {
+      if (
+        active &&
+        active.sweptIndex !== null &&
+        active.sweptIndex <= index
+      ) {
+        active = null;
+      }
+
+      if (active) continue;
+
+      const available = ordered
+        .filter(
+          (candidate) =>
+            candidate.confirmationIndex <= index &&
+            (candidate.sweptIndex === null ||
+              candidate.sweptIndex > index)
+        )
+        .sort(
+          (a, b) =>
+            b.confirmationIndex - a.confirmationIndex ||
+            b.sourceSwing.time - a.sourceSwing.time
+        );
+
+      active = available[0] ?? null;
+    }
+
+    return active;
+  };
+
+  const selected: LiquidityLevel[] = [];
 
   for (const definition of definitions) {
     const swings = detectSwings(candles, {
@@ -515,81 +563,58 @@ export function detectLiquidityLevels(
       atrMultiplier: definition.atrMultiplier
     });
 
-    for (const swing of swings) {
-      const confirmationIndex = Math.min(
-        candles.length - 1,
-        swing.index + definition.rightBars
-      );
-      let sweptTime: number | null = null;
-
-      for (
-        let index = confirmationIndex + 1;
-        index < candles.length;
-        index += 1
-      ) {
-        const candle = candles[index];
-        const swept =
-          swing.type === "high"
-            ? candle.high > swing.price
-            : candle.low < swing.price;
-
-        if (swept) {
-          sweptTime = candle.time;
-          break;
-        }
-      }
-
-      allLevels.push({
-        side: swing.type === "high" ? "buy" : "sell",
-        importance: definition.importance,
-        level: swing.price,
-        sourceSwing: swing,
-        confirmedTime: candles[confirmationIndex].time,
-        sweptTime,
-        status: sweptTime === null ? "virgin" : "swept"
-      });
-    }
-  }
-
-  const latestClose = candles[candles.length - 1].close;
-  const selected: LiquidityLevel[] = [];
-
-  for (const importance of ["major", "minor"] as const) {
     for (const side of ["buy", "sell"] as const) {
-      const candidates = allLevels
-        .filter(
-          (level) =>
-            level.importance === importance &&
-            level.side === side &&
-            level.status === "virgin" &&
-            (side === "buy"
-              ? level.level >= latestClose
-              : level.level <= latestClose)
+      const candidates: Candidate[] = swings
+        .filter((swing) =>
+          side === "buy" ? swing.type === "high" : swing.type === "low"
         )
-        .sort((a, b) => {
-          const distanceA = Math.abs(a.level - latestClose);
-          const distanceB = Math.abs(b.level - latestClose);
+        .map((swing) => {
+          const confirmationIndex = Math.min(
+            candles.length - 1,
+            swing.index + definition.rightBars
+          );
+          let sweptIndex: number | null = null;
 
-          if (distanceA !== distanceB) {
-            return distanceA - distanceB;
+          for (
+            let index = confirmationIndex + 1;
+            index < candles.length;
+            index += 1
+          ) {
+            const candle = candles[index];
+            const swept =
+              side === "buy"
+                ? candle.high > swing.price
+                : candle.low < swing.price;
+
+            if (swept) {
+              sweptIndex = index;
+              break;
+            }
           }
 
-          return b.sourceSwing.time - a.sourceSwing.time;
+          return {
+            side,
+            importance: definition.importance,
+            level: swing.price,
+            sourceSwing: swing,
+            confirmedTime: candles[confirmationIndex].time,
+            sweptTime:
+              sweptIndex === null ? null : candles[sweptIndex].time,
+            status: sweptIndex === null ? "virgin" : "swept",
+            confirmationIndex,
+            sweptIndex
+          };
         });
 
-      const duplicateSource = new Set(
-        selected
-          .filter((level) => level.side === side)
-          .map((level) => level.sourceSwing.time)
-      );
+      const active = chooseStickyActive(candidates);
 
-      const preferred =
-        candidates.find(
-          (level) => !duplicateSource.has(level.sourceSwing.time)
-        ) ?? candidates[0];
-
-      if (preferred) {
-        selected.push(preferred);
+      if (active) {
+        const {
+          confirmationIndex: _confirmationIndex,
+          sweptIndex: _sweptIndex,
+          ...level
+        } = active;
+        selected.push(level);
       }
     }
   }
