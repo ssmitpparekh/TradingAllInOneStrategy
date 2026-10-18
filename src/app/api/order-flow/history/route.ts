@@ -34,9 +34,13 @@ function resolutionSeconds(resolution: string) {
 
 function aggregate(
   rows: OrderFlowBucket[],
-  resolution: string
+  resolution: string,
+  closedThrough: number
 ) {
   const grouped = new Map<number, OrderFlowBucket>();
+  const seconds = resolutionSeconds(resolution);
+
+  if (!seconds) return [];
 
   for (const row of rows) {
     const bucketTime = orderFlowBucketStart(
@@ -44,6 +48,11 @@ function aggregate(
       resolution
     );
     if (bucketTime === null) continue;
+
+    // Never label an in-progress requested-timeframe bucket as historical
+    // exact. Example: four completed 1m buckets inside the current 5m candle
+    // are still NOT a closed 5m candle.
+    if (bucketTime + seconds > closedThrough + 1) continue;
 
     const current = grouped.get(bucketTime);
     if (current) {
@@ -61,6 +70,8 @@ function aggregate(
         buyTrades: row.buyTrades,
         sellTrades: row.sellTrades,
         partial: false,
+        closed: true,
+        coverage: "full",
         quality: row.quality,
         source: "Persistent exact trade tape"
       });
@@ -131,7 +142,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       available: stored.available,
-      buckets: aggregate(stored.buckets, resolution),
+      buckets: aggregate(stored.buckets, resolution, safeTo),
       sourceResolution: "1m",
       requestedResolution: resolution,
       reason: stored.reason
