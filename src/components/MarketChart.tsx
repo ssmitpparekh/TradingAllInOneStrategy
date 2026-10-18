@@ -17,7 +17,11 @@ import {
 } from "lightweight-charts";
 import { emaSeries } from "@/lib/analysis/indicators";
 import type { OrderFlowBucket } from "@/lib/analysis/order-flow";
-import type { VolumeAnalytics } from "@/lib/analysis/volume";
+import {
+  calculateVwapOverlay,
+  type VolumeAnalytics,
+  type VwapSettings
+} from "@/lib/analysis/volume";
 import type {
   FibonacciSetup,
   ImbalanceLiquiditySnapshot,
@@ -77,6 +81,7 @@ type Props = {
   orderBlocks?: OrderBlockSnapshot | null;
   volumeAnalytics?: VolumeAnalytics | null;
   emaPeriods?: number[];
+  vwapSettings?: VwapSettings;
   showFib?: boolean;
   showTrendFib?: boolean;
   showStructure?: boolean;
@@ -167,6 +172,18 @@ export default function MarketChart({
   orderBlocks = null,
   volumeAnalytics = null,
   emaPeriods = [],
+  vwapSettings = {
+    hideOnDailyOrAbove: true,
+    anchorPeriod: "session",
+    source: "hlc3",
+    offset: 0,
+    bandsMode: "stdev",
+    bands: [
+      { enabled: true, multiplier: 1 },
+      { enabled: false, multiplier: 2 },
+      { enabled: false, multiplier: 3 }
+    ]
+  },
   showFib = true,
   showTrendFib = true,
   showStructure = true,
@@ -188,8 +205,10 @@ export default function MarketChart({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const sessionVwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const anchoredVwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const vwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const vwapBandSeriesRefs = useRef<
+    Map<string, ISeriesApi<"Line">>
+  >(new Map());
   const emaSeriesRefs = useRef<Map<number, ISeriesApi<"Line">>>(new Map());
   const analysisLinesRef = useRef<IPriceLine[]>([]);
   const [hovered, setHovered] = useState<ChartCandle | null>(null);
@@ -412,27 +431,17 @@ export default function MarketChart({
       priceLineVisible: true
     });
 
-    const sessionVwapSeries = chart.addSeries(LineSeries, {
-      color: "#4d8dff",
+    const vwapSeries = chart.addSeries(LineSeries, {
+      color: "#f5b942",
       lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: true,
       title: "VWAP"
     });
 
-    const anchoredVwapSeries = chart.addSeries(LineSeries, {
-      color: "#c386ff",
-      lineWidth: 2,
-      lineStyle: LineStyle.Dashed,
-      priceLineVisible: false,
-      lastValueVisible: true,
-      title: "AVWAP"
-    });
-
     chartRef.current = chart;
     seriesRef.current = series;
-    sessionVwapSeriesRef.current = sessionVwapSeries;
-    anchoredVwapSeriesRef.current = anchoredVwapSeries;
+    vwapSeriesRef.current = vwapSeries;
 
     chart.subscribeCrosshairMove((param) => {
       const item = param.seriesData.get(series);
@@ -511,8 +520,8 @@ export default function MarketChart({
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
-      sessionVwapSeriesRef.current = null;
-      anchoredVwapSeriesRef.current = null;
+      vwapSeriesRef.current = null;
+      vwapBandSeriesRefs.current.clear();
       emaSeriesRefs.current.clear();
     };
   }, []);
@@ -1169,30 +1178,99 @@ export default function MarketChart({
   }, [orderFlowBuckets, showOrderFlow, cumulativeDeltaByTime]);
 
   useEffect(() => {
-    const sessionSeries = sessionVwapSeriesRef.current;
-    const anchoredSeries = anchoredVwapSeriesRef.current;
-    if (!sessionSeries || !anchoredSeries) return;
+    const chart = chartRef.current;
+    const vwapSeries = vwapSeriesRef.current;
+    if (!chart || !vwapSeries) return;
 
-    if (!showVwap || !volumeAnalytics?.available) {
-      sessionSeries.setData([]);
-      anchoredSeries.setData([]);
+    const dailyOrAbove = ["1D", "1W", "1M"].includes(resolution);
+    const visible =
+      showVwap &&
+      Boolean(volumeAnalytics?.available) &&
+      !(vwapSettings.hideOnDailyOrAbove && dailyOrAbove);
+
+    if (!visible) {
+      vwapSeries.setData([]);
+      for (const series of vwapBandSeriesRefs.current.values()) {
+        try {
+          chart.removeSeries(series);
+        } catch {
+          // Series may already be gone during chart teardown.
+        }
+      }
+      vwapBandSeriesRefs.current.clear();
       return;
     }
 
-    sessionSeries.setData(
-      volumeAnalytics.sessionVwap.map((point) => ({
+    const source =
+      liveCandle &&
+      (!candles.length || liveCandle.time >= candles[candles.length - 1].time)
+        ? liveCandle.time === candles[candles.length - 1]?.time
+          ? [...candles.slice(0, -1), liveCandle]
+          : [...candles, liveCandle]
+        : candles;
+
+    const overlay = calculateVwapOverlay(
+      source,
+      vwapSettings,
+      market === "KRAKEN" ? "UTC" : "Asia/Kolkata"
+    );
+
+    vwapSeries.setData(
+      overlay.vwap.map((point) => ({
         time: point.time as Time,
         value: point.value
       }))
     );
 
-    anchoredSeries.setData(
-      volumeAnalytics.anchoredVwap.map((point) => ({
-        time: point.time as Time,
-        value: point.value
-      }))
-    );
-  }, [volumeAnalytics, showVwap]);
+    const wanted = new Set<string>();
+
+    overlay.bands.forEach((band, index) => {
+      const bandNumber = index + 1;
+      for (const side of ["upper", "lower"] as const) {
+        const key = `${bandNumber}:${side}`;
+        wanted.add(key);
+        let series = vwapBandSeriesRefs.current.get(key);
+
+        if (!series) {
+          const bandColors = ["#4d8dff", "#8b7cff", "#94a3b8"];
+          series = chart.addSeries(LineSeries, {
+            color: bandColors[index] ?? "#94a3b8",
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            title: `VWAP B${bandNumber} ${side === "upper" ? "+" : "-"}`
+          });
+          vwapBandSeriesRefs.current.set(key, series);
+        }
+
+        series.setData(
+          band[side].map((point) => ({
+            time: point.time as Time,
+            value: point.value
+          }))
+        );
+      }
+    });
+
+    for (const [key, series] of vwapBandSeriesRefs.current.entries()) {
+      if (wanted.has(key)) continue;
+      try {
+        chart.removeSeries(series);
+      } catch {
+        // Series may already be gone during chart teardown.
+      }
+      vwapBandSeriesRefs.current.delete(key);
+    }
+  }, [
+    candles,
+    liveCandle,
+    market,
+    resolution,
+    showVwap,
+    volumeAnalytics?.available,
+    vwapSettings
+  ]);
 
   useEffect(() => {
     const chart = chartRef.current;
