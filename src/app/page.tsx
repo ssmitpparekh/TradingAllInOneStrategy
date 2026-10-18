@@ -2228,6 +2228,16 @@ export default function Home() {
     orderFlowNeedsPartialRef.current = true;
     orderFlowPartialBucketRef.current = null;
 
+    if (selectedIsOanda) {
+      setStreamConnected(false);
+      setStreamMessage(
+        oandaConnected
+          ? `OANDA pricing: ${selected.symbol}`
+          : "OANDA is not connected."
+      );
+      return;
+    }
+
     if (!selectedIsKraken) {
       void fetch("/api/fyers/socket-diagnostic", { cache: "no-store" })
         .then((response) => response.json())
@@ -2483,6 +2493,8 @@ export default function Home() {
     selected.symbol,
     selected.market,
     selectedIsKraken,
+    selectedIsOanda,
+    oandaConnected,
     resolution
   ]);
 
@@ -2517,7 +2529,7 @@ export default function Home() {
   ]);
 
   useEffect(() => {
-    if (!viewReady || (!selectedIsKraken && !connected)) return;
+    if (!viewReady || (!selectedIsGlobal && !connected)) return;
 
     const controller = new AbortController();
 
@@ -2793,7 +2805,17 @@ export default function Home() {
               <span className="dot" />
               {oandaConnected ? "OANDA CONNECTED" : "OANDA OFFLINE"}
             </div>
-            <div className={streamConnected ? "connectionPill online" : "connectionPill"}>
+            <div
+              className={
+                selectedIsOanda
+                  ? oandaConnected
+                    ? "connectionPill online"
+                    : "connectionPill"
+                  : streamConnected
+                    ? "connectionPill online"
+                    : "connectionPill"
+              }
+            >
               <span className="dot" />
               {selectedIsOanda
                 ? oandaConnected
@@ -4267,7 +4289,9 @@ export default function Home() {
                 ? streamConnected
                   ? "Exact taker-side volume is live"
                   : "Waiting for exact live trades"
-                : "Exact order flow unavailable from the current FYERS market feed"}
+                : selectedIsOanda
+                    ? "Exact aggressor-side order flow is not available from the current OANDA pricing feed"
+                    : "Exact order flow unavailable from the current FYERS market feed"}
             </h3>
           </div>
           <span
@@ -4336,7 +4360,9 @@ export default function Home() {
           </p>
         ) : (
           <p className="orderFlowNote">
-            FYERS does not expose an aggressor-side field for every market trade in the current market-data feed. ALLINONEVIEW therefore shows no buyer/seller percentage rather than inventing one. The chart, volume, OI, VWAP and other real data remain available.
+            {selectedIsOanda
+              ? "OANDA pricing provides real bid/ask and candle data, but this integration does not claim exchange-level aggressor-side trade flow. ALLINONEVIEW therefore does not invent buyer/seller percentages."
+              : "FYERS does not expose an aggressor-side field for every market trade in the current market-data feed. ALLINONEVIEW therefore shows no buyer/seller percentage rather than inventing one. The chart, volume, OI, VWAP and other real data remain available."}
           </p>
         )}
       </section>
