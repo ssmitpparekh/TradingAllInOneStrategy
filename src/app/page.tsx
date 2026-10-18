@@ -430,6 +430,7 @@ function mergeLiveCandle(
 
 export default function Home() {
   const [connected, setConnected] = useState<boolean | null>(null);
+  const [oandaConnected, setOandaConnected] = useState(false);
   const [selected, setSelected] = useState<Instrument>(DEFAULT_INSTRUMENT);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [candles, setCandles] = useState<ChartCandle[]>([]);
@@ -1308,6 +1309,18 @@ export default function Home() {
     }
   }
 
+  async function refreshOandaStatus() {
+    try {
+      const response = await fetch("/api/oanda/status", {
+        cache: "no-store"
+      });
+      const data = await response.json();
+      setOandaConnected(Boolean(data.connected));
+    } catch {
+      setOandaConnected(false);
+    }
+  }
+
   async function fetchQuote(
     silent = false,
     symbol = selected.symbol,
@@ -2045,6 +2058,7 @@ export default function Home() {
 
   useEffect(() => {
     void refreshStatus();
+    void refreshOandaStatus();
 
     const onFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener("fullscreenchange", onFullscreenChange);
@@ -2074,6 +2088,23 @@ export default function Home() {
     selectedIsKraken,
     resolution,
     range
+  ]);
+
+  useEffect(() => {
+    if (!viewReady || !selectedIsOanda || !oandaConnected) return;
+
+    const refresh = () => {
+      void fetchQuote(true, selected.symbol, selected.market);
+    };
+
+    const timer = window.setInterval(refresh, 5000);
+    return () => window.clearInterval(timer);
+  }, [
+    viewReady,
+    selectedIsOanda,
+    oandaConnected,
+    selected.symbol,
+    selected.market
   ]);
 
   useEffect(() => {
@@ -2190,7 +2221,7 @@ export default function Home() {
   ]);
 
   useEffect(() => {
-    if (!viewReady || (!selectedIsKraken && !connected)) return;
+    if (!viewReady || (!selectedIsGlobal && !connected)) return;
 
     setLiveCandle(null);
     setOrderFlowBuckets([]);
@@ -2456,7 +2487,7 @@ export default function Home() {
   ]);
 
   useEffect(() => {
-    if (!viewReady || selectedIsKraken || !connected) {
+    if (!viewReady || selectedIsGlobal || !connected) {
       setDerivatives(null);
       return;
     }
@@ -2503,7 +2534,8 @@ export default function Home() {
   }, [
     viewReady,
     connected,
-    selectedIsKraken,
+    selectedIsGlobal,
+    selectedIsOanda,
     primaryAnalysisSymbol
   ]);
 
@@ -2751,15 +2783,29 @@ export default function Home() {
               <span className="dot" />
               {connected ? "FYERS CONNECTED" : "FYERS OFFLINE"}
             </div>
+            <div
+              className={
+                oandaConnected
+                  ? "connectionPill online"
+                  : "connectionPill"
+              }
+            >
+              <span className="dot" />
+              {oandaConnected ? "OANDA CONNECTED" : "OANDA OFFLINE"}
+            </div>
             <div className={streamConnected ? "connectionPill online" : "connectionPill"}>
               <span className="dot" />
-              {streamConnected
-                ? selectedIsKraken
-                  ? "KRAKEN LIVE"
-                  : "LIVE SOCKET"
-                : selectedIsKraken
-                  ? "KRAKEN WAITING"
-                  : "SOCKET WAITING"}
+              {selectedIsOanda
+                ? oandaConnected
+                  ? "OANDA PRICING"
+                  : "OANDA WAITING"
+                : streamConnected
+                  ? selectedIsKraken
+                    ? "KRAKEN LIVE"
+                    : "LIVE SOCKET"
+                  : selectedIsKraken
+                    ? "KRAKEN WAITING"
+                    : "SOCKET WAITING"}
             </div>
           </div>
         </div>
