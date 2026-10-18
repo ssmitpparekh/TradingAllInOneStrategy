@@ -147,10 +147,48 @@ function scoreInstrument(instrument: Instrument, query: string): number {
   const terms = q.split(/\s+/).filter(Boolean);
 
   if (!terms.every((term) => haystack.includes(term))) return 0;
-  if (symbol === q || underlying === q) return 1000;
-  if (symbol.startsWith(q) || underlying.startsWith(q)) return 850;
-  if (name.startsWith(q)) return 750;
-  return 500 + Math.max(0, 100 - symbol.length);
+
+  const indexAliases: Record<string, string[]> = {
+    "NSE:NIFTY50-INDEX": ["NIFTY", "NIFTY 50", "NIFTY50"],
+    "NSE:NIFTYBANK-INDEX": ["BANK NIFTY", "NIFTY BANK", "NIFTYBANK"],
+    "NSE:FINNIFTY-INDEX": ["FINNIFTY", "NIFTY FINANCIAL SERVICES"],
+    "NSE:NIFTYIT-INDEX": ["NIFTY IT", "NIFTYIT"],
+    "NSE:NIFTYMIDCAP50-INDEX": ["NIFTY MIDCAP 50", "NIFTYMIDCAP50"],
+    "NSE:INDIAVIX-INDEX": ["INDIA VIX", "INDIAVIX"],
+    "BSE:SENSEX-INDEX": ["SENSEX", "BSE SENSEX"]
+  };
+
+  if (instrument.type === "INDEX") {
+    const aliases = indexAliases[instrument.symbol] ?? [];
+
+    if (aliases.some((alias) => normalizeSearch(alias) === q)) {
+      return 10000;
+    }
+
+    if (name === q || underlying === q) return 9000;
+
+    if (
+      aliases.some((alias) => normalizeSearch(alias).startsWith(q)) ||
+      name.startsWith(q) ||
+      underlying.startsWith(q)
+    ) {
+      return 8000;
+    }
+
+    return 6500 + Math.max(0, 100 - symbol.length);
+  }
+
+  let score = 0;
+
+  if (symbol === q || underlying === q) score = 1000;
+  else if (symbol.startsWith(q) || underlying.startsWith(q)) score = 850;
+  else if (name.startsWith(q)) score = 750;
+  else score = 500 + Math.max(0, 100 - symbol.length);
+
+  if (instrument.type === "OPTION") score -= 300;
+  else if (instrument.type === "FUTURE") score -= 150;
+
+  return score;
 }
 
 export async function GET(request: NextRequest) {
