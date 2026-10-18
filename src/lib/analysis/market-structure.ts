@@ -58,6 +58,8 @@ export type LiquidityLevel = {
   side: "buy" | "sell";
   importance: "minor" | "major";
   level: number;
+  zoneLower: number;
+  zoneUpper: number;
   sourceSwing: SwingPoint;
   confirmedTime: number;
   sweptTime: number | null;
@@ -500,13 +502,15 @@ export function detectLiquidityLevels(
       importance: "minor" as const,
       leftBars: 2,
       rightBars: 2,
-      atrMultiplier: 0.35
+      atrMultiplier: 0.35,
+      zoneAtrFraction: 0.06
     },
     {
       importance: "major" as const,
       leftBars: 6,
       rightBars: 6,
-      atrMultiplier: 1
+      atrMultiplier: 1,
+      zoneAtrFraction: 0.12
     }
   ];
 
@@ -577,6 +581,18 @@ export function detectLiquidityLevels(
             candles.length - 1,
             swing.index + definition.rightBars
           );
+          const localStart = Math.max(0, swing.index - 20);
+          const localEnd = Math.min(candles.length, swing.index + 21);
+          const localAtr =
+            calculateAtr(candles.slice(localStart, localEnd)) ??
+            calculateAtr(candles) ??
+            0;
+          const zoneHalfWidth = Math.max(
+            swing.price * 0.00005,
+            localAtr * definition.zoneAtrFraction
+          );
+          const zoneLower = swing.price - zoneHalfWidth;
+          const zoneUpper = swing.price + zoneHalfWidth;
           let sweptIndex: number | null = null;
 
           for (
@@ -587,8 +603,8 @@ export function detectLiquidityLevels(
             const candle = candles[index];
             const swept =
               side === "buy"
-                ? candle.high > swing.price
-                : candle.low < swing.price;
+                ? candle.high >= zoneUpper
+                : candle.low <= zoneLower;
 
             if (swept) {
               sweptIndex = index;
@@ -600,6 +616,8 @@ export function detectLiquidityLevels(
             side,
             importance: definition.importance,
             level: swing.price,
+            zoneLower,
+            zoneUpper,
             sourceSwing: swing,
             confirmedTime: candles[confirmationIndex].time,
             sweptTime:
@@ -617,6 +635,8 @@ export function detectLiquidityLevels(
           side: active.side,
           importance: active.importance,
           level: active.level,
+          zoneLower: active.zoneLower,
+          zoneUpper: active.zoneUpper,
           sourceSwing: active.sourceSwing,
           confirmedTime: active.confirmedTime,
           sweptTime: active.sweptTime,
