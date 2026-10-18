@@ -15,7 +15,7 @@ import {
   type ISeriesApi,
   type Time
 } from "lightweight-charts";
-import type { TechnicalContext } from "@/lib/analysis/indicators";
+import { emaSeries } from "@/lib/analysis/indicators";
 import type { OrderFlowBucket } from "@/lib/analysis/order-flow";
 import type { VolumeAnalytics } from "@/lib/analysis/volume";
 import type {
@@ -76,7 +76,7 @@ type Props = {
   imbalance?: ImbalanceLiquiditySnapshot | null;
   orderBlocks?: OrderBlockSnapshot | null;
   volumeAnalytics?: VolumeAnalytics | null;
-  technicalContext?: TechnicalContext | null;
+  emaPeriods?: number[];
   showFib?: boolean;
   showTrendFib?: boolean;
   showStructure?: boolean;
@@ -166,7 +166,7 @@ export default function MarketChart({
   imbalance = null,
   orderBlocks = null,
   volumeAnalytics = null,
-  technicalContext = null,
+  emaPeriods = [],
   showFib = true,
   showTrendFib = true,
   showStructure = true,
@@ -190,9 +190,7 @@ export default function MarketChart({
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const sessionVwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const anchoredVwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const ema20SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const ema50SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const ema200SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const emaSeriesRefs = useRef<Map<number, ISeriesApi<"Line">>>(new Map());
   const analysisLinesRef = useRef<IPriceLine[]>([]);
   const [hovered, setHovered] = useState<ChartCandle | null>(null);
   const [activeOrderFlowTime, setActiveOrderFlowTime] = useState<number | null>(
@@ -431,38 +429,10 @@ export default function MarketChart({
       title: "AVWAP"
     });
 
-    const ema20Series = chart.addSeries(LineSeries, {
-      color: "#56b4ff",
-      lineWidth: 1,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      title: "EMA20"
-    });
-
-    const ema50Series = chart.addSeries(LineSeries, {
-      color: "#f5b942",
-      lineWidth: 1,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      title: "EMA50"
-    });
-
-    const ema200Series = chart.addSeries(LineSeries, {
-      color: "#d67cff",
-      lineWidth: 1,
-      lineStyle: LineStyle.Dashed,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      title: "EMA200"
-    });
-
     chartRef.current = chart;
     seriesRef.current = series;
     sessionVwapSeriesRef.current = sessionVwapSeries;
     anchoredVwapSeriesRef.current = anchoredVwapSeries;
-    ema20SeriesRef.current = ema20Series;
-    ema50SeriesRef.current = ema50Series;
-    ema200SeriesRef.current = ema200Series;
 
     chart.subscribeCrosshairMove((param) => {
       const item = param.seriesData.get(series);
@@ -543,9 +513,7 @@ export default function MarketChart({
       seriesRef.current = null;
       sessionVwapSeriesRef.current = null;
       anchoredVwapSeriesRef.current = null;
-      ema20SeriesRef.current = null;
-      ema50SeriesRef.current = null;
-      ema200SeriesRef.current = null;
+      emaSeriesRefs.current.clear();
     };
   }, []);
 
@@ -1227,38 +1195,59 @@ export default function MarketChart({
   }, [volumeAnalytics, showVwap]);
 
   useEffect(() => {
-    const ema20Series = ema20SeriesRef.current;
-    const ema50Series = ema50SeriesRef.current;
-    const ema200Series = ema200SeriesRef.current;
+    const chart = chartRef.current;
+    if (!chart) return;
 
-    if (!ema20Series || !ema50Series || !ema200Series) return;
+    const normalizedPeriods = showEma
+      ? [...new Set(emaPeriods)]
+          .map((period) => Math.trunc(period))
+          .filter((period) => Number.isFinite(period) && period > 0)
+          .sort((a, b) => a - b)
+      : [];
 
-    if (!showEma || !technicalContext) {
-      ema20Series.setData([]);
-      ema50Series.setData([]);
-      ema200Series.setData([]);
-      return;
+    const wanted = new Set(normalizedPeriods);
+
+    for (const [period, series] of emaSeriesRefs.current.entries()) {
+      if (wanted.has(period)) continue;
+      try {
+        chart.removeSeries(series);
+      } catch {
+        // Chart teardown can remove a dynamic EMA before this effect cleans it up.
+      }
+      emaSeriesRefs.current.delete(period);
     }
 
-    ema20Series.setData(
-      technicalContext.ema20.map((point) => ({
-        time: point.time as Time,
-        value: point.value
-      }))
-    );
-    ema50Series.setData(
-      technicalContext.ema50.map((point) => ({
-        time: point.time as Time,
-        value: point.value
-      }))
-    );
-    ema200Series.setData(
-      technicalContext.ema200.map((point) => ({
-        time: point.time as Time,
-        value: point.value
-      }))
-    );
-  }, [technicalContext, showEma]);
+    const source =
+      liveCandle &&
+      (!candles.length || liveCandle.time >= candles[candles.length - 1].time)
+        ? liveCandle.time === candles[candles.length - 1]?.time
+          ? [...candles.slice(0, -1), liveCandle]
+          : [...candles, liveCandle]
+        : candles;
+
+    for (const period of normalizedPeriods) {
+      let series = emaSeriesRefs.current.get(period);
+
+      if (!series) {
+        const hue = (period * 47) % 360;
+        series = chart.addSeries(LineSeries, {
+          color: `hsl(${hue} 78% 55%)`,
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: true,
+          title: `EMA ${period}`
+        });
+        emaSeriesRefs.current.set(period, series);
+      }
+
+      series.setData(
+        emaSeries(source, period).map((point) => ({
+          time: point.time as Time,
+          value: point.value
+        }))
+      );
+    }
+  }, [candles, liveCandle, showEma, emaPeriods]);
 
   useEffect(() => {
     if (fitNonce > 0) {
