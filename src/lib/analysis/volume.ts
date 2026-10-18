@@ -53,6 +53,8 @@ export type VolumeProfileBin = {
   high: number;
   midpoint: number;
   volume: number;
+  buyVolume: number;
+  sellVolume: number;
 };
 
 export type VolumeProfile = {
@@ -370,7 +372,9 @@ export function calculateVolumeProfile(
         low,
         high,
         midpoint: (low + high) / 2,
-        volume: 0
+        volume: 0,
+        buyVolume: 0,
+        sellVolume: 0
       };
     }
   );
@@ -393,9 +397,17 @@ export function calculateVolumeProfile(
     );
     const touchedBins = highIndex - lowIndex + 1;
     const volumePerBin = volume / touchedBins;
+    const range = candle.high - candle.low;
+    const buyShare =
+      range > 0
+        ? Math.min(1, Math.max(0, (candle.close - candle.low) / range))
+        : 0.5;
+    const sellShare = 1 - buyShare;
 
     for (let index = lowIndex; index <= highIndex; index += 1) {
       bins[index].volume += volumePerBin;
+      bins[index].buyVolume += volumePerBin * buyShare;
+      bins[index].sellVolume += volumePerBin * sellShare;
     }
   }
 
