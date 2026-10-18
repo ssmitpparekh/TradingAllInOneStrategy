@@ -87,13 +87,20 @@ function requestedLookback(
     "5Y": 5 * 366 * DAY
   };
 
-  if (range !== "MAX") return map[range];
+  const providerMax =
+    provider === "FYERS"
+      ? isDailyLike(resolution)
+        ? 5 * 366 * DAY
+        : 366 * DAY
+      : isDailyLike(resolution)
+        ? 5 * 366 * DAY
+        : 366 * DAY;
 
-  if (provider === "FYERS") {
-    return isDailyLike(resolution) ? 5 * 366 * DAY : 366 * DAY;
+  if (range !== "MAX") {
+    return Math.min(map[range], providerMax);
   }
 
-  return isDailyLike(resolution) ? 5 * 366 * DAY : 366 * DAY;
+  return providerMax;
 }
 
 function dedupeAndSort(candles: StoredMarketCandle[]) {
