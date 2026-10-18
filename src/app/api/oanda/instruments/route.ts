@@ -122,7 +122,7 @@ function score(item: InstrumentResult, query: string) {
   return 0;
 }
 
-async function load() {
+async function load(): Promise<InstrumentResult[]> {
   if (cache && Date.now() - cache.fetchedAt < CACHE_MS) {
     return cache.instruments;
   }
