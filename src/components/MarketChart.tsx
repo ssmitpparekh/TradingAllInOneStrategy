@@ -230,6 +230,17 @@ export default function MarketChart({
       direction: "bullish" | "bearish";
     }>
   >([]);
+  const [fvgZonePositions, setFvgZonePositions] = useState<
+    Array<{
+      key: string;
+      left: number;
+      width: number;
+      top: number;
+      height: number;
+      direction: "bullish" | "bearish";
+      status: "active" | "touched" | "filled";
+    }>
+  >([]);
   const [liquidityLevelPositions, setLiquidityLevelPositions] = useState<
     Array<{
       key: string;
@@ -774,39 +785,6 @@ export default function MarketChart({
     }
     analysisLinesRef.current = [];
 
-    if (showFvg && imbalance) {
-      const visibleGaps = imbalance.activeFvgs.slice(-3);
-
-      for (const gap of visibleGaps) {
-        const color =
-          gap.direction === "bullish" ? "#3fbf7f" : "#e66c70";
-        const prefix =
-          gap.direction === "bullish" ? "Bull FVG" : "Bear FVG";
-
-        analysisLinesRef.current.push(
-          series.createPriceLine({
-            price: gap.lower,
-            color,
-            lineWidth: 1,
-            lineStyle: LineStyle.Dotted,
-            axisLabelVisible: false,
-            title: `${prefix} L`
-          })
-        );
-
-        analysisLinesRef.current.push(
-          series.createPriceLine({
-            price: gap.upper,
-            color,
-            lineWidth: 1,
-            lineStyle: LineStyle.Dotted,
-            axisLabelVisible: false,
-            title: `${prefix} H`
-          })
-        );
-      }
-    }
-
     if (showOrderBlocks && orderBlocks) {
       for (const block of orderBlocks.activeBlocks.slice(-3)) {
         const color =
@@ -949,6 +927,83 @@ export default function MarketChart({
     showOrderBlocks,
     showProfile
   ]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const host = hostRef.current;
+
+    if (
+      !chart ||
+      !series ||
+      !host ||
+      !showFvg ||
+      !imbalance?.recentFvgs.length
+    ) {
+      setFvgZonePositions([]);
+      return;
+    }
+
+    const updateFvgs = () => {
+      const hostWidth = host.clientWidth;
+
+      const positions = imbalance.recentFvgs.flatMap((gap) => {
+        const startX = chart.timeScale().timeToCoordinate(
+          gap.createdTime as Time
+        );
+        const endX =
+          gap.filledTime === null
+            ? hostWidth
+            : chart.timeScale().timeToCoordinate(gap.filledTime as Time);
+
+        const upperY = series.priceToCoordinate(gap.upper);
+        const lowerY = series.priceToCoordinate(gap.lower);
+
+        if (startX === null || upperY === null || lowerY === null) return [];
+
+        const rawLeft = Number(startX);
+        const rawRight = endX === null ? hostWidth : Number(endX);
+
+        if (rawRight < -20 || rawLeft > hostWidth + 20) return [];
+
+        const left = Math.max(0, rawLeft);
+        const right = Math.min(hostWidth, Math.max(rawLeft, rawRight));
+
+        if (right - left < 2) return [];
+
+        const top = Math.min(Number(upperY), Number(lowerY));
+        const bottom = Math.max(Number(upperY), Number(lowerY));
+
+        return [{
+          key:
+            gap.direction +
+            ":" +
+            gap.createdTime +
+            ":" +
+            gap.lower +
+            ":" +
+            gap.upper,
+          left,
+          width: right - left,
+          top,
+          height: Math.max(2, bottom - top),
+          direction: gap.direction,
+          status: gap.status
+        }];
+      });
+
+      setFvgZonePositions(positions);
+    };
+
+    updateFvgs();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(updateFvgs);
+    window.addEventListener("resize", updateFvgs);
+
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateFvgs);
+      window.removeEventListener("resize", updateFvgs);
+    };
+  }, [showFvg, imbalance, drawingRevision]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -1710,6 +1765,31 @@ export default function MarketChart({
         })}
       </svg>
 
+      {showFvg && fvgZonePositions.length ? (
+        <div className="fvgZoneLayer" aria-hidden="true">
+          {fvgZonePositions.map((gap) => (
+            <div
+              className={
+                "fvgZone " +
+                gap.direction +
+                " " +
+                gap.status
+              }
+              key={gap.key}
+              style={{
+                left: gap.left,
+                top: gap.top,
+                width: gap.width,
+                height: gap.height
+              }}
+            >
+              <span className="fvgZoneLabel">
+                {gap.direction === "bullish" ? "BUY FVG" : "SELL FVG"}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {showPivots && pivotLinePositions.length ? (
         <div className="pivotLevelLayer" aria-hidden="true">
           {pivotLinePositions.map((level) => (
