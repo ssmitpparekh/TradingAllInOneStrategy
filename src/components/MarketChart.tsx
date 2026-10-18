@@ -345,6 +345,10 @@ export default function MarketChart({
   const [activeOrderFlowTime, setActiveOrderFlowTime] = useState<number | null>(
     null
   );
+  const [hoveredOrderFlowTime, setHoveredOrderFlowTime] = useState<
+    number | null
+  >(null);
+  const profileShiftAppliedRef = useRef(false);
   const [fibLevelPositions, setFibLevelPositions] = useState<
     Array<{
       key: string;
@@ -487,6 +491,8 @@ export default function MarketChart({
 
   useEffect(() => {
     setActiveOrderFlowTime(null);
+    setHoveredOrderFlowTime(null);
+    profileShiftAppliedRef.current = false;
     visibleRangeInitRef.current = null;
     futureAxisAnchorRef.current = null;
     try {
@@ -1681,6 +1687,39 @@ export default function MarketChart({
 
   useEffect(() => {
     const chart = chartRef.current;
+    if (!chart) return;
+
+    const timeScale = chart.timeScale();
+    const options = timeScale.options();
+    const barSpacing = Math.max(1, options.barSpacing ?? 8);
+    const paneWidth = Math.max(1, chart.paneSize().width);
+    const baseRightOffset = 8;
+
+    if (showProfile) {
+      if (profileShiftAppliedRef.current) return;
+
+      const profileWidthPx = paneWidth * 0.1;
+      const breathingRoomPx = Math.max(28, paneWidth * 0.025);
+      const reservedBars =
+        (profileWidthPx + breathingRoomPx) / barSpacing;
+
+      timeScale.applyOptions({
+        rightOffset: baseRightOffset + reservedBars
+      });
+      profileShiftAppliedRef.current = true;
+      return;
+    }
+
+    if (profileShiftAppliedRef.current) {
+      timeScale.applyOptions({
+        rightOffset: baseRightOffset
+      });
+      profileShiftAppliedRef.current = false;
+    }
+  }, [showProfile]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
     const host = hostRef.current;
 
     if (
@@ -1695,6 +1734,10 @@ export default function MarketChart({
 
     const updateBars = () => {
       const hostWidth = host.clientWidth;
+      const plotRight = Math.max(
+        0,
+        hostWidth - chart.priceScale("right").width() - 2
+      );
       const maxPaneHeight = Math.max(
         48,
         Math.min(100, Math.round(host.clientHeight * 0.18))
@@ -1742,7 +1785,15 @@ export default function MarketChart({
       const width = Math.max(3, Math.min(52, spacing * 0.78));
 
       setOrderFlowBarPositions(
-        visible.map(({ bucket, x }) => {
+        visible.flatMap(({ bucket, x }) => {
+          if (x - width / 2 > plotRight || x + width / 2 < 0) {
+            return [];
+          }
+
+          const safeX = Math.min(
+            plotRight - width / 2 - 1,
+            Math.max(width / 2 + 1, x)
+          );
           const total = bucket.buyVolume + bucket.sellVolume;
           const totalHeight =
             maxTotal > 0
@@ -1761,9 +1812,9 @@ export default function MarketChart({
           const cumulativeDelta =
             cumulativeDeltaByTime.get(bucket.time) ?? delta;
 
-          return {
+          return [{
             time: bucket.time,
-            x,
+            x: safeX,
             width,
             totalHeight,
             buyHeight,
@@ -1780,7 +1831,7 @@ export default function MarketChart({
             oiChange: bucket.oiChange ?? null,
             buyVolume: bucket.buyVolume,
             sellVolume: bucket.sellVolume
-          };
+          }];
         })
       );
     };
@@ -2481,19 +2532,87 @@ export default function MarketChart({
       ) : null}
       {showOrderFlow && orderFlowBarPositions.length ? (
         <div className="exactVolumeLayer">
+          {(() => {
+            const guideTime =
+              hoveredOrderFlowTime ?? activeOrderFlowTime;
+            const guideBar = guideTime === null
+              ? null
+              : orderFlowBarPositions.find(
+                  (bar) => bar.time === guideTime
+                );
+
+            return guideBar ? (
+              <span
+                className="exactVolumeCrosshair"
+                style={{ left: guideBar.x }}
+              />
+            ) : null;
+          })()}
           {orderFlowBarPositions.map((bar) => (
             <div
               className={
                 "exactVolumeBar " +
                 (bar.partial ? "partial " : "") +
-                (activeOrderFlowTime === bar.time ? "active" : "")
+                (activeOrderFlowTime === bar.time ||
+                hoveredOrderFlowTime === bar.time
+                  ? "active"
+                  : "")
               }
               key={bar.time}
+              onMouseEnter={() => {
+                setHoveredOrderFlowTime(bar.time);
+
+                const chart = chartRef.current;
+                const series = seriesRef.current;
+                if (!chart || !series) return;
+
+                const matchingCandle =
+                  liveCandle?.time === bar.time
+                    ? liveCandle
+                    : candles.find((candle) => candle.time === bar.time);
+
+                if (matchingCandle) {
+                  chart.setCrosshairPosition(
+                    matchingCandle.close,
+                    bar.time as Time,
+                    series
+                  );
+                }
+              }}
+              onMouseLeave={() => {
+                setHoveredOrderFlowTime(null);
+                if (activeOrderFlowTime === null) {
+                  chartRef.current?.clearCrosshairPosition();
+                }
+              }}
               onClick={(event) => {
                 event.stopPropagation();
-                setActiveOrderFlowTime((current) =>
-                  current === bar.time ? null : bar.time
-                );
+
+                setActiveOrderFlowTime((current) => {
+                  const next = current === bar.time ? null : bar.time;
+                  const chart = chartRef.current;
+                  const series = seriesRef.current;
+
+                  if (next === null) {
+                    chart?.clearCrosshairPosition();
+                    return null;
+                  }
+
+                  const matchingCandle =
+                    liveCandle?.time === bar.time
+                      ? liveCandle
+                      : candles.find((candle) => candle.time === bar.time);
+
+                  if (chart && series && matchingCandle) {
+                    chart.setCrosshairPosition(
+                      matchingCandle.close,
+                      bar.time as Time,
+                      series
+                    );
+                  }
+
+                  return next;
+                });
               }}
               style={{
                 left: bar.x - bar.width / 2,
