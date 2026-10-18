@@ -838,6 +838,358 @@ export default function MarketChart({
       !chart ||
       !series ||
       !host ||
+      !showFib ||
+      !fibonacci?.anchorA ||
+      !fibonacci.anchorB ||
+      !fibonacci.retracements.length
+    ) {
+      setFibLevelPositions([]);
+      setFibGoldenZonePosition(null);
+      return;
+    }
+
+    const updateFib = () => {
+      const hostWidth = host.clientWidth;
+      const startX = chart.timeScale().timeToCoordinate(
+        fibonacci.anchorA!.time as Time
+      );
+      const latestTime =
+        liveCandle?.time ?? candles[candles.length - 1]?.time ?? null;
+      const latestX =
+        latestTime === null
+          ? null
+          : chart.timeScale().timeToCoordinate(latestTime as Time);
+      const anchorBX = chart.timeScale().timeToCoordinate(
+        fibonacci.anchorB!.time as Time
+      );
+
+      if (startX === null) {
+        setFibLevelPositions([]);
+        setFibGoldenZonePosition(null);
+        return;
+      }
+
+      const rawLeft = Number(startX);
+      const rawRight =
+        latestX !== null
+          ? Number(latestX)
+          : anchorBX !== null
+            ? Number(anchorBX)
+            : hostWidth;
+
+      const left = Math.max(0, rawLeft);
+      const right = Math.min(hostWidth, Math.max(rawLeft, rawRight));
+
+      if (right - left < 2) {
+        setFibLevelPositions([]);
+        setFibGoldenZonePosition(null);
+        return;
+      }
+
+      setFibLevelPositions(
+        fibonacci.retracements.flatMap((level) => {
+          const y = series.priceToCoordinate(level.price);
+          if (y === null) return [];
+
+          return [{
+            key: `fib:${level.ratio}`,
+            left,
+            width: right - left,
+            top: Number(y),
+            label:
+              `${level.ratio.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")} · ` +
+              level.price.toLocaleString("en-IN", {
+                maximumFractionDigits: 2
+              }),
+            important:
+              level.ratio === 0.5 ||
+              level.ratio === 0.618 ||
+              level.ratio === 0.705 ||
+              level.ratio === 0.786,
+            anchor: level.ratio === 0 || level.ratio === 1
+          }];
+        })
+      );
+
+      if (fibonacci.goldenZone) {
+        const upperY = series.priceToCoordinate(fibonacci.goldenZone.high);
+        const lowerY = series.priceToCoordinate(fibonacci.goldenZone.low);
+
+        if (upperY !== null && lowerY !== null) {
+          const top = Math.min(Number(upperY), Number(lowerY));
+          const bottom = Math.max(Number(upperY), Number(lowerY));
+          setFibGoldenZonePosition({
+            left,
+            width: right - left,
+            top,
+            height: Math.max(2, bottom - top)
+          });
+        } else {
+          setFibGoldenZonePosition(null);
+        }
+      } else {
+        setFibGoldenZonePosition(null);
+      }
+    };
+
+    updateFib();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(updateFib);
+    window.addEventListener("resize", updateFib);
+
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateFib);
+      window.removeEventListener("resize", updateFib);
+    };
+  }, [showFib, fibonacci, candles, liveCandle, drawingRevision]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const host = hostRef.current;
+    const trend = fibonacci?.trendExtension;
+
+    if (!chart || !series || !host || !showTrendFib || !trend) {
+      setTrendFibLevelPositions([]);
+      return;
+    }
+
+    const updateTrendFib = () => {
+      const hostWidth = host.clientWidth;
+      const startX = chart.timeScale().timeToCoordinate(
+        trend.anchorC.time as Time
+      );
+      const latestTime =
+        liveCandle?.time ?? candles[candles.length - 1]?.time ?? null;
+      const latestX =
+        latestTime === null
+          ? null
+          : chart.timeScale().timeToCoordinate(latestTime as Time);
+
+      if (startX === null) {
+        setTrendFibLevelPositions([]);
+        return;
+      }
+
+      const rawLeft = Number(startX);
+      const rawRight = latestX === null ? hostWidth : Number(latestX);
+      const left = Math.max(0, rawLeft);
+      const right = Math.min(hostWidth, Math.max(rawLeft, rawRight));
+
+      if (right - left < 2) {
+        setTrendFibLevelPositions([]);
+        return;
+      }
+
+      setTrendFibLevelPositions(
+        trend.levels.flatMap((level) => {
+          const y = series.priceToCoordinate(level.price);
+          if (y === null) return [];
+
+          return [{
+            key: `trend-fib:${level.ratio}`,
+            left,
+            width: right - left,
+            top: Number(y),
+            label:
+              `${level.label} · ` +
+              level.price.toLocaleString("en-IN", {
+                maximumFractionDigits: 2
+              }),
+            important:
+              level.ratio === 1 ||
+              level.ratio === 1.272 ||
+              level.ratio === 1.618
+          }];
+        })
+      );
+    };
+
+    updateTrendFib();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(updateTrendFib);
+    window.addEventListener("resize", updateTrendFib);
+
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateTrendFib);
+      window.removeEventListener("resize", updateTrendFib);
+    };
+  }, [showTrendFib, fibonacci, candles, liveCandle, drawingRevision]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const host = hostRef.current;
+
+    if (
+      !chart ||
+      !series ||
+      !host ||
+      !showOrderBlocks ||
+      !orderBlocks?.activeBlocks.length
+    ) {
+      setOrderBlockZonePositions([]);
+      return;
+    }
+
+    const updateOrderBlocks = () => {
+      const hostWidth = host.clientWidth;
+      const latestTime =
+        liveCandle?.time ?? candles[candles.length - 1]?.time ?? null;
+      const latestX =
+        latestTime === null
+          ? null
+          : chart.timeScale().timeToCoordinate(latestTime as Time);
+      const rightBoundary =
+        latestX === null ? hostWidth : Math.min(hostWidth, Number(latestX));
+
+      setOrderBlockZonePositions(
+        orderBlocks.activeBlocks.flatMap((block) => {
+          const startX = chart.timeScale().timeToCoordinate(
+            block.sourceTime as Time
+          );
+          const upperY = series.priceToCoordinate(block.upper);
+          const lowerY = series.priceToCoordinate(block.lower);
+
+          if (startX === null || upperY === null || lowerY === null) return [];
+
+          const rawLeft = Number(startX);
+          if (rawLeft > rightBoundary) return [];
+
+          const left = Math.max(0, rawLeft);
+          const right = Math.max(left, rightBoundary);
+          if (right - left < 2) return [];
+
+          const top = Math.min(Number(upperY), Number(lowerY));
+          const bottom = Math.max(Number(upperY), Number(lowerY));
+
+          return [{
+            key: `ob:${block.direction}:${block.sourceTime}`,
+            left,
+            width: right - left,
+            top,
+            height: Math.max(3, bottom - top),
+            direction: block.direction
+          }];
+        })
+      );
+    };
+
+    updateOrderBlocks();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(updateOrderBlocks);
+    window.addEventListener("resize", updateOrderBlocks);
+
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateOrderBlocks);
+      window.removeEventListener("resize", updateOrderBlocks);
+    };
+  }, [showOrderBlocks, orderBlocks, candles, liveCandle, drawingRevision]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const host = hostRef.current;
+
+    if (
+      !chart ||
+      !series ||
+      !host ||
+      !showProfile ||
+      !volumeAnalytics?.available ||
+      !volumeAnalytics.profile.bins.length
+    ) {
+      setVolumeProfilePositions([]);
+      setVolumeProfileLevelPositions([]);
+      return;
+    }
+
+    const updateProfile = () => {
+      const hostWidth = host.clientWidth;
+      const priceScaleWidth = chart.priceScale("right").width();
+      const plotRight = Math.max(80, hostWidth - priceScaleWidth);
+      const maxProfileWidth = Math.max(48, plotRight * 0.1);
+      const maxVolume = Math.max(
+        ...volumeAnalytics.profile.bins.map((bin) => bin.volume),
+        0
+      );
+
+      if (!(maxVolume > 0)) {
+        setVolumeProfilePositions([]);
+        setVolumeProfileLevelPositions([]);
+        return;
+      }
+
+      setVolumeProfilePositions(
+        volumeAnalytics.profile.bins.flatMap((bin, index) => {
+          if (!(bin.volume > 0)) return [];
+
+          const highY = series.priceToCoordinate(bin.high);
+          const lowY = series.priceToCoordinate(bin.low);
+          if (highY === null || lowY === null) return [];
+
+          const top = Math.min(Number(highY), Number(lowY));
+          const bottom = Math.max(Number(highY), Number(lowY));
+          const totalWidth = Math.max(
+            1,
+            maxProfileWidth * (bin.volume / maxVolume)
+          );
+          const buyShare =
+            bin.volume > 0 ? bin.buyVolume / bin.volume : 0.5;
+          const buyWidth = totalWidth * buyShare;
+          const sellWidth = Math.max(0, totalWidth - buyWidth);
+
+          return [{
+            key: `profile:${index}`,
+            left: plotRight - totalWidth,
+            top,
+            height: Math.max(2, bottom - top - 1),
+            buyWidth,
+            sellWidth,
+            totalWidth
+          }];
+        })
+      );
+
+      const profileLeft = plotRight - maxProfileWidth;
+      const levels = [
+        ["POC", volumeAnalytics.profile.poc],
+        ["VAH", volumeAnalytics.profile.vah],
+        ["VAL", volumeAnalytics.profile.val]
+      ] as const;
+
+      setVolumeProfileLevelPositions(
+        levels.flatMap(([label, price]) => {
+          if (price === null) return [];
+          const y = series.priceToCoordinate(price);
+          if (y === null) return [];
+          return [{
+            key: `profile-level:${label}`,
+            left: profileLeft,
+            width: maxProfileWidth,
+            top: Number(y),
+            label
+          }];
+        })
+      );
+    };
+
+    updateProfile();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(updateProfile);
+    window.addEventListener("resize", updateProfile);
+
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateProfile);
+      window.removeEventListener("resize", updateProfile);
+    };
+  }, [showProfile, volumeAnalytics, drawingRevision]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const host = hostRef.current;
+
+    if (
+      !chart ||
+      !series ||
+      !host ||
       !showFvg ||
       !imbalance?.recentFvgs.length
     ) {
@@ -847,6 +1199,14 @@ export default function MarketChart({
 
     const updateFvgs = () => {
       const hostWidth = host.clientWidth;
+      const latestTime =
+        liveCandle?.time ?? candles[candles.length - 1]?.time ?? null;
+      const latestX =
+        latestTime === null
+          ? null
+          : chart.timeScale().timeToCoordinate(latestTime as Time);
+      const activeRight =
+        latestX === null ? hostWidth : Math.min(hostWidth, Number(latestX));
 
       const positions = imbalance.recentFvgs.flatMap((gap) => {
         const startX = chart.timeScale().timeToCoordinate(
@@ -854,7 +1214,7 @@ export default function MarketChart({
         );
         const endX =
           gap.filledTime === null
-            ? hostWidth
+            ? activeRight
             : chart.timeScale().timeToCoordinate(gap.filledTime as Time);
 
         const upperY = series.priceToCoordinate(gap.upper);
@@ -863,7 +1223,7 @@ export default function MarketChart({
         if (startX === null || upperY === null || lowerY === null) return [];
 
         const rawLeft = Number(startX);
-        const rawRight = endX === null ? hostWidth : Number(endX);
+        const rawRight = endX === null ? activeRight : Number(endX);
 
         if (rawRight < -20 || rawLeft > hostWidth + 20) return [];
 
@@ -904,7 +1264,7 @@ export default function MarketChart({
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateFvgs);
       window.removeEventListener("resize", updateFvgs);
     };
-  }, [showFvg, imbalance, drawingRevision]);
+  }, [showFvg, imbalance, candles, liveCandle, drawingRevision]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -918,6 +1278,14 @@ export default function MarketChart({
 
     const updatePivots = () => {
       const hostWidth = host.clientWidth;
+      const latestTime =
+        liveCandle?.time ?? candles[candles.length - 1]?.time ?? null;
+      const latestX =
+        latestTime === null
+          ? null
+          : chart.timeScale().timeToCoordinate(latestTime as Time);
+      const currentRight =
+        latestX === null ? hostWidth : Math.min(hostWidth, Number(latestX));
       const positions: Array<{
         key: string;
         left: number;
@@ -934,13 +1302,13 @@ export default function MarketChart({
         );
         const endX =
           set.sessionEnd === null
-            ? hostWidth
+            ? currentRight
             : chart.timeScale().timeToCoordinate(set.sessionEnd as Time);
 
         if (startX === null) continue;
 
         const rawLeft = Number(startX);
-        const rawRight = endX === null ? hostWidth : Number(endX);
+        const rawRight = endX === null ? currentRight : Number(endX);
 
         if (rawRight < -20 || rawLeft > hostWidth + 20) continue;
 
@@ -994,7 +1362,7 @@ export default function MarketChart({
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(updatePivots);
       window.removeEventListener("resize", updatePivots);
     };
-  }, [showPivots, pivotSets, drawingRevision]);
+  }, [showPivots, pivotSets, candles, liveCandle, drawingRevision]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -1014,6 +1382,14 @@ export default function MarketChart({
 
     const updateLiquidity = () => {
       const hostWidth = host.clientWidth;
+      const latestTime =
+        liveCandle?.time ?? candles[candles.length - 1]?.time ?? null;
+      const latestX =
+        latestTime === null
+          ? null
+          : chart.timeScale().timeToCoordinate(latestTime as Time);
+      const activeRight =
+        latestX === null ? hostWidth : Math.min(hostWidth, Number(latestX));
 
       const positions = imbalance.liquidityLevels.flatMap((level) => {
         const sourceX = chart.timeScale().timeToCoordinate(
@@ -1029,7 +1405,7 @@ export default function MarketChart({
         if (rawLeft > hostWidth + 20) return [];
 
         const left = Math.max(0, rawLeft);
-        const right = hostWidth;
+        const right = activeRight;
 
         if (right - left < 2) return [];
 
@@ -1067,7 +1443,7 @@ export default function MarketChart({
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateLiquidity);
       window.removeEventListener("resize", updateLiquidity);
     };
-  }, [showLiquidity, imbalance, drawingRevision]);
+  }, [showLiquidity, imbalance, candles, liveCandle, drawingRevision]);
 
   useEffect(() => {
     const chart = chartRef.current;
