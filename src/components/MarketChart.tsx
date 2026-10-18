@@ -321,6 +321,7 @@ export default function MarketChart({
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const vwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const futureAxisSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const futureAxisAnchorRef = useRef<string | null>(null);
   const overlayRafRef = useRef<number | null>(null);
   const vwapBandSeriesRefs = useRef<
     Map<string, ISeriesApi<"Line">>
@@ -465,11 +466,15 @@ export default function MarketChart({
     useState<DrawingPoint | null>(null);
   const [drawingRevision, setDrawingRevision] = useState(0);
 
+  const visibleRangeInitRef = useRef<string | null>(null);
+
   const drawingsStorageKey =
     "allinoneview:drawings:v1:" + instrumentKey;
 
   useEffect(() => {
     setActiveOrderFlowTime(null);
+    visibleRangeInitRef.current = null;
+    futureAxisAnchorRef.current = null;
     try {
       const saved = window.localStorage.getItem(drawingsStorageKey);
       const parsed = saved ? JSON.parse(saved) : [];
@@ -681,15 +686,10 @@ export default function MarketChart({
     });
     observer.observe(host);
 
-    chart.timeScale().subscribeVisibleLogicalRangeChange(scheduleOverlayRedraw);
-    chart.timeScale().subscribeSizeChange(scheduleOverlayRedraw);
-    host.addEventListener("pointermove", scheduleOverlayRedraw, {
-      passive: true
-    });
     host.addEventListener("pointerup", scheduleOverlayRedraw, {
       passive: true
     });
-    host.addEventListener("touchmove", scheduleOverlayRedraw, {
+    host.addEventListener("touchend", scheduleOverlayRedraw, {
       passive: true
     });
     window.addEventListener("resize", scheduleOverlayRedraw);
@@ -736,12 +736,9 @@ export default function MarketChart({
 
     return () => {
       host.removeEventListener("wheel", onVerticalWheel, true);
-      host.removeEventListener("pointermove", scheduleOverlayRedraw);
       host.removeEventListener("pointerup", scheduleOverlayRedraw);
-      host.removeEventListener("touchmove", scheduleOverlayRedraw);
+      host.removeEventListener("touchend", scheduleOverlayRedraw);
       window.removeEventListener("resize", scheduleOverlayRedraw);
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(scheduleOverlayRedraw);
-      chart.timeScale().unsubscribeSizeChange(scheduleOverlayRedraw);
       if (overlayRafRef.current !== null) {
         window.cancelAnimationFrame(overlayRafRef.current);
         overlayRafRef.current = null;
@@ -752,6 +749,7 @@ export default function MarketChart({
       seriesRef.current = null;
       vwapSeriesRef.current = null;
       futureAxisSeriesRef.current = null;
+      futureAxisAnchorRef.current = null;
       vwapBandSeriesRefs.current.clear();
       emaSeriesRefs.current.clear();
     };
@@ -855,6 +853,20 @@ export default function MarketChart({
     const chart = chartRef.current;
     if (!chart) return;
 
+    const historyKey =
+      instrumentKey +
+      ":" +
+      rangeKey +
+      ":" +
+      candles[0].time +
+      ":" +
+      candles[candles.length - 1].time +
+      ":" +
+      candles.length;
+
+    if (visibleRangeInitRef.current === historyKey) return;
+    visibleRangeInitRef.current = historyKey;
+
     if (rangeKey === "MAX") {
       chart.timeScale().fitContent();
       return;
@@ -888,16 +900,24 @@ export default function MarketChart({
       liveCandle?.time ?? candles[candles.length - 1]?.time ?? null;
 
     if (lastTime === null) {
-      futureSeries.setData([]);
+      if (futureAxisAnchorRef.current !== null) {
+        futureSeries.setData([]);
+        futureAxisAnchorRef.current = null;
+      }
       return;
     }
+
+    const anchorKey = `${market}:${resolution}:${lastTime}`;
+
+    if (futureAxisAnchorRef.current === anchorKey) return;
 
     futureSeries.setData(
       futureAxisTimes(lastTime, market, resolution).map((time) => ({
         time: time as Time
       }))
     );
-  }, [candles, liveCandle, market, resolution]);
+    futureAxisAnchorRef.current = anchorKey;
+  }, [candles, liveCandle?.time, market, resolution]);
 
   useEffect(() => {
     const chart = chartRef.current;
