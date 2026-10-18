@@ -219,9 +219,8 @@ export default function MarketChart({
       cumulativeDelta: number;
       oi: number | null;
       oiChange: number | null;
-      showPercent: boolean;
-      showCounts: boolean;
-      showMeta: boolean;
+      buyVolume: number;
+      sellVolume: number;
     }>
   >([]);
   const [tradeMarkerPositions, setTradeMarkerPositions] = useState<
@@ -1099,9 +1098,8 @@ export default function MarketChart({
             cumulativeDelta,
             oi: bucket.oi ?? null,
             oiChange: bucket.oiChange ?? null,
-            showPercent: width >= 22,
-            showCounts: width >= 34,
-            showMeta: width >= 40
+            buyVolume: bucket.buyVolume,
+            sellVolume: bucket.sellVolume
           };
         })
       );
@@ -1534,7 +1532,7 @@ export default function MarketChart({
         </div>
       ) : null}
       {showOrderFlow && orderFlowBarPositions.length ? (
-        <div className="exactVolumeLayer" aria-hidden="true">
+        <div className="exactVolumeLayer">
           {orderFlowBarPositions.map((bar) => (
             <div
               className={
@@ -1543,37 +1541,16 @@ export default function MarketChart({
                   : "exactVolumeBar"
               }
               key={bar.time}
+              tabIndex={0}
+              aria-label={
+                `Order flow ${formatIst(bar.time)}. Buy ${bar.buyPercent.toFixed(1)} percent, ${bar.buyTrades} trades. Sell ${bar.sellPercent.toFixed(1)} percent, ${bar.sellTrades} trades. Delta ${bar.deltaPercent >= 0 ? "+" : ""}${bar.deltaPercent.toFixed(1)} percent.`
+              }
               style={{
                 left: bar.x - bar.width / 2,
                 width: bar.width,
-                height:
-                  bar.totalHeight +
-                  (bar.showMeta ? 30 : 0)
+                height: bar.totalHeight
               }}
             >
-              {bar.showMeta ? (
-                <span className="exactVolumeMeta">
-                  <b>
-                    Δ{bar.deltaPercent >= 0 ? "+" : ""}
-                    {bar.deltaPercent.toFixed(0)}%
-                  </b>
-                  <small>
-                    CΔ{bar.cumulativeDelta >= 0 ? "+" : ""}
-                    {Math.abs(bar.cumulativeDelta) >= 1000
-                      ? (bar.cumulativeDelta / 1000).toFixed(1) + "k"
-                      : bar.cumulativeDelta.toFixed(1)}
-                  </small>
-                  {bar.oi !== null ? (
-                    <small>
-                      OI {bar.oi.toLocaleString("en-IN")}
-                      {bar.oiChange !== null
-                        ? " · Δ" +
-                          bar.oiChange.toLocaleString("en-IN")
-                        : ""}
-                    </small>
-                  ) : null}
-                </span>
-              ) : null}
               <span
                 className="exactVolumeStack"
                 style={{ height: bar.totalHeight }}
@@ -1581,30 +1558,48 @@ export default function MarketChart({
                 <span
                   className="exactVolumeBuy"
                   style={{ height: bar.buyHeight }}
-                >
-                  {bar.showPercent && bar.buyHeight >= 16 ? (
-                    <span className="exactVolumeSegmentLabel">
-                      <b>{bar.buyPercent.toFixed(0)}%</b>
-                      {bar.showCounts && bar.buyHeight >= 28 ? (
-                        <small>B#{bar.buyTrades}</small>
-                      ) : null}
-                    </span>
-                  ) : null}
-                </span>
+                />
                 <span
                   className="exactVolumeSell"
                   style={{ height: bar.sellHeight }}
-                >
-                  {bar.showPercent && bar.sellHeight >= 16 ? (
-                    <span className="exactVolumeSegmentLabel">
-                      <b>{bar.sellPercent.toFixed(0)}%</b>
-                      {bar.showCounts && bar.sellHeight >= 28 ? (
-                        <small>S#{bar.sellTrades}</small>
-                      ) : null}
-                    </span>
-                  ) : null}
-                </span>
+                />
               </span>
+
+              <div className="exactVolumeTooltip" role="tooltip">
+                <strong>{formatIst(bar.time)}</strong>
+                <span>
+                  BUY {bar.buyPercent.toFixed(1)}% ·{" "}
+                  {bar.buyVolume.toLocaleString("en-IN", {
+                    maximumFractionDigits: 6
+                  })}{" "}
+                  · B#{bar.buyTrades}
+                </span>
+                <span>
+                  SELL {bar.sellPercent.toFixed(1)}% ·{" "}
+                  {bar.sellVolume.toLocaleString("en-IN", {
+                    maximumFractionDigits: 6
+                  })}{" "}
+                  · S#{bar.sellTrades}
+                </span>
+                <span>
+                  Δ {bar.deltaPercent >= 0 ? "+" : ""}
+                  {bar.deltaPercent.toFixed(1)}% · CΔ{" "}
+                  {bar.cumulativeDelta >= 0 ? "+" : ""}
+                  {bar.cumulativeDelta.toLocaleString("en-IN", {
+                    maximumFractionDigits: 6
+                  })}
+                </span>
+                {bar.oi !== null ? (
+                  <span>
+                    OI {bar.oi.toLocaleString("en-IN")}
+                    {bar.oiChange !== null
+                      ? " · ΔOI " +
+                        bar.oiChange.toLocaleString("en-IN")
+                      : ""}
+                  </span>
+                ) : null}
+                <small>{bar.partial ? "LIVE PARTIAL BAR" : "EXACT CLOSED BAR"}</small>
+              </div>
             </div>
           ))}
         </div>
