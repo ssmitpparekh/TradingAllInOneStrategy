@@ -388,14 +388,28 @@ function mergeOrderFlowHistory(
       const normalized = {
         ...bucket,
         buyTrades: Number(bucket.buyTrades ?? 0),
-        sellTrades: Number(bucket.sellTrades ?? 0)
+        sellTrades: Number(bucket.sellTrades ?? 0),
+        closed: bucket.closed ?? !bucket.partial,
+        coverage:
+          bucket.coverage ?? (bucket.partial ? "partial" : "full")
       };
       const previous = byTime.get(normalized.time);
 
+      const previousRank = previous
+        ? (previous.closed ? 4 : 0) +
+          (previous.coverage === "full" ? 2 : 0) +
+          (!previous.partial ? 1 : 0)
+        : -1;
+      const normalizedRank =
+        (normalized.closed ? 4 : 0) +
+        (normalized.coverage === "full" ? 2 : 0) +
+        (!normalized.partial ? 1 : 0);
+
       if (
         !previous ||
-        (previous.partial && !normalized.partial) ||
-        normalized.trades > previous.trades
+        normalizedRank > previousRank ||
+        (normalizedRank === previousRank &&
+          normalized.trades > previous.trades)
       ) {
         byTime.set(normalized.time, normalized);
       }
@@ -2198,6 +2212,8 @@ export default function Home() {
     const completed = orderFlowBuckets
       .filter(
         (bucket) =>
+          (bucket.closed ?? !bucket.partial) &&
+          (bucket.coverage ?? (bucket.partial ? "partial" : "full")) === "full" &&
           !bucket.partial &&
           (currentBucket === null ||
             bucket.time < currentBucket)
@@ -2378,22 +2394,45 @@ export default function Home() {
         );
         if (bucketTime === null) return;
 
-        if (orderFlowNeedsPartialRef.current) {
+        const joinedMidBucket = orderFlowNeedsPartialRef.current;
+
+        if (joinedMidBucket) {
           orderFlowPartialBucketRef.current = bucketTime;
           orderFlowNeedsPartialRef.current = false;
         }
 
-        const isPartial =
-          orderFlowPartialBucketRef.current === bucketTime;
-
         setOrderFlowBuckets((current) => {
-          const next = [...current];
+          const next = current.map((bucket) => {
+            if (bucket.time >= bucketTime || bucket.closed) return bucket;
+
+            const coverage =
+              bucket.coverage ??
+              (bucket.partial ? "partial" : "full");
+
+            return {
+              ...bucket,
+              closed: true,
+              coverage,
+              partial: coverage === "partial"
+            };
+          });
+
           const existingIndex = next.findIndex(
             (bucket) => bucket.time === bucketTime
           );
 
+          const streamCoverage =
+            orderFlowPartialBucketRef.current === bucketTime
+              ? "partial"
+              : "full";
+
           if (existingIndex >= 0) {
             const existing = next[existingIndex];
+            const coverage =
+              joinedMidBucket || existing.coverage === "partial"
+                ? "partial"
+                : streamCoverage;
+
             next[existingIndex] = {
               ...existing,
               buyVolume:
@@ -2409,7 +2448,9 @@ export default function Home() {
               sellTrades:
                 (existing.sellTrades ?? 0) +
                 (trade.side === "sell" ? 1 : 0),
-              partial: existing.partial || isPartial
+              closed: false,
+              coverage,
+              partial: true
             };
           } else {
             next.push({
@@ -2419,7 +2460,9 @@ export default function Home() {
               trades: 1,
               buyTrades: trade.side === "buy" ? 1 : 0,
               sellTrades: trade.side === "sell" ? 1 : 0,
-              partial: isPartial,
+              closed: false,
+              coverage: streamCoverage,
+              partial: true,
               quality: "exact",
               source: "Kraken taker-side trades"
             });
@@ -4344,13 +4387,21 @@ export default function Home() {
               <div>
                 <span>TRADES SEEN</span>
                 <strong>{latestOrderFlow.trades.toLocaleString("en-IN")}</strong>
-                <small>{latestOrderFlow.partial ? "PARTIAL CURRENT CANDLE" : "COMPLETE FROM CANDLE OPEN"}</small>
+                <small>
+                  {latestOrderFlow.closed
+                    ? latestOrderFlow.partial
+                      ? "CLOSED · PARTIAL COVERAGE"
+                      : "EXACT CLOSED BAR"
+                    : latestOrderFlow.coverage === "partial"
+                      ? "LIVE · PARTIAL COVERAGE"
+                      : "LIVE · COMPLETE FROM OPEN SO FAR"}
+                </small>
               </div>
             </div>
 
-            {latestOrderFlow.partial ? (
+            {latestOrderFlow.coverage === "partial" ? (
               <p className="orderFlowNote">
-                This candle started before ALLINONEVIEW joined the trade stream, so only trades observed after connection are shown. The next full candle will be complete.
+                ALLINONEVIEW joined or reconnected after this candle had already started, so this bucket has incomplete coverage and is not presented as exact closed history.
               </p>
             ) : null}
           </>
