@@ -497,175 +497,234 @@ export function detectLiquidityLevels(
 ): LiquidityLevel[] {
   if (candles.length < 20) return [];
 
+  const latestClose = candles[candles.length - 1].close;
+  const globalAtr = calculateAtr(candles) ?? 0;
+
   const definitions = [
     {
       importance: "major" as const,
       leftBars: 6,
       rightBars: 6,
-      atrMultiplier: 1,
-      zoneAtrFraction: 0.12
+      zoneAtrFraction: 0.12,
+      prominenceLookback: 30
     },
     {
       importance: "minor" as const,
       leftBars: 2,
       rightBars: 2,
-      atrMultiplier: 0.35,
-      zoneAtrFraction: 0.06
+      zoneAtrFraction: 0.06,
+      prominenceLookback: 10
     }
   ];
 
   type Candidate = LiquidityLevel & {
     confirmationIndex: number;
     sweptIndex: number | null;
+    prominence: number;
+    distanceFromPrice: number;
   };
 
-  const chooseStickyActive = (
-    candidates: Candidate[],
-    excludedSourceTimes: Set<number>
-  ): Candidate | null => {
-    const ordered = candidates
-      .slice()
-      .sort(
-        (a, b) =>
-          a.confirmationIndex - b.confirmationIndex ||
-          a.sourceSwing.time - b.sourceSwing.time
-      );
+  const rawPivots = (
+    leftBars: number,
+    rightBars: number
+  ): SwingPoint[] => {
+    const points: SwingPoint[] = [];
 
-    let active: Candidate | null = null;
-
-    for (let index = 0; index < candles.length; index += 1) {
-      if (
-        active &&
-        active.sweptIndex !== null &&
-        active.sweptIndex <= index
-      ) {
-        active = null;
+    for (
+      let index = leftBars;
+      index < candles.length - rightBars;
+      index += 1
+    ) {
+      if (isPivotHigh(candles, index, leftBars, rightBars)) {
+        points.push({
+          index,
+          time: candles[index].time,
+          price: candles[index].high,
+          type: "high",
+          confirmed: true
+        });
       }
 
-      if (active) continue;
-
-      const available = ordered
-        .filter(
-          (candidate) =>
-            !excludedSourceTimes.has(candidate.sourceSwing.time) &&
-            candidate.confirmationIndex <= index &&
-            (candidate.sweptIndex === null ||
-              candidate.sweptIndex > index)
-        )
-        .sort(
-          (a, b) =>
-            b.confirmationIndex - a.confirmationIndex ||
-            b.sourceSwing.time - a.sourceSwing.time
-        );
-
-      active = available[0] ?? null;
+      if (isPivotLow(candles, index, leftBars, rightBars)) {
+        points.push({
+          index,
+          time: candles[index].time,
+          price: candles[index].low,
+          type: "low",
+          confirmed: true
+        });
+      }
     }
 
-    return active;
+    return points;
   };
+
+  const buildCandidates = (
+    definition: (typeof definitions)[number],
+    side: "buy" | "sell"
+  ): Candidate[] => {
+    const pivots = rawPivots(
+      definition.leftBars,
+      definition.rightBars
+    ).filter((swing) =>
+      side === "buy" ? swing.type === "high" : swing.type === "low"
+    );
+
+    return pivots.flatMap((swing) => {
+      const confirmationIndex = Math.min(
+        candles.length - 1,
+        swing.index + definition.rightBars
+      );
+
+      const localStart = Math.max(
+        0,
+        swing.index - definition.prominenceLookback
+      );
+      const localEnd = Math.min(
+        candles.length,
+        swing.index + definition.prominenceLookback + 1
+      );
+      const localCandles = candles.slice(localStart, localEnd);
+      const localAtr =
+        calculateAtr(localCandles) ??
+        globalAtr ??
+        0;
+
+      const zoneHalfWidth = Math.max(
+        swing.price * 0.00005,
+        localAtr * definition.zoneAtrFraction
+      );
+      const zoneLower = swing.price - zoneHalfWidth;
+      const zoneUpper = swing.price + zoneHalfWidth;
+
+      // A current liquidity pool must still sit on the expected side of
+      // current price: buy-side above price, sell-side below price.
+      const correctlyPositioned =
+        side === "buy"
+          ? swing.price > latestClose
+          : swing.price < latestClose;
+
+      if (!correctlyPositioned) return [];
+
+      let sweptIndex: number | null = null;
+
+      for (
+        let index = confirmationIndex + 1;
+        index < candles.length;
+        index += 1
+      ) {
+        const candle = candles[index];
+
+        // Liquidity is no longer virgin once price trades back through the
+        // actual swing level. Do not require penetration of the far edge of
+        // the visual zone.
+        const swept =
+          side === "buy"
+            ? candle.high >= swing.price
+            : candle.low <= swing.price;
+
+        if (swept) {
+          sweptIndex = index;
+          break;
+        }
+      }
+
+      if (sweptIndex !== null) return [];
+
+      const localHigh = Math.max(
+        ...localCandles.map((candle) => candle.high)
+      );
+      const localLow = Math.min(
+        ...localCandles.map((candle) => candle.low)
+      );
+      const rawProminence =
+        side === "buy"
+          ? swing.price - localLow
+          : localHigh - swing.price;
+      const prominence =
+        localAtr > 0 ? rawProminence / localAtr : rawProminence;
+      const distanceFromPrice =
+        globalAtr > 0
+          ? Math.abs(swing.price - latestClose) / globalAtr
+          : Math.abs(swing.price - latestClose);
+
+      return [{
+        side,
+        importance: definition.importance,
+        level: swing.price,
+        zoneLower,
+        zoneUpper,
+        sourceSwing: swing,
+        confirmedTime: candles[confirmationIndex].time,
+        sweptTime: null,
+        status: "virgin" as const,
+        confirmationIndex,
+        sweptIndex: null,
+        prominence,
+        distanceFromPrice
+      }];
+    });
+  };
+
+  const overlaps = (a: Candidate, b: LiquidityLevel) =>
+    Math.max(a.zoneLower, b.zoneLower) <=
+    Math.min(a.zoneUpper, b.zoneUpper);
 
   const selected: LiquidityLevel[] = [];
-  const usedSourceTimes = {
-    buy: new Set<number>(),
-    sell: new Set<number>()
-  };
 
-  for (const definition of definitions) {
-    const swings = detectSwings(candles, {
-      leftBars: definition.leftBars,
-      rightBars: definition.rightBars,
-      atrMultiplier: definition.atrMultiplier
-    });
-
-    for (const side of ["buy", "sell"] as const) {
-      const candidates: Candidate[] = swings
-        .filter((swing) =>
-          side === "buy" ? swing.type === "high" : swing.type === "low"
-        )
-        .map((swing) => {
-          const confirmationIndex = Math.min(
-            candles.length - 1,
-            swing.index + definition.rightBars
-          );
-          const localStart = Math.max(0, swing.index - 20);
-          const localEnd = Math.min(candles.length, swing.index + 21);
-          const localAtr =
-            calculateAtr(candles.slice(localStart, localEnd)) ??
-            calculateAtr(candles) ??
-            0;
-          const zoneHalfWidth = Math.max(
-            swing.price * 0.00005,
-            localAtr * definition.zoneAtrFraction
-          );
-          const zoneLower = swing.price - zoneHalfWidth;
-          const zoneUpper = swing.price + zoneHalfWidth;
-          let sweptIndex: number | null = null;
-
-          for (
-            let index = confirmationIndex + 1;
-            index < candles.length;
-            index += 1
-          ) {
-            const candle = candles[index];
-            const swept =
-              side === "buy"
-                ? candle.high >= zoneUpper
-                : candle.low <= zoneLower;
-
-            if (swept) {
-              sweptIndex = index;
-              break;
-            }
-          }
-
-          return {
-            side,
-            importance: definition.importance,
-            level: swing.price,
-            zoneLower,
-            zoneUpper,
-            sourceSwing: swing,
-            confirmedTime: candles[confirmationIndex].time,
-            sweptTime:
-              sweptIndex === null ? null : candles[sweptIndex].time,
-            status: sweptIndex === null ? "virgin" : "swept",
-            confirmationIndex,
-            sweptIndex
-          };
-        });
-
-      const distinctCandidates = candidates.filter((candidate) =>
-        selected.every((existing) => {
-          if (existing.side !== side) return true;
-          const zonesOverlap =
-            Math.max(candidate.zoneLower, existing.zoneLower) <=
-            Math.min(candidate.zoneUpper, existing.zoneUpper);
-          return (
-            candidate.sourceSwing.time !== existing.sourceSwing.time &&
-            !zonesOverlap
-          );
-        })
+  for (const side of ["buy", "sell"] as const) {
+    const majorCandidates = buildCandidates(definitions[0], side)
+      .sort(
+        (a, b) =>
+          b.prominence - a.prominence ||
+          b.distanceFromPrice - a.distanceFromPrice ||
+          b.sourceSwing.time - a.sourceSwing.time
       );
 
-      const active = chooseStickyActive(
-        distinctCandidates,
-        usedSourceTimes[side]
+    const major = majorCandidates[0] ?? null;
+
+    if (major) {
+      selected.push({
+        side: major.side,
+        importance: major.importance,
+        level: major.level,
+        zoneLower: major.zoneLower,
+        zoneUpper: major.zoneUpper,
+        sourceSwing: major.sourceSwing,
+        confirmedTime: major.confirmedTime,
+        sweptTime: null,
+        status: "virgin"
+      });
+    }
+
+    const minorCandidates = buildCandidates(definitions[1], side)
+      .filter(
+        (candidate) =>
+          !major ||
+          (candidate.sourceSwing.time !== major.sourceSwing.time &&
+            !overlaps(candidate, major))
+      )
+      .sort(
+        (a, b) =>
+          a.distanceFromPrice - b.distanceFromPrice ||
+          b.prominence - a.prominence ||
+          b.sourceSwing.time - a.sourceSwing.time
       );
 
-      if (active) {
-        usedSourceTimes[side].add(active.sourceSwing.time);
-        selected.push({
-          side: active.side,
-          importance: active.importance,
-          level: active.level,
-          zoneLower: active.zoneLower,
-          zoneUpper: active.zoneUpper,
-          sourceSwing: active.sourceSwing,
-          confirmedTime: active.confirmedTime,
-          sweptTime: active.sweptTime,
-          status: active.status
-        });
-      }
+    const minor = minorCandidates[0] ?? null;
+
+    if (minor) {
+      selected.push({
+        side: minor.side,
+        importance: minor.importance,
+        level: minor.level,
+        zoneLower: minor.zoneLower,
+        zoneUpper: minor.zoneUpper,
+        sourceSwing: minor.sourceSwing,
+        confirmedTime: minor.confirmedTime,
+        sweptTime: null,
+        status: "virgin"
+      });
     }
   }
 
