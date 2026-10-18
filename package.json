@@ -8,6 +8,7 @@
     "start": "next start -H 127.0.0.1 -p 8080",
     "typecheck": "tsc --noEmit",
     "collector:orderflow": "node scripts/order-flow-collector.mjs",
+    "backfill:market": "node scripts/backfill-market-data.mjs",
     "db:setup": "node scripts/apply-neon-schema.mjs",
     "db:smoke": "node scripts/neon-smoke.mjs"
   },
