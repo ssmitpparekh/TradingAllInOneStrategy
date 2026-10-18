@@ -84,14 +84,17 @@ export async function getOandaAccountId() {
   return id;
 }
 
-export async function getOandaInstruments() {
+export async function getOandaInstruments(): Promise<OandaInstrument[]> {
   const accountId = await getOandaAccountId();
   const body = await oandaFetch(
     `/v3/accounts/${encodeURIComponent(accountId)}/instruments`
   );
+  const items: Record<string, unknown>[] = Array.isArray(body?.instruments)
+    ? (body.instruments as Record<string, unknown>[])
+    : [];
 
-  return (Array.isArray(body?.instruments) ? body.instruments : [])
-    .map((item: Record<string, unknown>): OandaInstrument | null => {
+  return items
+    .map((item): OandaInstrument | null => {
       const name = String(item.name ?? "");
       const type = String(item.type ?? "") as OandaInstrument["type"];
       if (
@@ -187,7 +190,7 @@ export async function getOandaCandles(options: {
   resolution: string;
   from: number;
   to: number;
-}) {
+}): Promise<OandaCandle[]> {
   const accountId = await getOandaAccountId();
   const granularity = oandaGranularity(options.resolution);
   const query = new URLSearchParams({
@@ -203,8 +206,12 @@ export async function getOandaCandles(options: {
     `/v3/accounts/${encodeURIComponent(accountId)}/instruments/${encodeURIComponent(options.symbol)}/candles?${query.toString()}`
   );
 
-  return (Array.isArray(body?.candles) ? body.candles : [])
-    .flatMap((candle: Record<string, unknown>) => {
+  const candles: Record<string, unknown>[] = Array.isArray(body?.candles)
+    ? (body.candles as Record<string, unknown>[])
+    : [];
+
+  return candles
+    .flatMap((candle) => {
       const mid = candle.mid as Record<string, unknown> | undefined;
       if (!mid) return [];
 
