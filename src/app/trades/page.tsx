@@ -393,7 +393,7 @@ export default function TradesPage() {
   const pnlPreview = manualPnlPreview(form);
   const rrPreview = riskRewardPreview(form);
 
-  const updateForm = <K extends keyof ManualTradeForm>(
+  const updateForm = <K extends keyof ManualTradeForm,>(
     key: K,
     value: ManualTradeForm[K]
   ) => {
