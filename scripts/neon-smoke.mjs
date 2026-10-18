@@ -57,6 +57,7 @@ try {
       to_regclass('public.market_trade_tape') as trade_table,
       to_regclass('public.market_order_flow_1m') as bucket_table,
       to_regclass('public.market_candles') as candle_table,
+      to_regclass('public.manual_trade_journal') as journal_table,
       to_regprocedure(
         'public.refresh_market_order_flow_1m(text,text,text,bigint,bigint)'
       ) as refresh_function
@@ -68,6 +69,7 @@ try {
     !objectRow?.trade_table ||
     !objectRow?.bucket_table ||
     !objectRow?.candle_table ||
+    !objectRow?.journal_table ||
     !objectRow?.refresh_function
   ) {
     throw new Error(
