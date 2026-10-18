@@ -2564,6 +2564,54 @@ export default function Home() {
       void Promise.all(requests)
         .then((groups) => {
           const merged = groups.flat();
+          const normalizedQuery = query
+            .toUpperCase()
+            .replace(/[^A-Z0-9]+/g, " ")
+            .trim();
+
+          const indexAliases: Record<string, string[]> = {
+            "NSE:NIFTY50-INDEX": ["NIFTY", "NIFTY 50", "NIFTY50"],
+            "NSE:NIFTYBANK-INDEX": ["BANK NIFTY", "NIFTY BANK", "NIFTYBANK"],
+            "NSE:FINNIFTY-INDEX": ["FINNIFTY", "NIFTY FINANCIAL SERVICES"],
+            "NSE:NIFTYIT-INDEX": ["NIFTY IT", "NIFTYIT"],
+            "NSE:NIFTYMIDCAP50-INDEX": [
+              "NIFTY MIDCAP 50",
+              "NIFTYMIDCAP50"
+            ],
+            "NSE:INDIAVIX-INDEX": ["INDIA VIX", "INDIAVIX"],
+            "BSE:SENSEX-INDEX": ["SENSEX", "BSE SENSEX"]
+          };
+
+          const localPriority = (item: Instrument) => {
+            const aliases = indexAliases[item.symbol] ?? [];
+            if (item.type === "INDEX") {
+              if (aliases.includes(normalizedQuery)) return 10000;
+              if (
+                aliases.some(
+                  (alias) =>
+                    alias.startsWith(normalizedQuery) ||
+                    normalizedQuery.startsWith(alias)
+                )
+              ) {
+                return 8000;
+              }
+
+              const normalizedName = item.name
+                .toUpperCase()
+                .replace(/[^A-Z0-9]+/g, " ")
+                .trim();
+
+              if (normalizedName === normalizedQuery) return 9000;
+              if (normalizedName.startsWith(normalizedQuery)) return 7000;
+              return 5000;
+            }
+
+            if (item.type === "OPTION") return 500;
+            if (item.type === "FUTURE") return 1000;
+            if (item.type === "EQUITY") return 2500;
+            return 2000;
+          };
+
           const unique = [
             ...new Map(
               merged.map((item) => [
@@ -2571,7 +2619,13 @@ export default function Home() {
                 item
               ])
             ).values()
-          ].slice(0, 100);
+          ]
+            .sort(
+              (a, b) =>
+                localPriority(b) - localPriority(a) ||
+                a.name.localeCompare(b.name)
+            )
+            .slice(0, 100);
 
           setSearchResults(unique);
         })
@@ -2670,7 +2724,13 @@ export default function Home() {
         </section>
       ) : null}
 
-      <section className="instrumentPanel">
+      <section
+        className={
+          searchQuery.trim()
+            ? "instrumentPanel searchOpen"
+            : "instrumentPanel"
+        }
+      >
         <div className="instrumentSearchRow">
           <div className="searchBox">
             <span className="searchIcon">⌕</span>
