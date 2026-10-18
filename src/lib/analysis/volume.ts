@@ -28,6 +28,7 @@ export type VwapAnchorPeriod =
 export type VwapBandMode = "stdev" | "percentage";
 
 export type VwapSettings = {
+  hideOnDailyOrAbove: boolean;
   anchorPeriod: VwapAnchorPeriod;
   source: VwapSource;
   offset: number;
