@@ -26,6 +26,7 @@ export type StructureEvent = {
 export type MarketStructureSnapshot = {
   trend: "bullish" | "bearish" | "neutral";
   latestEvent: StructureEvent | null;
+  events: StructureEvent[];
   recentEvents: StructureEvent[];
   activeSwingHigh: SwingPoint | null;
   activeSwingLow: SwingPoint | null;
@@ -282,8 +283,7 @@ export function buildMarketStructure(
 ): MarketStructureSnapshot {
   const confirmationBars = Math.max(2, options?.confirmationBars ?? 3);
   const maxEvents = Math.max(1, options?.maxEvents ?? 12);
-  const recentCandles =
-    candles.length > 1200 ? candles.slice(-1200) : candles;
+  const recentCandles = candles;
 
   const swings = detectSwings(recentCandles, {
     rightBars: confirmationBars
@@ -361,7 +361,8 @@ export function buildMarketStructure(
 
   return {
     trend,
-    latestEvent: recentEvents[recentEvents.length - 1] ?? null,
+    latestEvent: events[events.length - 1] ?? null,
+    events,
     recentEvents,
     activeSwingHigh,
     activeSwingLow
