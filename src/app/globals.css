@@ -5926,3 +5926,8 @@ html[data-theme="light"] .chartFeatureOption.active {
 html[data-theme="light"] .liquidityLevelLabel {
   background: rgba(255, 255, 255, 0.9);
 }
+
+
+.liquidityLevel.minor .liquidityLevelLabel {
+  top: 10px;
+}
