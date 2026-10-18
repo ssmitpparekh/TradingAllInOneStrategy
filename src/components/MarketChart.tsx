@@ -198,6 +198,9 @@ export default function MarketChart({
   const ema200SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const analysisLinesRef = useRef<IPriceLine[]>([]);
   const [hovered, setHovered] = useState<ChartCandle | null>(null);
+  const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number } | null>(
+    null
+  );
   const [sessionBreakPositions, setSessionBreakPositions] = useState<
     Array<{ time: number; x: number }>
   >([]);
@@ -451,15 +454,22 @@ export default function MarketChart({
       const item = param.seriesData.get(series);
       if (!item || !("open" in item) || !param.time) {
         setHovered(null);
+        setHoverPoint(null);
         return;
       }
 
       const epoch = toEpoch(param.time);
       if (!epoch) {
         setHovered(null);
+        setHoverPoint(null);
         return;
       }
 
+      setHoverPoint(
+        param.point
+          ? { x: Number(param.point.x), y: Number(param.point.y) }
+          : null
+      );
       setHovered({
         time: epoch,
         open: Number(item.open),
@@ -1346,6 +1356,63 @@ export default function MarketChart({
           ) : null}
         </div>
       ) : null}
+      {hovered &&
+      readoutOrderFlow &&
+      readoutOrderFlowStats &&
+      hoverPoint ? (
+        <div
+          className="orderFlowHoverCard"
+          style={{
+            left:
+              hoverPoint.x >
+              (hostRef.current?.clientWidth ?? 0) - 250
+                ? Math.max(8, hoverPoint.x - 238)
+                : hoverPoint.x + 14,
+            top: Math.max(8, hoverPoint.y - 74)
+          }}
+        >
+          <strong>{formatIst(hovered.time)}</strong>
+          <span className="flowBuy">
+            BUY {readoutOrderFlowStats.buyPercent.toFixed(1)}% ·{" "}
+            {readoutOrderFlow.buyVolume.toLocaleString("en-IN", {
+              maximumFractionDigits: 6
+            })}{" "}
+            · B#{readoutOrderFlow.buyTrades}
+          </span>
+          <span className="flowSell">
+            SELL {readoutOrderFlowStats.sellPercent.toFixed(1)}% ·{" "}
+            {readoutOrderFlow.sellVolume.toLocaleString("en-IN", {
+              maximumFractionDigits: 6
+            })}{" "}
+            · S#{readoutOrderFlow.sellTrades}
+          </span>
+          <span>
+            Δ {readoutOrderFlowStats.deltaPercent >= 0 ? "+" : ""}
+            {readoutOrderFlowStats.deltaPercent.toFixed(1)}%
+            {readoutCumulativeDelta !== null
+              ? " · CΔ " +
+                (readoutCumulativeDelta >= 0 ? "+" : "") +
+                readoutCumulativeDelta.toLocaleString("en-IN", {
+                  maximumFractionDigits: 6
+                })
+              : ""}
+          </span>
+          {readoutOrderFlow.oi !== null &&
+          readoutOrderFlow.oi !== undefined ? (
+            <span>
+              OI {readoutOrderFlow.oi.toLocaleString("en-IN")}
+              {readoutOrderFlow.oiChange !== null &&
+              readoutOrderFlow.oiChange !== undefined
+                ? " · ΔOI " +
+                  readoutOrderFlow.oiChange.toLocaleString("en-IN")
+                : ""}
+            </span>
+          ) : null}
+          <small>
+            {readoutOrderFlow.partial ? "LIVE PARTIAL BAR" : "EXACT CLOSED BAR"}
+          </small>
+        </div>
+      ) : null}
       <div className="chartToolRail" aria-label="Chart tools">
         {[
           ["cursor", "↖", "Cursor"],
@@ -1541,10 +1608,6 @@ export default function MarketChart({
                   : "exactVolumeBar"
               }
               key={bar.time}
-              tabIndex={0}
-              aria-label={
-                `Order flow ${formatIst(bar.time)}. Buy ${bar.buyPercent.toFixed(1)} percent, ${bar.buyTrades} trades. Sell ${bar.sellPercent.toFixed(1)} percent, ${bar.sellTrades} trades. Delta ${bar.deltaPercent >= 0 ? "+" : ""}${bar.deltaPercent.toFixed(1)} percent.`
-              }
               style={{
                 left: bar.x - bar.width / 2,
                 width: bar.width,
@@ -1565,41 +1628,6 @@ export default function MarketChart({
                 />
               </span>
 
-              <div className="exactVolumeTooltip" role="tooltip">
-                <strong>{formatIst(bar.time)}</strong>
-                <span>
-                  BUY {bar.buyPercent.toFixed(1)}% ·{" "}
-                  {bar.buyVolume.toLocaleString("en-IN", {
-                    maximumFractionDigits: 6
-                  })}{" "}
-                  · B#{bar.buyTrades}
-                </span>
-                <span>
-                  SELL {bar.sellPercent.toFixed(1)}% ·{" "}
-                  {bar.sellVolume.toLocaleString("en-IN", {
-                    maximumFractionDigits: 6
-                  })}{" "}
-                  · S#{bar.sellTrades}
-                </span>
-                <span>
-                  Δ {bar.deltaPercent >= 0 ? "+" : ""}
-                  {bar.deltaPercent.toFixed(1)}% · CΔ{" "}
-                  {bar.cumulativeDelta >= 0 ? "+" : ""}
-                  {bar.cumulativeDelta.toLocaleString("en-IN", {
-                    maximumFractionDigits: 6
-                  })}
-                </span>
-                {bar.oi !== null ? (
-                  <span>
-                    OI {bar.oi.toLocaleString("en-IN")}
-                    {bar.oiChange !== null
-                      ? " · ΔOI " +
-                        bar.oiChange.toLocaleString("en-IN")
-                      : ""}
-                  </span>
-                ) : null}
-                <small>{bar.partial ? "LIVE PARTIAL BAR" : "EXACT CLOSED BAR"}</small>
-              </div>
             </div>
           ))}
         </div>
