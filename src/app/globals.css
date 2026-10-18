@@ -5898,7 +5898,8 @@ html[data-theme="light"] .chartFeatureOption.active {
 }
 
 .liquidityLevel.minor {
-  opacity: 0.72;
+  opacity: 0.88;
+  background: color-mix(in srgb, currentColor 7%, transparent);
 }
 
 .liquidityLevel.minor .liquidityLevelLine {
@@ -5906,7 +5907,8 @@ html[data-theme="light"] .chartFeatureOption.active {
 }
 
 .liquidityLevel.major {
-  opacity: 0.96;
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 12%, transparent);
 }
 
 .liquidityLevel.major .liquidityLevelLine {
@@ -5914,12 +5916,22 @@ html[data-theme="light"] .chartFeatureOption.active {
   border-top-style: solid;
 }
 
-.liquidityLevel.buy {
-  color: #e35d67;
+/* Supply above price */
+.liquidityLevel.minor.buy {
+  color: #f3a7ae;
 }
 
-.liquidityLevel.sell {
-  color: #35b977;
+.liquidityLevel.major.buy {
+  color: #bf3f4c;
+}
+
+/* Demand below price */
+.liquidityLevel.minor.sell {
+  color: #9ddfbc;
+}
+
+.liquidityLevel.major.sell {
+  color: #218d5e;
 }
 
 .liquidityLevelLabel {
