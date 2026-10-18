@@ -183,7 +183,7 @@ h2 {
 
 .heroRow {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 24px;
 }
@@ -2286,7 +2286,6 @@ button {
   letter-spacing: 0.07em;
   text-transform: uppercase;
   white-space: nowrap;
-  transform: translateY(-50%);
 }
 
 .appInstallButton {
@@ -6396,14 +6395,14 @@ html[data-theme="light"] .volumeProfileLevel span {
 }
 
 .featureDoneButton {
-  min-height: 29px;
-  padding: 0 9px;
-  border: 1px solid #4d8dff;
+  min-height: 31px;
+  padding: 0 10px;
+  border: 1px solid #2563eb;
   border-radius: 6px;
-  background: rgba(77, 141, 255, 0.12);
-  color: #dfe9ff;
+  background: #2563eb;
+  color: #ffffff;
   cursor: pointer;
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 900;
 }
 
@@ -6428,6 +6427,12 @@ html[data-theme="light"] .volumeProfileLevel span {
 html[data-theme="light"] .featureEditButton {
   border-color: #cbd5e1;
   color: #64748b;
+}
+
+html[data-theme="light"] .featureDoneButton {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #ffffff;
 }
 
 
@@ -6648,5 +6653,298 @@ html[data-theme="light"] .technicalMaRow {
 
   .technicalMaCard {
     grid-column: auto;
+  }
+}
+
+
+/* FYERS-style technical dashboard */
+.technicalDashboard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(320px, 1.35fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.technicalGaugeCard,
+.technicalDetailCard {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #202937;
+  border-radius: 12px;
+  background: #090e15;
+}
+
+.technicalDashboardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.technicalDashboardHeader span,
+.technicalDashboardHeader strong {
+  display: block;
+}
+
+.technicalDashboardHeader span {
+  color: #68768a;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.technicalDashboardHeader strong {
+  margin-top: 4px;
+  color: #eef3f8;
+  font-size: 14px;
+}
+
+.technicalDashboardHeader > b {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border: 1px solid #2a3546;
+  border-radius: 999px;
+  color: #94a3b8;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.technicalDashboardHeader > b.buy,
+.technicalDashboardHeader > b.strong-buy {
+  border-color: rgba(53, 185, 119, 0.35);
+  background: rgba(53, 185, 119, 0.08);
+  color: #35b977;
+}
+
+.technicalDashboardHeader > b.sell,
+.technicalDashboardHeader > b.strong-sell {
+  border-color: rgba(227, 93, 103, 0.35);
+  background: rgba(227, 93, 103, 0.08);
+  color: #e35d67;
+}
+
+.technicalGauge {
+  margin-top: 16px;
+}
+
+.technicalGaugeArc {
+  position: relative;
+  width: min(210px, 92%);
+  height: 102px;
+  margin: 0 auto;
+  overflow: hidden;
+}
+
+.technicalGaugeArc::before {
+  position: absolute;
+  inset: 0 0 auto;
+  width: 100%;
+  height: 210px;
+  border-radius: 50%;
+  background:
+    conic-gradient(
+      from 270deg,
+      #d94f5b 0deg 32deg,
+      #b46b71 32deg 64deg,
+      #818b99 64deg 116deg,
+      #5c947d 116deg 148deg,
+      #2fb879 148deg 180deg,
+      transparent 180deg 360deg
+    );
+  content: "";
+}
+
+.technicalGaugeArc::after {
+  position: absolute;
+  top: 19px;
+  left: 50%;
+  width: 156px;
+  height: 156px;
+  border-radius: 50%;
+  background: #090e15;
+  content: "";
+  transform: translateX(-50%);
+}
+
+.technicalGaugeNeedle {
+  position: absolute;
+  z-index: 3;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  height: 76px;
+  border-radius: 999px;
+  background: #eef3f8;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.25);
+  transform-origin: 50% 100%;
+  transition: transform 180ms ease;
+}
+
+.technicalGaugeHub {
+  position: absolute;
+  z-index: 4;
+  bottom: -5px;
+  left: 50%;
+  width: 13px;
+  height: 13px;
+  border: 3px solid #eef3f8;
+  border-radius: 50%;
+  background: #090e15;
+  transform: translateX(-50%);
+}
+
+.technicalGaugeScale {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 3px;
+  margin-top: 4px;
+  color: #6f7c90;
+  font-size: 7px;
+  text-align: center;
+}
+
+.technicalGaugeStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.technicalGaugeStats > div {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #1d2735;
+  border-radius: 8px;
+  background: #0b1119;
+}
+
+.technicalGaugeStats span,
+.technicalGaugeStats strong {
+  display: block;
+}
+
+.technicalGaugeStats span {
+  color: #66758a;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+}
+
+.technicalGaugeStats strong {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  color: #e8eef6;
+  font-size: 10px;
+}
+
+.technicalIndicatorRows {
+  margin-top: 12px;
+  border: 1px solid #1d2735;
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.technicalIndicatorRows > div {
+  display: grid;
+  grid-template-columns: minmax(82px, 1fr) minmax(74px, auto) minmax(72px, auto);
+  gap: 10px;
+  align-items: center;
+  min-height: 40px;
+  padding: 7px 10px;
+  border-bottom: 1px solid #1d2735;
+}
+
+.technicalIndicatorRows > div:last-child {
+  border-bottom: 0;
+}
+
+.technicalIndicatorRows span {
+  color: #8995a8;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.technicalIndicatorRows strong {
+  color: #e8eef6;
+  font-size: 10px;
+  text-align: right;
+}
+
+.technicalIndicatorRows b {
+  font-size: 8px;
+  font-weight: 900;
+  text-align: right;
+}
+
+.technicalIndicatorRows b.buy {
+  color: #35b977;
+}
+
+.technicalIndicatorRows b.sell {
+  color: #e35d67;
+}
+
+.technicalIndicatorRows b.neutral {
+  color: #8f9bad;
+}
+
+html[data-theme="light"] .technicalGaugeCard,
+html[data-theme="light"] .technicalDetailCard {
+  border-color: #d7dee9;
+  background: #ffffff;
+}
+
+html[data-theme="light"] .technicalGaugeArc::after,
+html[data-theme="light"] .technicalGaugeHub {
+  background: #ffffff;
+}
+
+html[data-theme="light"] .technicalGaugeNeedle {
+  background: #111827;
+  box-shadow: 0 0 6px rgba(15, 23, 42, 0.18);
+}
+
+html[data-theme="light"] .technicalGaugeHub {
+  border-color: #111827;
+}
+
+html[data-theme="light"] .technicalDashboardHeader strong,
+html[data-theme="light"] .technicalGaugeStats strong,
+html[data-theme="light"] .technicalIndicatorRows strong {
+  color: #0f172a;
+}
+
+html[data-theme="light"] .technicalGaugeStats > div,
+html[data-theme="light"] .technicalIndicatorRows {
+  border-color: #dfe6ef;
+  background: #ffffff;
+}
+
+html[data-theme="light"] .technicalIndicatorRows > div {
+  border-color: #e5eaf1;
+}
+
+@media (max-width: 1100px) {
+  .technicalDashboard {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .technicalDetailCard {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 700px) {
+  .technicalDashboard {
+    grid-template-columns: 1fr;
+  }
+
+  .technicalDetailCard {
+    grid-column: auto;
+  }
+
+  .technicalGaugeScale {
+    font-size: 6px;
   }
 }
