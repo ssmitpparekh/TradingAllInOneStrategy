@@ -1753,7 +1753,7 @@ export default function MarketChart({
               <span className="liquidityLevelLine" />
               <span className="liquidityLevelLabel">
                 {level.importance === "major" ? "MAJOR" : "MINOR"}{" "}
-                {level.side === "buy" ? "BSL" : "SSL"}{" "}
+                {level.side === "buy" ? "SUPPLY" : "DEMAND"}{" "}
                 {level.level.toLocaleString("en-IN", {
                   maximumFractionDigits: 2
                 })}
