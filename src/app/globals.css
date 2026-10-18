@@ -2690,46 +2690,13 @@ button {
 /* Exact live buyer/seller volume bars */
 .exactVolumeLayer {
   position: absolute;
-  z-index: 2;
+  z-index: 4;
   right: 0;
   bottom: 22px;
   left: 0;
   height: 122px;
   pointer-events: none;
-  overflow: hidden;
-}
-
-.exactVolumeLegend {
-  position: absolute;
-  right: 10px;
-  bottom: 100px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 7px;
-  border: 1px solid rgba(80, 94, 116, 0.35);
-  border-radius: 7px;
-  background: rgba(9, 14, 21, 0.78);
-  color: #8e9bad;
-  font-size: 8px;
-  font-weight: 850;
-  letter-spacing: 0.06em;
-}
-
-.exactVolumeLegend .buyKey,
-.exactVolumeLegend .sellKey {
-  width: 6px;
-  height: 6px;
-  border-radius: 2px;
-}
-
-.exactVolumeLegend .buyKey {
-  background: #28c76f;
-}
-
-.exactVolumeLegend .sellKey {
-  margin-left: 5px;
-  background: #ea5455;
+  overflow: visible;
 }
 
 .exactVolumeBar {
@@ -2737,15 +2704,25 @@ button {
   bottom: 0;
   display: flex;
   min-width: 3px;
+  overflow: visible;
+  flex-direction: column;
+  justify-content: flex-end;
+  pointer-events: auto;
+  opacity: 0.86;
+  transform: translateZ(0);
+  outline: none;
+}
+
+.exactVolumeStack {
+  display: flex;
+  width: 100%;
   overflow: hidden;
   flex-direction: column;
   justify-content: flex-end;
   border-radius: 2px 2px 0 0;
-  opacity: 0.82;
-  transform: translateZ(0);
 }
 
-.exactVolumeBar.partial {
+.exactVolumeBar.partial .exactVolumeStack {
   opacity: 0.48;
   outline: 1px dashed rgba(255, 255, 255, 0.28);
   outline-offset: 1px;
@@ -2766,15 +2743,67 @@ button {
   background: rgba(234, 84, 85, 0.86);
 }
 
+.exactVolumeTooltip {
+  position: absolute;
+  z-index: 20;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  display: grid;
+  width: max-content;
+  min-width: 210px;
+  max-width: 260px;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid rgba(100, 116, 139, 0.4);
+  border-radius: 8px;
+  background: rgba(9, 14, 21, 0.96);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
+  color: #cbd5e1;
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+
+.exactVolumeTooltip strong {
+  color: #f8fafc;
+  font-size: 10px;
+}
+
+.exactVolumeTooltip small {
+  margin-top: 2px;
+  color: #94a3b8;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.exactVolumeBar:hover,
+.exactVolumeBar:focus-visible {
+  z-index: 30;
+  opacity: 1;
+}
+
+.exactVolumeBar:hover .exactVolumeTooltip,
+.exactVolumeBar:focus-visible .exactVolumeTooltip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
 @media (max-width: 700px) {
   .exactVolumeLayer {
     bottom: 20px;
     height: 104px;
   }
 
-  .exactVolumeLegend {
-    right: 6px;
-    bottom: 84px;
+  .exactVolumeTooltip {
+    min-width: 190px;
+    font-size: 9px;
   }
 }
 
