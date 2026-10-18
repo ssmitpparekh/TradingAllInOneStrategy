@@ -5932,6 +5932,7 @@ html[data-theme="light"] .chartFeatureOption.active {
   letter-spacing: 0.035em;
   line-height: 1.35;
   white-space: nowrap;
+  transform: translateY(-50%);
 }
 
 html[data-theme="light"] .liquidityLevelLabel {
