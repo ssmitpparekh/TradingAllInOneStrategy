@@ -2707,7 +2707,7 @@ button {
   overflow: visible;
   flex-direction: column;
   justify-content: flex-end;
-  pointer-events: auto;
+  pointer-events: none;
   opacity: 0.86;
   transform: translateZ(0);
   outline: none;
@@ -5471,3 +5471,43 @@ html[data-theme="light"] .optionCapitalGrid strong {
   }
 }
 
+
+
+.orderFlowHoverCard {
+  position: absolute;
+  z-index: 40;
+  display: grid;
+  min-width: 220px;
+  max-width: 280px;
+  gap: 4px;
+  padding: 10px 11px;
+  border: 1px solid rgba(100, 116, 139, 0.42);
+  border-radius: 9px;
+  background: rgba(9, 14, 21, 0.97);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.34);
+  color: #cbd5e1;
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.orderFlowHoverCard strong {
+  color: #f8fafc;
+}
+
+.orderFlowHoverCard .flowBuy {
+  color: #74e39b;
+}
+
+.orderFlowHoverCard .flowSell {
+  color: #ff8587;
+}
+
+.orderFlowHoverCard small {
+  margin-top: 2px;
+  color: #94a3b8;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
