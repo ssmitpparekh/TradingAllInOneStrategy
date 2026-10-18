@@ -531,6 +531,7 @@ export default function Home() {
   const historyRequestId = useRef(0);
   const orderFlowNeedsPartialRef = useRef(true);
   const orderFlowPartialBucketRef = useRef<number | null>(null);
+  const orderFlowHistoryIdentityRef = useRef("");
 
   const selectedIsKraken = selected.market === "KRAKEN";
   const selectedIsOanda = selected.market === "OANDA";
@@ -2123,11 +2124,16 @@ export default function Home() {
 
   useEffect(() => {
     if (!viewReady || !selectedIsKraken) {
+      orderFlowHistoryIdentityRef.current = "";
       setOrderFlowBuckets([]);
       return;
     }
 
     let cancelled = false;
+    const identity = `${selected.symbol}|${resolution}`;
+    const identityChanged =
+      orderFlowHistoryIdentityRef.current !== identity;
+    orderFlowHistoryIdentityRef.current = identity;
     const key = orderFlowLocalKey(selected.symbol, resolution);
     let localBuckets: OrderFlowBucket[] = [];
 
@@ -2146,7 +2152,9 @@ export default function Home() {
     }
 
     setOrderFlowBuckets((current) =>
-      mergeOrderFlowHistory(localBuckets, current)
+      identityChanged
+        ? mergeOrderFlowHistory(localBuckets)
+        : mergeOrderFlowHistory(localBuckets, current)
     );
 
     const firstTime =
@@ -2240,7 +2248,9 @@ export default function Home() {
     if (!viewReady || (!selectedIsGlobal && !connected)) return;
 
     setLiveCandle(null);
-    setOrderFlowBuckets([]);
+    if (!selectedIsKraken) {
+      setOrderFlowBuckets([]);
+    }
     orderFlowNeedsPartialRef.current = true;
     orderFlowPartialBucketRef.current = null;
 
