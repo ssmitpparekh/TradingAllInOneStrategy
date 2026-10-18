@@ -581,6 +581,58 @@ export default function Home() {
     () => buildTechnicalContext(liveAnalysisCandles),
     [liveAnalysisCandles]
   );
+
+  const latestTechnicalPrice =
+    quote?.lp ??
+    liveCandle?.close ??
+    liveAnalysisCandles[liveAnalysisCandles.length - 1]?.close ??
+    null;
+
+  const movingAverageSignals = [
+    technicalContext.latestEma20,
+    technicalContext.latestEma50,
+    technicalContext.latestEma200
+  ].flatMap((value) =>
+    value === null || latestTechnicalPrice === null
+      ? []
+      : [latestTechnicalPrice >= value ? 1 : -1]
+  );
+
+  const maBuyCount = movingAverageSignals.filter((value) => value > 0).length;
+  const maSellCount = movingAverageSignals.filter((value) => value < 0).length;
+  const movingAverageScore = movingAverageSignals.length
+    ? ((maBuyCount - maSellCount) / movingAverageSignals.length) * 100
+    : 0;
+
+  const trendScore =
+    technicalContext.trendState === "strong_bullish"
+      ? 100
+      : technicalContext.trendState === "bullish"
+        ? 55
+        : technicalContext.trendState === "strong_bearish"
+          ? -100
+          : technicalContext.trendState === "bearish"
+            ? -55
+            : 0;
+
+  const momentumScore =
+    technicalContext.rsi14 === null
+      ? 0
+      : Math.max(-100, Math.min(100, (technicalContext.rsi14 - 50) * 2));
+
+  const technicalMeterLabel = (score: number) =>
+    score >= 70
+      ? "STRONG BUY"
+      : score >= 25
+        ? "BUY"
+        : score <= -70
+          ? "STRONG SELL"
+          : score <= -25
+            ? "SELL"
+            : "NEUTRAL";
+
+  const technicalNeedleAngle = (score: number) =>
+    -78 + ((Math.max(-100, Math.min(100, score)) + 100) / 200) * 156;
   const closedContext1m = useMemo(() => {
     const now = Math.floor(Date.now() / 1000);
     return context1m.filter((candle) => candle.time + 60 <= now);
@@ -4792,138 +4844,220 @@ export default function Home() {
           )}
         </section>
 
-        <section className="technicalMetersPanel">
-          <div className="technicalMeterCard trendMeterCard">
-            <div className="technicalMeterHeader">
-              <span>TREND METER</span>
-              <strong className={`technicalTrend ${technicalContext.trendState}`}>
-                {technicalContext.trendState.replaceAll("_", " ").toUpperCase()}
-              </strong>
+        <section className="technicalDashboard">
+          <div className="technicalGaugeCard">
+            <div className="technicalDashboardHeader">
+              <div>
+                <span>TECHNICAL METER</span>
+                <strong>Trend</strong>
+              </div>
+              <b className={technicalMeterLabel(trendScore).toLowerCase().replaceAll(" ", "-")}>
+                {technicalMeterLabel(trendScore)}
+              </b>
             </div>
-            <div className="fiveStateMeter" aria-hidden="true">
-              {["strong_bearish", "bearish", "neutral", "bullish", "strong_bullish"].map(
-                (state) => (
-                  <i
-                    className={
-                      technicalContext.trendState === state
-                        ? "active " + state
-                        : state
-                    }
-                    key={state}
-                  />
-                )
-              )}
+
+            <div className="technicalGauge" aria-label={`Trend meter ${technicalMeterLabel(trendScore)}`}>
+              <div className="technicalGaugeArc">
+                <i
+                  className="technicalGaugeNeedle"
+                  style={{
+                    transform: `translateX(-50%) rotate(${technicalNeedleAngle(
+                      trendScore
+                    )}deg)`
+                  }}
+                />
+                <span className="technicalGaugeHub" />
+              </div>
+              <div className="technicalGaugeScale">
+                <span>Strong Sell</span>
+                <span>Sell</span>
+                <span>Neutral</span>
+                <span>Buy</span>
+                <span>Strong Buy</span>
+              </div>
             </div>
-            <small>Confirmed from price position, EMA20/50 alignment and ADX strength.</small>
+
+            <div className="technicalGaugeStats">
+              <div>
+                <span>ADX (14)</span>
+                <strong>
+                  {technicalContext.adx14 !== null
+                    ? technicalContext.adx14.toFixed(1)
+                    : "—"}
+                </strong>
+              </div>
+              <div>
+                <span>STATE</span>
+                <strong>
+                  {technicalContext.trendState
+                    .replaceAll("_", " ")
+                    .toUpperCase()}
+                </strong>
+              </div>
+            </div>
           </div>
 
-          <div className="technicalMeterCard">
-            <div className="technicalMeterHeader">
-              <span>RSI (14)</span>
-              <strong>
-                {technicalContext.rsi14 !== null
-                  ? technicalContext.rsi14.toFixed(1)
-                  : "—"}
-              </strong>
+          <div className="technicalGaugeCard">
+            <div className="technicalDashboardHeader">
+              <div>
+                <span>TECHNICAL METER</span>
+                <strong>Moving Averages</strong>
+              </div>
+              <b
+                className={technicalMeterLabel(movingAverageScore)
+                  .toLowerCase()
+                  .replaceAll(" ", "-")}
+              >
+                {technicalMeterLabel(movingAverageScore)}
+              </b>
             </div>
-            <div className="technicalLinearMeter">
-              <span
-                style={{
-                  width: `${Math.min(
-                    100,
-                    Math.max(0, technicalContext.rsi14 ?? 0)
-                  )}%`
-                }}
-              />
+
+            <div
+              className="technicalGauge"
+              aria-label={`Moving average meter ${technicalMeterLabel(
+                movingAverageScore
+              )}`}
+            >
+              <div className="technicalGaugeArc">
+                <i
+                  className="technicalGaugeNeedle"
+                  style={{
+                    transform: `translateX(-50%) rotate(${technicalNeedleAngle(
+                      movingAverageScore
+                    )}deg)`
+                  }}
+                />
+                <span className="technicalGaugeHub" />
+              </div>
+              <div className="technicalGaugeScale">
+                <span>Strong Sell</span>
+                <span>Sell</span>
+                <span>Neutral</span>
+                <span>Buy</span>
+                <span>Strong Buy</span>
+              </div>
             </div>
-            <small>
-              {technicalContext.rsi14 === null
-                ? "Waiting for sufficient candles"
-                : technicalContext.rsi14 >= 70
-                  ? "Overbought"
-                  : technicalContext.rsi14 <= 30
-                    ? "Oversold"
-                    : "Neutral momentum"}
-            </small>
+
+            <div className="technicalGaugeStats">
+              <div>
+                <span>BUY</span>
+                <strong className="positive">{maBuyCount}</strong>
+              </div>
+              <div>
+                <span>SELL</span>
+                <strong className="negative">{maSellCount}</strong>
+              </div>
+              <div>
+                <span>AVAILABLE</span>
+                <strong>{movingAverageSignals.length}</strong>
+              </div>
+            </div>
           </div>
 
-          <div className="technicalMeterCard">
-            <div className="technicalMeterHeader">
-              <span>ADX (14)</span>
-              <strong>
-                {technicalContext.adx14 !== null
-                  ? technicalContext.adx14.toFixed(1)
-                  : "—"}
-              </strong>
+          <div className="technicalDetailCard">
+            <div className="technicalDashboardHeader">
+              <div>
+                <span>INDICATOR DETAIL</span>
+                <strong>Momentum & volatility</strong>
+              </div>
+              <b
+                className={technicalMeterLabel(momentumScore)
+                  .toLowerCase()
+                  .replaceAll(" ", "-")}
+              >
+                RSI {technicalMeterLabel(momentumScore)}
+              </b>
             </div>
-            <div className="technicalLinearMeter adx">
-              <span
-                style={{
-                  width: `${Math.min(
-                    100,
-                    Math.max(0, technicalContext.adx14 ?? 0)
-                  )}%`
-                }}
-              />
-            </div>
-            <small>
-              {technicalContext.adx14 === null
-                ? "Waiting for sufficient candles"
-                : technicalContext.adx14 >= 25
-                  ? "Strong trend"
-                  : "Weak / developing trend"}
-            </small>
-          </div>
 
-          <div className="technicalMeterCard">
-            <div className="technicalMeterHeader">
-              <span>VOLATILITY</span>
-              <strong>
-                {technicalContext.atrPercent !== null
-                  ? `${technicalContext.atrPercent.toFixed(2)}%`
-                  : "—"}
-              </strong>
-            </div>
-            <div className={`volatilityBadge ${technicalContext.volatilityState}`}>
-              {technicalContext.volatilityState.toUpperCase()}
-            </div>
-            <small>ATR(14) as a percentage of current price.</small>
-          </div>
+            <div className="technicalIndicatorRows">
+              <div>
+                <span>RSI 14</span>
+                <strong>
+                  {technicalContext.rsi14 !== null
+                    ? technicalContext.rsi14.toFixed(2)
+                    : "—"}
+                </strong>
+                <b
+                  className={
+                    technicalContext.rsi14 === null
+                      ? "neutral"
+                      : technicalContext.rsi14 >= 55
+                        ? "buy"
+                        : technicalContext.rsi14 <= 45
+                          ? "sell"
+                          : "neutral"
+                  }
+                >
+                  {technicalContext.rsi14 === null
+                    ? "—"
+                    : technicalContext.rsi14 >= 70
+                      ? "OVERBOUGHT"
+                      : technicalContext.rsi14 <= 30
+                        ? "OVERSOLD"
+                        : technicalContext.rsi14 >= 55
+                          ? "BUY"
+                          : technicalContext.rsi14 <= 45
+                            ? "SELL"
+                            : "NEUTRAL"}
+                </b>
+              </div>
 
-          <div className="technicalMaCard">
-            <div className="technicalMeterHeader">
-              <span>MOVING AVERAGES</span>
-              <strong>PRICE POSITION</strong>
-            </div>
-            {[
-              ["EMA 20", technicalContext.latestEma20],
-              ["EMA 50", technicalContext.latestEma50],
-              ["EMA 200", technicalContext.latestEma200]
-            ].map(([label, value]) => {
-              const emaValue = value as number | null;
-              const livePrice =
-                quote?.lp ?? liveCandle?.close ?? candles[candles.length - 1]?.close ?? null;
-              const state =
-                emaValue === null || livePrice === null
-                  ? "NEUTRAL"
-                  : livePrice > emaValue
-                    ? "BUY"
-                    : "SELL";
+              <div>
+                <span>ADX 14</span>
+                <strong>
+                  {technicalContext.adx14 !== null
+                    ? technicalContext.adx14.toFixed(2)
+                    : "—"}
+                </strong>
+                <b className="neutral">
+                  {technicalContext.adx14 === null
+                    ? "—"
+                    : technicalContext.adx14 >= 25
+                      ? "TRENDING"
+                      : "WEAK"}
+                </b>
+              </div>
 
-              return (
-                <div className="technicalMaRow" key={label as string}>
-                  <span>{label}</span>
-                  <strong>
-                    {emaValue !== null
-                      ? emaValue.toLocaleString("en-IN", {
-                          maximumFractionDigits: 2
-                        })
-                      : "—"}
-                  </strong>
-                  <b className={state.toLowerCase()}>{state}</b>
-                </div>
-              );
-            })}
+              <div>
+                <span>ATR / PRICE</span>
+                <strong>
+                  {technicalContext.atrPercent !== null
+                    ? `${technicalContext.atrPercent.toFixed(2)}%`
+                    : "—"}
+                </strong>
+                <b className="neutral">
+                  {technicalContext.volatilityState.toUpperCase()}
+                </b>
+              </div>
+
+              {[
+                ["EMA 20", technicalContext.latestEma20],
+                ["EMA 50", technicalContext.latestEma50],
+                ["EMA 200", technicalContext.latestEma200]
+              ].map(([label, value]) => {
+                const emaValue = value as number | null;
+                const signal =
+                  emaValue === null || latestTechnicalPrice === null
+                    ? "NEUTRAL"
+                    : latestTechnicalPrice >= emaValue
+                      ? "BUY"
+                      : "SELL";
+
+                return (
+                  <div key={label as string}>
+                    <span>{label}</span>
+                    <strong>
+                      {emaValue !== null
+                        ? emaValue.toLocaleString("en-IN", {
+                            maximumFractionDigits: 2
+                          })
+                        : "—"}
+                    </strong>
+                    <b className={signal.toLowerCase()}>{signal}</b>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </section>
 
