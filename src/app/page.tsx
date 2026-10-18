@@ -454,7 +454,9 @@ export default function Home() {
   const [showOrderBlocks, setShowOrderBlocks] = useState(false);
   const [showVwap, setShowVwap] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-  const [showEma, setShowEma] = useState(false);
+  const [emaPeriods, setEmaPeriods] = useState<number[]>([]);
+  const [emaInput, setEmaInput] = useState("");
+  const [emaEditorOpen, setEmaEditorOpen] = useState(false);
   const [showSessionBreaks, setShowSessionBreaks] = useState(false);
   const [showOrderFlow, setShowOrderFlow] = useState(false);
   const [showAdvancedAnalysis, setShowAdvancedAnalysis] = useState(false);
@@ -492,6 +494,7 @@ export default function Home() {
   const orderFlowPartialBucketRef = useRef<number | null>(null);
 
   const selectedIsKraken = selected.market === "KRAKEN";
+  const showEma = emaPeriods.length > 0;
   const liveAnalysisCandles = useMemo(
     () => mergeLiveCandle(candles, liveCandle),
     [candles, liveCandle]
@@ -1323,6 +1326,36 @@ export default function Home() {
     }
   }
 
+  function addEmaPeriods(raw = emaInput) {
+    const parsed = raw
+      .split(/[\s,;]+/)
+      .map((value) => Number.parseInt(value, 10))
+      .filter(
+        (value) =>
+          Number.isFinite(value) &&
+          value >= 1 &&
+          value <= 5000
+      );
+
+    if (!parsed.length) {
+      setMessage("Enter EMA periods such as 9, 20, 50, 100, 200.");
+      return;
+    }
+
+    setEmaPeriods((current) =>
+      [...new Set([...current, ...parsed])].sort((a, b) => a - b)
+    );
+    setEmaInput("");
+  }
+
+  function toggleEmaPeriod(period: number) {
+    setEmaPeriods((current) =>
+      current.includes(period)
+        ? current.filter((value) => value !== period)
+        : [...current, period].sort((a, b) => a - b)
+    );
+  }
+
   function resetChartView() {
     setShowFib(false);
     setShowTrendFib(false);
@@ -1332,7 +1365,9 @@ export default function Home() {
     setShowOrderBlocks(false);
     setShowVwap(false);
     setShowProfile(false);
-    setShowEma(false);
+    setEmaPeriods([]);
+    setEmaInput("");
+    setEmaEditorOpen(false);
     setShowSessionBreaks(false);
     setShowOrderFlow(false);
     setShowAdvancedAnalysis(false);
@@ -2832,12 +2867,6 @@ export default function Home() {
                       toggle: () => setShowProfile((value) => !value)
                     },
                     {
-                      label: "EMA 20 / 50 / 200",
-                      active: showEma,
-                      disabled: false,
-                      toggle: () => setShowEma((value) => !value)
-                    },
-                    {
                       label: "Session Breaks",
                       active: showSessionBreaks,
                       disabled: false,
@@ -2865,6 +2894,109 @@ export default function Home() {
                       <strong>{feature.active ? "ON" : "OFF"}</strong>
                     </button>
                   ))}
+                  <div className="emaFeatureControl">
+                    <button
+                      type="button"
+                      className={
+                        showEma
+                          ? "chartFeatureOption active"
+                          : "chartFeatureOption"
+                      }
+                      onClick={() =>
+                        setEmaEditorOpen((value) => !value)
+                      }
+                    >
+                      <span>EMA</span>
+                      <strong>
+                        {showEma
+                          ? `${emaPeriods.length} ON`
+                          : "OFF"}
+                      </strong>
+                    </button>
+
+                    {emaEditorOpen ? (
+                      <div className="emaFeatureEditor">
+                        <span className="emaFeatureHint">
+                          Add one or many EMA periods
+                        </span>
+
+                        <div className="emaFeatureInputRow">
+                          <input
+                            inputMode="numeric"
+                            value={emaInput}
+                            onChange={(event) =>
+                              setEmaInput(event.target.value)
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                addEmaPeriods();
+                              }
+                            }}
+                            placeholder="9, 20, 50, 100, 200"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => addEmaPeriods()}
+                          >
+                            Add
+                          </button>
+                        </div>
+
+                        <div className="emaPresetRow">
+                          {[9, 20, 50, 100, 200].map((period) => (
+                            <button
+                              type="button"
+                              className={
+                                emaPeriods.includes(period)
+                                  ? "active"
+                                  : ""
+                              }
+                              key={period}
+                              onClick={() => toggleEmaPeriod(period)}
+                            >
+                              {period}
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              addEmaPeriods("9,20,50,100,200")
+                            }
+                          >
+                            Add all
+                          </button>
+                        </div>
+
+                        <div className="emaPeriodChips">
+                          {emaPeriods.length ? (
+                            emaPeriods.map((period) => (
+                              <button
+                                type="button"
+                                key={period}
+                                onClick={() => toggleEmaPeriod(period)}
+                                title={`Remove EMA ${period}`}
+                              >
+                                EMA {period} ×
+                              </button>
+                            ))
+                          ) : (
+                            <small>No EMA periods selected.</small>
+                          )}
+                        </div>
+
+                        {emaPeriods.length ? (
+                          <button
+                            type="button"
+                            className="emaClearButton"
+                            onClick={() => setEmaPeriods([])}
+                          >
+                            Clear all
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </details>
             </div>
@@ -2898,7 +3030,7 @@ export default function Home() {
           imbalance={imbalance}
           orderBlocks={orderBlocks}
           volumeAnalytics={volumeAnalytics}
-          technicalContext={technicalContext}
+          emaPeriods={emaPeriods}
           showFib={showFib}
           showTrendFib={showTrendFib}
           showStructure={showStructure}
