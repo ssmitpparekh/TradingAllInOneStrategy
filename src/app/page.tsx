@@ -3763,15 +3763,18 @@ export default function Home() {
       </section>
 
       <section className="card performanceCard">
-        <div className="performanceHeader">
+        <div className="performanceHeader performanceHeaderRow">
           <div>
             <p className="label">TRADE HISTORY & RESULTS · REAL SIGNAL RECORD</p>
-            <h3>Every confirmed platform trade</h3>
+            <h3>Latest confirmed platform trades</h3>
             <p>
-              Signals are stored locally and remain on the chart after refresh.
-              No account size or position size is assumed.
+              The dashboard keeps only the latest 3 signals visible. Open Trade
+              History for the complete journal and filters.
             </p>
           </div>
+          <a className="tradeHistoryLink" href="/trades">
+            VIEW ALL TRADES
+          </a>
         </div>
 
         <div className="performanceGrid">
@@ -3834,7 +3837,7 @@ export default function Home() {
                 tradeJournal
                   .slice()
                   .sort((a, b) => b.signalTime - a.signalTime)
-                  .slice(0, 100)
+                  .slice(0, 3)
                   .map((trade) => (
                     <tr key={trade.id}>
                       <td>
