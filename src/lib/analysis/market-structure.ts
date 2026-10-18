@@ -121,8 +121,8 @@ export type FibonacciSetup = {
   atr14: number | null;
 };
 
-const RETRACEMENTS = [0.236, 0.382, 0.5, 0.618, 0.705, 0.786, 0.886];
-const EXTENSIONS = [0.618, 1, 1.272, 1.618, 2, 2.618];
+const RETRACEMENTS = [0, 0.236, 0.382, 0.5, 0.618, 0.705, 0.786, 0.886, 1];
+const EXTENSIONS = [0, 0.5, 1, 1.272, 1.618, 2, 2.618];
 
 function trueRange(
   candle: AnalysisCandle,
@@ -499,18 +499,18 @@ export function detectLiquidityLevels(
 
   const definitions = [
     {
-      importance: "minor" as const,
-      leftBars: 2,
-      rightBars: 2,
-      atrMultiplier: 0.35,
-      zoneAtrFraction: 0.06
-    },
-    {
       importance: "major" as const,
       leftBars: 6,
       rightBars: 6,
       atrMultiplier: 1,
       zoneAtrFraction: 0.12
+    },
+    {
+      importance: "minor" as const,
+      leftBars: 2,
+      rightBars: 2,
+      atrMultiplier: 0.35,
+      zoneAtrFraction: 0.06
     }
   ];
 
@@ -520,7 +520,8 @@ export function detectLiquidityLevels(
   };
 
   const chooseStickyActive = (
-    candidates: Candidate[]
+    candidates: Candidate[],
+    excludedSourceTimes: Set<number>
   ): Candidate | null => {
     const ordered = candidates
       .slice()
@@ -546,6 +547,7 @@ export function detectLiquidityLevels(
       const available = ordered
         .filter(
           (candidate) =>
+            !excludedSourceTimes.has(candidate.sourceSwing.time) &&
             candidate.confirmationIndex <= index &&
             (candidate.sweptIndex === null ||
               candidate.sweptIndex > index)
@@ -563,6 +565,10 @@ export function detectLiquidityLevels(
   };
 
   const selected: LiquidityLevel[] = [];
+  const usedSourceTimes = {
+    buy: new Set<number>(),
+    sell: new Set<number>()
+  };
 
   for (const definition of definitions) {
     const swings = detectSwings(candles, {
@@ -628,9 +634,13 @@ export function detectLiquidityLevels(
           };
         });
 
-      const active = chooseStickyActive(candidates);
+      const active = chooseStickyActive(
+        candidates,
+        usedSourceTimes[side]
+      );
 
       if (active) {
+        usedSourceTimes[side].add(active.sourceSwing.time);
         selected.push({
           side: active.side,
           importance: active.importance,
@@ -856,19 +866,16 @@ export function detectOrderBlocks(
         future.high >= block.lower &&
         future.low <= block.upper;
 
-      if (intersects && block.firstTouchTime === null) {
-        block.status = "touched";
+      if (intersects) {
         block.firstTouchTime = future.time;
-      }
 
-      const invalidated =
-        block.direction === "bullish"
-          ? future.close < block.lower
-          : future.close > block.upper;
+        const invalidated =
+          block.direction === "bullish"
+            ? future.close < block.lower
+            : future.close > block.upper;
 
-      if (invalidated) {
-        block.status = "invalidated";
-        block.invalidatedTime = future.time;
+        block.status = invalidated ? "invalidated" : "touched";
+        block.invalidatedTime = invalidated ? future.time : null;
         break;
       }
     }
@@ -890,7 +897,7 @@ export function buildOrderBlockSnapshot(
   return {
     recentBlocks,
     activeBlocks: recentBlocks
-      .filter((block) => block.status !== "invalidated")
+      .filter((block) => block.status === "active")
       .slice(-6)
   };
 }
@@ -924,11 +931,22 @@ export function buildFibonacciSetup(
   candles: AnalysisCandle[]
 ): FibonacciSetup {
   const recentCandles =
-    candles.length > 1200 ? candles.slice(-1200) : candles;
+    candles.length > 1600 ? candles.slice(-1600) : candles;
 
-  const swings = detectSwings(recentCandles);
-  const recentSwings = swings.slice(-8);
   const atr14 = calculateAtr(recentCandles);
+  const majorSwings = detectSwings(recentCandles, {
+    leftBars: 6,
+    rightBars: 6,
+    atrMultiplier: 1
+  });
+  const fallbackSwings = detectSwings(recentCandles, {
+    leftBars: 3,
+    rightBars: 3,
+    atrMultiplier: 0.75
+  });
+  const swings =
+    majorSwings.length >= 2 ? majorSwings : fallbackSwings;
+  const recentSwings = swings.slice(-10);
 
   if (swings.length < 2) {
     return {
