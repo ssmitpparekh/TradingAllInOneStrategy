@@ -2286,6 +2286,7 @@ button {
   letter-spacing: 0.07em;
   text-transform: uppercase;
   white-space: nowrap;
+  transform: translateY(-50%);
 }
 
 .appInstallButton {
@@ -5876,22 +5877,32 @@ html[data-theme="light"] .chartFeatureOption.active {
 
 .liquidityLevel {
   position: absolute;
-  height: 20px;
-  transform: translateY(-10px);
+  min-height: 4px;
+  overflow: visible;
+  border: 1px solid currentColor;
+  border-right: 0;
+  background: color-mix(in srgb, currentColor 15%, transparent);
 }
 
 .liquidityLevelLine {
   position: absolute;
-  top: 10px;
+  top: 50%;
   right: 0;
   left: 0;
-  border-top: 2px solid currentColor;
+  border-top: 1px solid currentColor;
+  transform: translateY(-50%);
+}
+
+.liquidityLevel.minor {
+  opacity: 0.72;
 }
 
 .liquidityLevel.minor .liquidityLevelLine {
-  border-top-width: 1px;
   border-top-style: dashed;
-  opacity: 0.86;
+}
+
+.liquidityLevel.major {
+  opacity: 0.96;
 }
 
 .liquidityLevel.major .liquidityLevelLine {
@@ -5909,7 +5920,7 @@ html[data-theme="light"] .chartFeatureOption.active {
 
 .liquidityLevelLabel {
   position: absolute;
-  top: -2px;
+  top: 50%;
   right: 4px;
   padding: 1px 5px;
   border: 1px solid currentColor;
@@ -5927,10 +5938,6 @@ html[data-theme="light"] .liquidityLevelLabel {
   background: rgba(255, 255, 255, 0.9);
 }
 
-
-.liquidityLevel.minor .liquidityLevelLabel {
-  top: 10px;
-}
 
 
 /* Configurable EMA + VWAP editors */
