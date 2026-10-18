@@ -91,6 +91,59 @@ export async function exchangeAuthCode(
   };
 }
 
+export async function getQuotes(
+  accessToken: string,
+  symbols: string[]
+): Promise<FyersQuote[]> {
+  const unique = [...new Set(symbols.map((symbol) => symbol.trim()).filter(Boolean))];
+  if (!unique.length) return [];
+  if (unique.length > 50) {
+    throw new Error("FYERS quotes accepts up to 50 symbols per request.");
+  }
+
+  const { appId } = getFyersConfig();
+  const url = new URL(`${FYERS_DATA_BASE}/quotes`);
+  url.searchParams.set("symbols", unique.join(","));
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `${appId}:${accessToken}`,
+      Accept: "application/json"
+    },
+    cache: "no-store"
+  });
+
+  const body = await response.json();
+
+  if (!response.ok || body?.s !== "ok" || !Array.isArray(body?.d)) {
+    const message = body?.message || `HTTP ${response.status}`;
+    throw new Error(`FYERS quotes request failed: ${message}`);
+  }
+
+  return body.d.flatMap((entry: Record<string, unknown>) => {
+    if (entry?.s !== "ok" || !entry?.v) return [];
+    const v = entry.v as Record<string, unknown>;
+    const symbol = String(entry.n ?? "");
+    if (!symbol) return [];
+
+    return [{
+      symbol,
+      lp: Number(v.lp ?? 0),
+      ch: Number(v.ch ?? 0),
+      chp: Number(v.chp ?? 0),
+      open: Number(v.open_price ?? 0),
+      high: Number(v.high_price ?? 0),
+      low: Number(v.low_price ?? 0),
+      previousClose: Number(v.prev_close_price ?? 0),
+      volume: Number(v.volume ?? 0),
+      bid: Number(v.bid ?? 0),
+      ask: Number(v.ask ?? 0),
+      timestamp: (v.tt ?? 0) as number | string
+    } satisfies FyersQuote];
+  });
+}
+
 export async function getQuote(
   accessToken: string,
   symbol = "NSE:NIFTY50-INDEX"
