@@ -519,7 +519,6 @@ export function detectLiquidityLevels(
 
   type Candidate = LiquidityLevel & {
     confirmationIndex: number;
-    sweptIndex: number | null;
     prominence: number;
     distanceFromPrice: number;
   };
@@ -585,10 +584,7 @@ export function detectLiquidityLevels(
         swing.index + definition.prominenceLookback + 1
       );
       const localCandles = candles.slice(localStart, localEnd);
-      const localAtr =
-        calculateAtr(localCandles) ??
-        globalAtr ??
-        0;
+      const localAtr = calculateAtr(localCandles) ?? globalAtr;
 
       const zoneHalfWidth = Math.max(
         swing.price * 0.00005,
@@ -597,8 +593,6 @@ export function detectLiquidityLevels(
       const zoneLower = swing.price - zoneHalfWidth;
       const zoneUpper = swing.price + zoneHalfWidth;
 
-      // A current liquidity pool must still sit on the expected side of
-      // current price: buy-side above price, sell-side below price.
       const correctlyPositioned =
         side === "buy"
           ? swing.price > latestClose
@@ -606,7 +600,7 @@ export function detectLiquidityLevels(
 
       if (!correctlyPositioned) return [];
 
-      let sweptIndex: number | null = null;
+      let swept = false;
 
       for (
         let index = confirmationIndex + 1;
@@ -615,21 +609,21 @@ export function detectLiquidityLevels(
       ) {
         const candle = candles[index];
 
-        // Liquidity is no longer virgin once price trades back through the
-        // actual swing level. Do not require penetration of the far edge of
-        // the visual zone.
-        const swept =
+        // Keep the pool virgin until price actually trades beyond the
+        // source swing. A retest at exactly the same exchange tick is not
+        // treated as a sweep.
+        const tradedThrough =
           side === "buy"
-            ? candle.high >= swing.price
-            : candle.low <= swing.price;
+            ? candle.high > swing.price
+            : candle.low < swing.price;
 
-        if (swept) {
-          sweptIndex = index;
+        if (tradedThrough) {
+          swept = true;
           break;
         }
       }
 
-      if (sweptIndex !== null) return [];
+      if (swept) return [];
 
       const localHigh = Math.max(
         ...localCandles.map((candle) => candle.high)
@@ -659,76 +653,84 @@ export function detectLiquidityLevels(
         sweptTime: null,
         status: "virgin" as const,
         confirmationIndex,
-        sweptIndex: null,
         prominence,
         distanceFromPrice
       }];
     });
   };
 
-  const overlaps = (a: Candidate, b: LiquidityLevel) =>
+  const overlaps = (a: LiquidityLevel, b: LiquidityLevel) =>
     Math.max(a.zoneLower, b.zoneLower) <=
     Math.min(a.zoneUpper, b.zoneUpper);
+
+  const toLevel = (candidate: Candidate): LiquidityLevel => ({
+    side: candidate.side,
+    importance: candidate.importance,
+    level: candidate.level,
+    zoneLower: candidate.zoneLower,
+    zoneUpper: candidate.zoneUpper,
+    sourceSwing: candidate.sourceSwing,
+    confirmedTime: candidate.confirmedTime,
+    sweptTime: null,
+    status: "virgin"
+  });
 
   const selected: LiquidityLevel[] = [];
 
   for (const side of ["buy", "sell"] as const) {
-    const majorCandidates = buildCandidates(definitions[0], side)
+    const majors = buildCandidates(definitions[0], side)
       .sort(
         (a, b) =>
-          b.prominence - a.prominence ||
-          b.distanceFromPrice - a.distanceFromPrice ||
-          b.sourceSwing.time - a.sourceSwing.time
+          a.sourceSwing.time - b.sourceSwing.time ||
+          b.prominence - a.prominence
       );
 
-    const major = majorCandidates[0] ?? null;
+    // Preserve every distinct major virgin pool.
+    for (const candidate of majors) {
+      if (
+        selected.some(
+          (existing) =>
+            existing.side === side &&
+            (existing.sourceSwing.time === candidate.sourceSwing.time ||
+              overlaps(existing, candidate))
+        )
+      ) {
+        continue;
+      }
 
-    if (major) {
-      selected.push({
-        side: major.side,
-        importance: major.importance,
-        level: major.level,
-        zoneLower: major.zoneLower,
-        zoneUpper: major.zoneUpper,
-        sourceSwing: major.sourceSwing,
-        confirmedTime: major.confirmedTime,
-        sweptTime: null,
-        status: "virgin"
-      });
+      selected.push(toLevel(candidate));
     }
 
-    const minorCandidates = buildCandidates(definitions[1], side)
-      .filter(
-        (candidate) =>
-          !major ||
-          (candidate.sourceSwing.time !== major.sourceSwing.time &&
-            !overlaps(candidate, major))
-      )
+    const minors = buildCandidates(definitions[1], side)
       .sort(
         (a, b) =>
-          a.distanceFromPrice - b.distanceFromPrice ||
-          b.prominence - a.prominence ||
-          b.sourceSwing.time - a.sourceSwing.time
+          a.sourceSwing.time - b.sourceSwing.time ||
+          b.prominence - a.prominence
       );
 
-    const minor = minorCandidates[0] ?? null;
+    // Keep every distinct minor pool that is not already represented by
+    // a major pool or another overlapping minor pool.
+    for (const candidate of minors) {
+      if (
+        selected.some(
+          (existing) =>
+            existing.side === side &&
+            (existing.sourceSwing.time === candidate.sourceSwing.time ||
+              overlaps(existing, candidate))
+        )
+      ) {
+        continue;
+      }
 
-    if (minor) {
-      selected.push({
-        side: minor.side,
-        importance: minor.importance,
-        level: minor.level,
-        zoneLower: minor.zoneLower,
-        zoneUpper: minor.zoneUpper,
-        sourceSwing: minor.sourceSwing,
-        confirmedTime: minor.confirmedTime,
-        sweptTime: null,
-        status: "virgin"
-      });
+      selected.push(toLevel(candidate));
     }
   }
 
-  return selected;
+  return selected.sort(
+    (a, b) =>
+      a.sourceSwing.time - b.sourceSwing.time ||
+      a.level - b.level
+  );
 }
 
 export function detectLiquiditySweeps(
