@@ -456,7 +456,7 @@ export default function Home() {
   const [showProfile, setShowProfile] = useState(false);
   const [showEma, setShowEma] = useState(false);
   const [showSessionBreaks, setShowSessionBreaks] = useState(false);
-  const [showOrderFlow, setShowOrderFlow] = useState(true);
+  const [showOrderFlow, setShowOrderFlow] = useState(false);
   const [showAdvancedAnalysis, setShowAdvancedAnalysis] = useState(false);
   const [viewReady, setViewReady] = useState(false);
   const [orderFlowBuckets, setOrderFlowBuckets] = useState<OrderFlowBucket[]>([]);
@@ -1334,7 +1334,7 @@ export default function Home() {
     setShowProfile(false);
     setShowEma(false);
     setShowSessionBreaks(false);
-    setShowOrderFlow(true);
+    setShowOrderFlow(false);
     setShowAdvancedAnalysis(false);
     setFitNonce((value) => value + 1);
     setMessage("Chart reset to the clean default view.");
@@ -2769,13 +2769,105 @@ export default function Home() {
 
           <div className="toolbarGroup chartViewGroup">
             <span className="toolbarLabel">VIEW</span>
-            <button
-              type="button"
-              className="timeframe chartResetButton"
-              onClick={resetChartView}
-            >
-              Reset
-            </button>
+            <div className="chartViewActions">
+              <button
+                type="button"
+                className="timeframe chartResetButton"
+                onClick={resetChartView}
+              >
+                Reset
+              </button>
+              <details className="chartFeaturesMenu">
+                <summary className="timeframe chartFeaturesSummary">
+                  Features
+                </summary>
+                <div className="chartFeaturesDropdown">
+                  {[
+                    {
+                      label: "Fibonacci",
+                      active: showFib,
+                      disabled: false,
+                      toggle: () => setShowFib((value) => !value)
+                    },
+                    {
+                      label: "Trend Fibonacci",
+                      active: showTrendFib,
+                      disabled: false,
+                      toggle: () => setShowTrendFib((value) => !value)
+                    },
+                    {
+                      label: "Market Structure",
+                      active: showStructure,
+                      disabled: false,
+                      toggle: () => setShowStructure((value) => !value)
+                    },
+                    {
+                      label: "Fair Value Gaps",
+                      active: showFvg,
+                      disabled: false,
+                      toggle: () => setShowFvg((value) => !value)
+                    },
+                    {
+                      label: "Liquidity Sweeps",
+                      active: showLiquidity,
+                      disabled: false,
+                      toggle: () => setShowLiquidity((value) => !value)
+                    },
+                    {
+                      label: "Order Blocks",
+                      active: showOrderBlocks,
+                      disabled: false,
+                      toggle: () => setShowOrderBlocks((value) => !value)
+                    },
+                    {
+                      label: "VWAP",
+                      active: showVwap,
+                      disabled: !volumeAnalytics.available,
+                      toggle: () => setShowVwap((value) => !value)
+                    },
+                    {
+                      label: "Volume Profile",
+                      active: showProfile,
+                      disabled: !volumeAnalytics.available,
+                      toggle: () => setShowProfile((value) => !value)
+                    },
+                    {
+                      label: "EMA 20 / 50 / 200",
+                      active: showEma,
+                      disabled: false,
+                      toggle: () => setShowEma((value) => !value)
+                    },
+                    {
+                      label: "Session Breaks",
+                      active: showSessionBreaks,
+                      disabled: false,
+                      toggle: () => setShowSessionBreaks((value) => !value)
+                    },
+                    {
+                      label: "Buy / Sell Volume",
+                      active: showOrderFlow,
+                      disabled: !selectedIsKraken,
+                      toggle: () => setShowOrderFlow((value) => !value)
+                    }
+                  ].map((feature) => (
+                    <button
+                      type="button"
+                      className={
+                        feature.active
+                          ? "chartFeatureOption active"
+                          : "chartFeatureOption"
+                      }
+                      disabled={feature.disabled}
+                      key={feature.label}
+                      onClick={feature.toggle}
+                    >
+                      <span>{feature.label}</span>
+                      <strong>{feature.active ? "ON" : "OFF"}</strong>
+                    </button>
+                  ))}
+                </div>
+              </details>
+            </div>
           </div>
 
           <div className="historyStatus">
@@ -3916,105 +4008,6 @@ export default function Home() {
                   ? "Bearish swing"
                   : "Waiting for confirmed swing"}
             </h3>
-          </div>
-          <div className="analysisToggles">
-            <button
-              className={showFib ? "analysisToggle active" : "analysisToggle"}
-              onClick={() => setShowFib((value) => !value)}
-            >
-              Fib {showFib ? "ON" : "OFF"}
-            </button>
-            <button
-              className={
-                showTrendFib
-                  ? "analysisToggle active"
-                  : "analysisToggle"
-              }
-              onClick={() => setShowTrendFib((value) => !value)}
-            >
-              Trend Fib {showTrendFib ? "ON" : "OFF"}
-            </button>
-            <button
-              className={
-                showStructure
-                  ? "analysisToggle active"
-                  : "analysisToggle"
-              }
-              onClick={() => setShowStructure((value) => !value)}
-            >
-              Structure {showStructure ? "ON" : "OFF"}
-            </button>
-            <button
-              className={showFvg ? "analysisToggle active" : "analysisToggle"}
-              onClick={() => setShowFvg((value) => !value)}
-            >
-              FVG {showFvg ? "ON" : "OFF"}
-            </button>
-            <button
-              className={
-                showLiquidity
-                  ? "analysisToggle active"
-                  : "analysisToggle"
-              }
-              onClick={() => setShowLiquidity((value) => !value)}
-            >
-              Liquidity {showLiquidity ? "ON" : "OFF"}
-            </button>
-            <button
-              className={
-                showOrderBlocks
-                  ? "analysisToggle active"
-                  : "analysisToggle"
-              }
-              onClick={() => setShowOrderBlocks((value) => !value)}
-            >
-              Order Blocks {showOrderBlocks ? "ON" : "OFF"}
-            </button>
-            <button
-              className={
-                showVwap ? "analysisToggle active" : "analysisToggle"
-              }
-              onClick={() => setShowVwap((value) => !value)}
-              disabled={!volumeAnalytics.available}
-            >
-              VWAP {showVwap ? "ON" : "OFF"}
-            </button>
-            <button
-              className={
-                showProfile ? "analysisToggle active" : "analysisToggle"
-              }
-              onClick={() => setShowProfile((value) => !value)}
-              disabled={!volumeAnalytics.available}
-            >
-              Profile {showProfile ? "ON" : "OFF"}
-            </button>
-            <button
-              className={showEma ? "analysisToggle active" : "analysisToggle"}
-              onClick={() => setShowEma((value) => !value)}
-            >
-              EMA {showEma ? "ON" : "OFF"}
-            </button>
-            <button
-              className={
-                showSessionBreaks
-                  ? "analysisToggle active"
-                  : "analysisToggle"
-              }
-              onClick={() => setShowSessionBreaks((value) => !value)}
-            >
-              Sessions {showSessionBreaks ? "ON" : "OFF"}
-            </button>
-            <button
-              className={
-                showOrderFlow
-                  ? "analysisToggle active"
-                  : "analysisToggle"
-              }
-              onClick={() => setShowOrderFlow((value) => !value)}
-              disabled={!selectedIsKraken}
-            >
-              Buy/Sell Vol {showOrderFlow ? "ON" : "OFF"}
-            </button>
           </div>
         </div>
 
