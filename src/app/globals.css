@@ -5931,3 +5931,223 @@ html[data-theme="light"] .liquidityLevelLabel {
 .liquidityLevel.minor .liquidityLevelLabel {
   top: 10px;
 }
+
+
+/* Configurable EMA + VWAP editors */
+.emaFeatureControl,
+.vwapFeatureControl {
+  display: grid;
+  gap: 4px;
+}
+
+.emaFeatureEditor,
+.vwapFeatureEditor {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid #243044;
+  border-radius: 7px;
+  background: #0b121c;
+}
+
+.emaFeatureHint,
+.featureField > span,
+.featureCheckboxRow span {
+  color: #7f8ba0;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.055em;
+}
+
+.emaFeatureInputRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.emaFeatureInputRow input,
+.featureField input,
+.featureField select,
+.vwapBandRow > input {
+  min-width: 0;
+  height: 31px;
+  padding: 0 8px;
+  border: 1px solid #2c384b;
+  border-radius: 6px;
+  outline: none;
+  background: #101823;
+  color: #e7edf6;
+  font: inherit;
+  font-size: 10px;
+}
+
+.emaFeatureInputRow input:focus,
+.featureField input:focus,
+.featureField select:focus,
+.vwapBandRow > input:focus {
+  border-color: #4d8dff;
+}
+
+.emaFeatureInputRow button,
+.emaPresetRow button,
+.emaPeriodChips button,
+.emaClearButton,
+.featureOffButton {
+  min-height: 29px;
+  padding: 0 8px;
+  border: 1px solid #2d394d;
+  border-radius: 6px;
+  background: #121b28;
+  color: #cbd5e1;
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 850;
+}
+
+.emaPresetRow,
+.emaPeriodChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.emaPresetRow button.active,
+.emaPeriodChips button {
+  border-color: #4d8dff;
+  background: rgba(77, 141, 255, 0.14);
+  color: #e8f0ff;
+}
+
+.emaPeriodChips small {
+  color: #657287;
+  font-size: 8px;
+}
+
+.emaClearButton,
+.featureOffButton {
+  justify-self: start;
+  color: #ff8b8d;
+}
+
+.featureField {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(90px, 1.25fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.featureCheckboxRow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+
+.featureCheckboxRow input,
+.vwapBandRow input[type="checkbox"] {
+  accent-color: #4d8dff;
+}
+
+.vwapBandsEditor {
+  display: grid;
+  gap: 5px;
+  padding-top: 2px;
+}
+
+.vwapBandRow {
+  display: grid;
+  grid-template-columns: 1fr 82px;
+  align-items: center;
+  gap: 8px;
+}
+
+.vwapBandRow label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #a8b3c4;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+/* Daily Traditional pivot sets */
+.pivotLevelLayer {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.pivotLevel {
+  position: absolute;
+  height: 18px;
+  transform: translateY(-9px);
+}
+
+.pivotLevelLine {
+  position: absolute;
+  top: 9px;
+  right: 0;
+  left: 0;
+  border-top: 1px solid currentColor;
+}
+
+.pivotLevel.resistance {
+  color: #df5f68;
+}
+
+.pivotLevel.support {
+  color: #35b977;
+}
+
+.pivotLevel.pivot {
+  color: #d5a73b;
+}
+
+.pivotLevel.pivot .pivotLevelLine {
+  border-top-width: 2px;
+}
+
+.pivotLevelLabel {
+  position: absolute;
+  top: -3px;
+  right: 3px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(8, 13, 20, 0.86);
+  color: currentColor;
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+html[data-theme="light"] .emaFeatureEditor,
+html[data-theme="light"] .vwapFeatureEditor {
+  border-color: #d6deea;
+  background: #f8fafc;
+}
+
+html[data-theme="light"] .emaFeatureInputRow input,
+html[data-theme="light"] .featureField input,
+html[data-theme="light"] .featureField select,
+html[data-theme="light"] .vwapBandRow > input {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+}
+
+html[data-theme="light"] .emaFeatureInputRow button,
+html[data-theme="light"] .emaPresetRow button,
+html[data-theme="light"] .emaPeriodChips button,
+html[data-theme="light"] .emaClearButton,
+html[data-theme="light"] .featureOffButton {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+}
+
+html[data-theme="light"] .pivotLevelLabel {
+  background: rgba(255, 255, 255, 0.9);
+}
