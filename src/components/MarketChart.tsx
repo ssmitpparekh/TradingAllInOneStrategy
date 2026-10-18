@@ -208,6 +208,17 @@ export default function MarketChart({
       direction: "bullish" | "bearish";
     }>
   >([]);
+  const [liquidityLevelPositions, setLiquidityLevelPositions] = useState<
+    Array<{
+      key: string;
+      left: number;
+      width: number;
+      top: number;
+      side: "buy" | "sell";
+      importance: "minor" | "major";
+      level: number;
+    }>
+  >([]);
   const [sessionBreakPositions, setSessionBreakPositions] = useState<
     Array<{ time: number; x: number }>
   >([]);
@@ -803,22 +814,6 @@ export default function MarketChart({
       }
     }
 
-    if (showLiquidity && imbalance?.latestSweep) {
-      analysisLinesRef.current.push(
-        series.createPriceLine({
-          price: imbalance.latestSweep.level,
-          color:
-            imbalance.latestSweep.direction === "bullish"
-              ? "#69d6c5"
-              : "#ff9b6a",
-          lineWidth: 2,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: `Sweep ${imbalance.latestSweep.direction === "bullish" ? "↑" : "↓"}`
-        })
-      );
-    }
-
     if (showOrderBlocks && orderBlocks) {
       for (const block of orderBlocks.activeBlocks.slice(-3)) {
         const color =
@@ -961,6 +956,71 @@ export default function MarketChart({
     showOrderBlocks,
     showProfile
   ]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const host = hostRef.current;
+
+    if (
+      !chart ||
+      !series ||
+      !host ||
+      !showLiquidity ||
+      !imbalance?.liquidityLevels.length
+    ) {
+      setLiquidityLevelPositions([]);
+      return;
+    }
+
+    const updateLiquidity = () => {
+      const hostWidth = host.clientWidth;
+
+      const positions = imbalance.liquidityLevels.flatMap((level) => {
+        const sourceX = chart.timeScale().timeToCoordinate(
+          level.sourceSwing.time as Time
+        );
+        const y = series.priceToCoordinate(level.level);
+
+        if (sourceX === null || y === null) return [];
+
+        const rawLeft = Number(sourceX);
+
+        if (rawLeft > hostWidth + 20) return [];
+
+        const left = Math.max(0, rawLeft);
+        const right = hostWidth;
+
+        if (right - left < 2) return [];
+
+        return [{
+          key:
+            level.importance +
+            ":" +
+            level.side +
+            ":" +
+            level.sourceSwing.time,
+          left,
+          width: right - left,
+          top: Number(y),
+          side: level.side,
+          importance: level.importance,
+          level: level.level
+        }];
+      });
+
+      setLiquidityLevelPositions(positions);
+    };
+
+    updateLiquidity();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(updateLiquidity);
+    window.addEventListener("resize", updateLiquidity);
+
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateLiquidity);
+      window.removeEventListener("resize", updateLiquidity);
+    };
+  }, [showLiquidity, imbalance, drawingRevision]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -1477,6 +1537,35 @@ export default function MarketChart({
         })}
       </svg>
 
+      {showLiquidity && liquidityLevelPositions.length ? (
+        <div className="liquidityLevelLayer" aria-hidden="true">
+          {liquidityLevelPositions.map((level) => (
+            <div
+              className={
+                "liquidityLevel " +
+                level.importance +
+                " " +
+                level.side
+              }
+              key={level.key}
+              style={{
+                left: level.left,
+                top: level.top,
+                width: level.width
+              }}
+            >
+              <span className="liquidityLevelLine" />
+              <span className="liquidityLevelLabel">
+                {level.importance === "major" ? "MAJOR" : "MINOR"}{" "}
+                {level.side === "buy" ? "BSL" : "SSL"}{" "}
+                {level.level.toLocaleString("en-IN", {
+                  maximumFractionDigits: 2
+                })}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {showStructure && structureEventPositions.length ? (
         <div className="structureHistoryLayer" aria-hidden="true">
           {structureEventPositions.map((event) => (
