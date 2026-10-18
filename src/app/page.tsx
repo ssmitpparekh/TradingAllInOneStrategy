@@ -1108,10 +1108,7 @@ export default function Home() {
     setLoadingContext(true);
 
     try {
-      const endpoint =
-        selectedIsKraken
-          ? "/api/kraken/history"
-          : "/api/fyers/history";
+      const endpoint = "/api/market/history";
       const quoteEndpoint =
         selectedIsKraken
           ? "/api/kraken/quote"
@@ -1122,7 +1119,7 @@ export default function Home() {
         rangeValue: string
       ) =>
         fetch(
-          `${endpoint}?symbol=${encodeURIComponent(primaryAnalysisSymbol)}&resolution=${encodeURIComponent(resolutionValue)}&range=${encodeURIComponent(rangeValue)}`,
+          `${endpoint}?market=${encodeURIComponent(selected.market)}&symbol=${encodeURIComponent(primaryAnalysisSymbol)}&resolution=${encodeURIComponent(resolutionValue)}&range=${encodeURIComponent(rangeValue)}`,
           { cache: "no-store", signal }
         ).then(async (response) => {
           const data = await response.json();
@@ -1183,11 +1180,13 @@ export default function Home() {
     }
 
     try {
-      const endpoint = "/api/fyers/history";
+      const endpoint = "/api/market/history";
       const request = (resolutionValue: string) =>
         fetch(
           endpoint +
-            "?symbol=" +
+            "?market=" +
+            encodeURIComponent(selected.market) +
+            "&symbol=" +
             encodeURIComponent(primaryAnalysisSymbol) +
             "&resolution=" +
             encodeURIComponent(resolutionValue) +
@@ -1341,13 +1340,10 @@ export default function Home() {
     setHistoryMeta({ from: null, to: null, note: null });
 
     try {
-      const endpoint =
-        market === "KRAKEN"
-          ? "/api/kraken/history"
-          : "/api/fyers/history";
+      const endpoint = "/api/market/history";
 
       const response = await fetch(
-        `${endpoint}?symbol=${encodeURIComponent(symbol)}&resolution=${encodeURIComponent(nextResolution)}&range=${encodeURIComponent(nextRange)}`,
+        `${endpoint}?market=${encodeURIComponent(market)}&symbol=${encodeURIComponent(symbol)}&resolution=${encodeURIComponent(nextResolution)}&range=${encodeURIComponent(nextRange)}`,
         { cache: "no-store", signal }
       );
       const data = await response.json();
