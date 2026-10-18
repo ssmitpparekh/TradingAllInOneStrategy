@@ -28,6 +28,8 @@ Permanent 1-minute bars are rebuilt from that raw trade tape:
 - exact buy volume
 - exact sell volume
 - number of trades
+- exact buy-trade count
+- exact sell-trade count
 
 The UI then aggregates those 1-minute records into 2m, 3m, 5m, 10m, 15m,
 20m, 30m, 45m, 1H, 2H, 3H, 4H, 1D and 1W bars.
@@ -44,23 +46,41 @@ an always-on process on a server/container with persistent internet connectivity
 The chart can then be opened at any time and the stored bars will appear on the
 historical candles even though no user had that chart open when the trades occurred.
 
-## Database setup
+## Neon database setup
 
-Run:
+ALLINONEVIEW uses Neon Postgres for persistent order-flow storage.
 
-`database/order-flow.sql`
-
-in the Supabase SQL editor used for ALLINONEVIEW.
-
-Then configure the always-on collector environment:
+The project-level Neon configuration is in `neon.ts`. For local development, pull the
+current branch connection variables into `.env.local`:
 
 ```
-ORDER_FLOW_SUPABASE_URL=
-ORDER_FLOW_SUPABASE_SERVICE_ROLE_KEY=
-ORDER_FLOW_KRAKEN_SYMBOLS=BTC/USD,ETH/USD,SOL/USD,XRP/USD
+neon env pull --service postgres
 ```
 
-Never expose the service-role key to browser/client code.
+This provides:
+
+```
+DATABASE_URL=
+DATABASE_URL_UNPOOLED=
+NEON_BRANCH=
+```
+
+`DATABASE_URL` is the pooled connection string used by the app and collector.
+`DATABASE_URL_UNPOOLED` is used by the schema setup script.
+
+Apply the schema with:
+
+```
+npm run db:setup
+```
+
+Verify the database with the rollback-safe smoke test:
+
+```
+npm run db:smoke
+```
+
+Never expose either database connection string to browser/client code.
 
 ## Starting the collector
 
@@ -78,6 +98,12 @@ A serverless request route is not appropriate for an always-open market WebSocke
 ## Coverage
 
 `ORDER_FLOW_KRAKEN_SYMBOLS` is the recording universe.
+
+The default recording universe is:
+
+```
+BTC/USD,ETH/USD,SOL/USD,XRP/USD
+```
 
 Those symbols are recorded continuously whether or not anyone opens them in the UI.
 Increase the list deliberately as storage/network capacity is planned.
@@ -105,5 +131,5 @@ This is an intentional data-integrity rule.
 The browser also stores completed exact buckets locally. This fixes the old behaviour
 where completed bars disappeared as soon as a new candle began.
 
-Local browser storage is only a convenience cache. The always-on database collector is
+Local browser storage is only a convenience cache. The always-on Neon collector is
 the source required for history recorded while the user is offline.

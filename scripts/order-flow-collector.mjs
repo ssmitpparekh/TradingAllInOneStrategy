@@ -1,5 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import pg from "pg";
+
+const { Pool } = pg;
 
 function loadLocalEnv() {
   if (!existsSync(".env.local")) return;
@@ -17,24 +20,17 @@ function loadLocalEnv() {
       .trim()
       .replace(/^["']|["']$/g, "");
 
-    if (!(key in process.env)) {
-      process.env[key] = value;
-    }
+    if (!(key in process.env)) process.env[key] = value;
   }
+}
+
+function strictSslUrl(value) {
+  return value.replace(/([?&])sslmode=require(?=&|$)/, "$1sslmode=verify-full");
 }
 
 loadLocalEnv();
 
-const supabaseUrl = (
-  process.env.ORDER_FLOW_SUPABASE_URL ||
-  process.env.SUPABASE_URL ||
-  ""
-).replace(/\/$/, "");
-const serviceKey =
-  process.env.ORDER_FLOW_SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  "";
-
+const databaseUrl = strictSslUrl(process.env.DATABASE_URL?.trim() || "");
 const configuredSymbols =
   process.env.ORDER_FLOW_KRAKEN_SYMBOLS ||
   "BTC/USD,ETH/USD,SOL/USD,XRP/USD";
@@ -43,9 +39,9 @@ const symbols = configuredSymbols
   .map((value) => value.trim())
   .filter(Boolean);
 
-if (!supabaseUrl || !serviceKey) {
+if (!databaseUrl) {
   throw new Error(
-    "Persistent order-flow collector needs ORDER_FLOW_SUPABASE_URL and ORDER_FLOW_SUPABASE_SERVICE_ROLE_KEY."
+    "Persistent order-flow collector needs DATABASE_URL. Run `neon env pull --service postgres` first."
   );
 }
 
@@ -53,12 +49,13 @@ if (!symbols.length) {
   throw new Error("ORDER_FLOW_KRAKEN_SYMBOLS is empty.");
 }
 
-const headers = {
-  apikey: serviceKey,
-  Authorization: "Bearer " + serviceKey,
-  "Content-Type": "application/json",
-  Accept: "application/json"
-};
+const pool = new Pool({
+  connectionString: databaseUrl,
+  max: 4,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 10_000,
+  keepAlive: true
+});
 
 let socket = null;
 let reconnectTimer = null;
@@ -86,53 +83,48 @@ function fallbackTradeId(item, epoch) {
 async function insertTrades(rows) {
   if (!rows.length) return;
 
-  const endpoint =
-    supabaseUrl +
-    "/rest/v1/market_trade_tape?on_conflict=provider,symbol,trade_id";
+  const values = [];
+  const tuples = rows.map((row, index) => {
+    const start = index * 9;
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      ...headers,
-      Prefer: "resolution=ignore-duplicates,return=minimal"
-    },
-    body: JSON.stringify(rows)
+    values.push(
+      row.provider,
+      row.market,
+      row.symbol,
+      row.trade_id,
+      row.trade_time,
+      row.trade_epoch,
+      row.price,
+      row.qty,
+      row.side
+    );
+
+    return `($${start + 1},$${start + 2},$${start + 3},$${start + 4},$${start + 5},$${start + 6},$${start + 7},$${start + 8},$${start + 9})`;
   });
 
-  if (!response.ok) {
-    throw new Error(
-      "Trade tape insert failed: HTTP " +
-        response.status +
-        " " +
-        (await response.text())
-    );
-  }
+  await pool.query(
+    `insert into public.market_trade_tape (
+       provider,
+       market,
+       symbol,
+       trade_id,
+       trade_time,
+       trade_epoch,
+       price,
+       qty,
+       side
+     )
+     values ${tuples.join(",")}
+     on conflict (provider, symbol, trade_id) do nothing`,
+    values
+  );
 }
 
 async function refreshBars(symbol, fromEpoch, toEpoch) {
-  const response = await fetch(
-    supabaseUrl + "/rest/v1/rpc/refresh_market_order_flow_1m",
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        p_provider: "KRAKEN",
-        p_market: "KRAKEN",
-        p_symbol: symbol,
-        p_from_epoch: fromEpoch,
-        p_to_epoch: toEpoch
-      })
-    }
+  await pool.query(
+    "select public.refresh_market_order_flow_1m($1, $2, $3, $4, $5)",
+    ["KRAKEN", "KRAKEN", symbol, fromEpoch, toEpoch]
   );
-
-  if (!response.ok) {
-    throw new Error(
-      "1m order-flow refresh failed: HTTP " +
-        response.status +
-        " " +
-        (await response.text())
-    );
-  }
 }
 
 async function flush() {
@@ -148,6 +140,7 @@ async function flush() {
     const bySymbol = new Map();
     for (const row of batch) {
       const current = bySymbol.get(row.symbol);
+
       if (!current) {
         bySymbol.set(row.symbol, {
           min: row.trade_epoch,
@@ -170,20 +163,15 @@ async function flush() {
     );
 
     process.stdout.write(
-      "[" +
-        new Date().toISOString() +
-        "] stored " +
-        batch.length +
-        " exact Kraken trades\n"
+      `[${new Date().toISOString()}] stored ${batch.length} exact Kraken trades\n`
     );
   } catch (error) {
     pending = [...batch, ...pending].slice(-50000);
+
     process.stderr.write(
-      "[" +
-        new Date().toISOString() +
-        "] collector flush error: " +
-        (error instanceof Error ? error.message : String(error)) +
-        "\n"
+      `[${new Date().toISOString()}] collector flush error: ${
+        error instanceof Error ? error.message : String(error)
+      }\n`
     );
   } finally {
     flushing = false;
@@ -200,11 +188,7 @@ function connect() {
   }
 
   process.stdout.write(
-    "[" +
-      new Date().toISOString() +
-      "] connecting Kraken exact trade tape for " +
-      symbols.join(", ") +
-      "\n"
+    `[${new Date().toISOString()}] connecting Kraken exact trade tape for ${symbols.join(", ")}\n`
   );
 
   socket = new WebSocket("wss://ws.kraken.com/v2");
@@ -227,14 +211,13 @@ function connect() {
   socket.addEventListener("message", (event) => {
     try {
       const message = JSON.parse(String(event.data));
+
       if (message?.channel !== "trade" || !Array.isArray(message.data)) {
         if (message?.success === false) {
           process.stderr.write(
-            "[" +
-              new Date().toISOString() +
-              "] Kraken subscription error: " +
-              String(message.error ?? "unknown") +
-              "\n"
+            `[${new Date().toISOString()}] Kraken subscription error: ${String(
+              message.error ?? "unknown"
+            )}\n`
           );
         }
         return;
@@ -318,6 +301,7 @@ const shutdown = async () => {
   }
 
   await flush();
+  await pool.end();
   process.exit(0);
 };
 

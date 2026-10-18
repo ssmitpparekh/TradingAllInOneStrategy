@@ -12,7 +12,7 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["fyers-api-v3"],
+  serverExternalPackages: ["fyers-api-v3", "pg"],
   poweredByHeader: false,
   compress: true,
   reactStrictMode: true,

@@ -7,17 +7,23 @@
     "build": "next build",
     "start": "next start -H 127.0.0.1 -p 8080",
     "typecheck": "tsc --noEmit",
-    "collector:orderflow": "node scripts/order-flow-collector.mjs"
+    "collector:orderflow": "node scripts/order-flow-collector.mjs",
+    "db:setup": "node scripts/apply-neon-schema.mjs",
+    "db:smoke": "node scripts/neon-smoke.mjs"
   },
   "dependencies": {
+    "@neon/config": "^1.9.2",
+    "@neon/env": "^1.6.3",
     "fyers-api-v3": "2.3.0",
     "lightweight-charts": "5.2.1",
     "next": "16.4.2",
+    "pg": "^8.23.1",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "typescript": "^5.9.0"

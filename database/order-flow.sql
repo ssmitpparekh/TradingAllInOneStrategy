@@ -1,5 +1,6 @@
--- ALLINONEVIEW persistent exact order-flow storage.
--- Run once in the Supabase SQL editor used for ALLINONEVIEW.
+-- ALLINONEVIEW persistent exact order-flow storage on Neon Postgres.
+-- Apply with: npm run db:setup
+-- The application and collector connect server-side with DATABASE_URL.
 
 create table if not exists public.market_trade_tape (
   provider text not null,
@@ -43,12 +44,6 @@ alter table public.market_order_flow_1m
 create index if not exists market_order_flow_1m_symbol_time_idx
   on public.market_order_flow_1m (provider, market, symbol, bucket_time desc);
 
-alter table public.market_trade_tape enable row level security;
-alter table public.market_order_flow_1m enable row level security;
-
--- No public RLS policies are created. The always-on collector and server API
--- use the service-role key; browsers never receive that key.
-
 create or replace function public.refresh_market_order_flow_1m(
   p_provider text,
   p_market text,
@@ -58,7 +53,6 @@ create or replace function public.refresh_market_order_flow_1m(
 )
 returns void
 language plpgsql
-security definer
 set search_path = public
 as $$
 begin
