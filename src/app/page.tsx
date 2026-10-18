@@ -2939,13 +2939,27 @@ export default function Home() {
                       }
                       disabled={!volumeAnalytics.available}
                       onClick={() => {
-                        if (!showVwap) setShowVwap(true);
-                        setVwapEditorOpen((value) => !value);
+                        if (showVwap) {
+                          setShowVwap(false);
+                          setVwapEditorOpen(false);
+                        } else {
+                          setShowVwap(true);
+                          setVwapEditorOpen(true);
+                        }
                       }}
                     >
                       <span>VWAP</span>
                       <strong>{showVwap ? "ON" : "OFF"}</strong>
                     </button>
+                    {showVwap && !vwapEditorOpen ? (
+                      <button
+                        type="button"
+                        className="featureEditButton"
+                        onClick={() => setVwapEditorOpen(true)}
+                      >
+                        Edit VWAP settings
+                      </button>
+                    ) : null}
 
                     {vwapEditorOpen ? (
                       <div className="vwapFeatureEditor">
@@ -3115,9 +3129,15 @@ export default function Home() {
                           ? "chartFeatureOption active"
                           : "chartFeatureOption"
                       }
-                      onClick={() =>
-                        setEmaEditorOpen((value) => !value)
-                      }
+                      onClick={() => {
+                        if (showEma) {
+                          setEmaPeriods([]);
+                          setEmaInput("");
+                          setEmaEditorOpen(false);
+                        } else {
+                          setEmaEditorOpen(true);
+                        }
+                      }}
                     >
                       <span>EMA</span>
                       <strong>
@@ -3126,6 +3146,15 @@ export default function Home() {
                           : "OFF"}
                       </strong>
                     </button>
+                    {showEma && !emaEditorOpen ? (
+                      <button
+                        type="button"
+                        className="featureEditButton"
+                        onClick={() => setEmaEditorOpen(true)}
+                      >
+                        Edit EMA settings
+                      </button>
+                    ) : null}
 
                     {emaEditorOpen ? (
                       <div className="emaFeatureEditor">
