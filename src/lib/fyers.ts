@@ -169,8 +169,11 @@ export async function getHistory(
   url.searchParams.set("date_format", "0");
   url.searchParams.set("range_from", String(options.from));
   url.searchParams.set("range_to", String(options.to));
-  url.searchParams.set("cont_flag", "1");
-  if (options.includeOi) {
+  const derivativeSymbol = /(?:FUT|CE|PE)$/.test(symbol);
+  if (derivativeSymbol) {
+    url.searchParams.set("cont_flag", "1");
+  }
+  if (options.includeOi && derivativeSymbol) {
     url.searchParams.set("oi_flag", "1");
   }
 
@@ -185,9 +188,19 @@ export async function getHistory(
 
   const body = await response.json();
 
+  if (body?.s === "no_data" && Array.isArray(body?.candles)) {
+    return [];
+  }
+
   if (!response.ok || body?.s !== "ok" || !Array.isArray(body?.candles)) {
+    const detail =
+      body?.data && typeof body.data === "object"
+        ? " " + JSON.stringify(body.data)
+        : "";
     const message = body?.message || `HTTP ${response.status}`;
-    throw new Error(`FYERS history request failed: ${message}`);
+    throw new Error(
+      `FYERS history request failed: ${message}${detail}`
+    );
   }
 
   return body.candles.map((row: unknown[]) => ({
