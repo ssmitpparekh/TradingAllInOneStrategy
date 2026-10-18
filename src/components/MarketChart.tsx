@@ -686,6 +686,10 @@ export default function MarketChart({
     });
     observer.observe(host);
 
+    chart.timeScale().subscribeVisibleLogicalRangeChange(
+      scheduleOverlayRedraw
+    );
+
     host.addEventListener("pointerup", scheduleOverlayRedraw, {
       passive: true
     });
@@ -736,6 +740,9 @@ export default function MarketChart({
 
     return () => {
       host.removeEventListener("wheel", onVerticalWheel, true);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(
+        scheduleOverlayRedraw
+      );
       host.removeEventListener("pointerup", scheduleOverlayRedraw);
       host.removeEventListener("touchend", scheduleOverlayRedraw);
       window.removeEventListener("resize", scheduleOverlayRedraw);
@@ -960,14 +967,7 @@ export default function MarketChart({
     };
 
     updatePositions();
-    chart.timeScale().subscribeVisibleLogicalRangeChange(updatePositions);
-    window.addEventListener("resize", updatePositions);
-
-    return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updatePositions);
-      window.removeEventListener("resize", updatePositions);
-    };
-  }, [sessionBreakTimes, showSessionBreaks]);
+  }, [sessionBreakTimes, showSessionBreaks, drawingRevision]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -1011,13 +1011,6 @@ export default function MarketChart({
     };
 
     updateMarkers();
-    chart.timeScale().subscribeVisibleLogicalRangeChange(updateMarkers);
-    window.addEventListener("resize", updateMarkers);
-
-    return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateMarkers);
-      window.removeEventListener("resize", updateMarkers);
-    };
   }, [tradeMarkers, candles, liveCandle, drawingRevision]);
 
   useEffect(() => {
@@ -1144,13 +1137,6 @@ export default function MarketChart({
     };
 
     updateFib();
-    chart.timeScale().subscribeVisibleLogicalRangeChange(updateFib);
-    window.addEventListener("resize", updateFib);
-
-    return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateFib);
-      window.removeEventListener("resize", updateFib);
-    };
   }, [showFib, fibonacci, candles, liveCandle, drawingRevision]);
 
   useEffect(() => {
@@ -1216,13 +1202,6 @@ export default function MarketChart({
     };
 
     updateTrendFib();
-    chart.timeScale().subscribeVisibleLogicalRangeChange(updateTrendFib);
-    window.addEventListener("resize", updateTrendFib);
-
-    return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateTrendFib);
-      window.removeEventListener("resize", updateTrendFib);
-    };
   }, [showTrendFib, fibonacci, candles, liveCandle, drawingRevision]);
 
   useEffect(() => {
@@ -1285,13 +1264,6 @@ export default function MarketChart({
     };
 
     updateOrderBlocks();
-    chart.timeScale().subscribeVisibleLogicalRangeChange(updateOrderBlocks);
-    window.addEventListener("resize", updateOrderBlocks);
-
-    return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateOrderBlocks);
-      window.removeEventListener("resize", updateOrderBlocks);
-    };
   }, [showOrderBlocks, orderBlocks, candles, liveCandle, drawingRevision]);
 
   useEffect(() => {
@@ -1383,13 +1355,6 @@ export default function MarketChart({
     };
 
     updateProfile();
-    chart.timeScale().subscribeVisibleLogicalRangeChange(updateProfile);
-    window.addEventListener("resize", updateProfile);
-
-    return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateProfile);
-      window.removeEventListener("resize", updateProfile);
-    };
   }, [showProfile, volumeAnalytics, drawingRevision]);
 
   useEffect(() => {
@@ -1468,13 +1433,6 @@ export default function MarketChart({
     };
 
     updateFvgs();
-    chart.timeScale().subscribeVisibleLogicalRangeChange(updateFvgs);
-    window.addEventListener("resize", updateFvgs);
-
-    return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateFvgs);
-      window.removeEventListener("resize", updateFvgs);
-    };
   }, [showFvg, imbalance, candles, liveCandle, drawingRevision]);
 
   useEffect(() => {
@@ -1566,13 +1524,6 @@ export default function MarketChart({
     };
 
     updatePivots();
-    chart.timeScale().subscribeVisibleLogicalRangeChange(updatePivots);
-    window.addEventListener("resize", updatePivots);
-
-    return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updatePivots);
-      window.removeEventListener("resize", updatePivots);
-    };
   }, [showPivots, pivotSets, candles, liveCandle, drawingRevision]);
 
   useEffect(() => {
@@ -1647,13 +1598,6 @@ export default function MarketChart({
     };
 
     updateLiquidity();
-    chart.timeScale().subscribeVisibleLogicalRangeChange(updateLiquidity);
-    window.addEventListener("resize", updateLiquidity);
-
-    return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateLiquidity);
-      window.removeEventListener("resize", updateLiquidity);
-    };
   }, [showLiquidity, imbalance, candles, liveCandle, drawingRevision]);
 
   useEffect(() => {
@@ -1709,13 +1653,6 @@ export default function MarketChart({
     };
 
     updateStructure();
-    chart.timeScale().subscribeVisibleLogicalRangeChange(updateStructure);
-    window.addEventListener("resize", updateStructure);
-
-    return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateStructure);
-      window.removeEventListener("resize", updateStructure);
-    };
   }, [showStructure, structure, drawingRevision]);
 
   useEffect(() => {
@@ -1825,14 +1762,12 @@ export default function MarketChart({
     };
 
     updateBars();
-    chart.timeScale().subscribeVisibleLogicalRangeChange(updateBars);
-    window.addEventListener("resize", updateBars);
-
-    return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateBars);
-      window.removeEventListener("resize", updateBars);
-    };
-  }, [orderFlowBuckets, showOrderFlow, cumulativeDeltaByTime]);
+  }, [
+    orderFlowBuckets,
+    showOrderFlow,
+    cumulativeDeltaByTime,
+    drawingRevision
+  ]);
 
   useEffect(() => {
     const chart = chartRef.current;
