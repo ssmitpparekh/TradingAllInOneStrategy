@@ -390,10 +390,12 @@ export function detectFairValueGaps(
 ): FairValueGap[] {
   if (candles.length < 3) return [];
 
-  const maxRecent = Math.max(1, options?.maxRecent ?? 20);
+  const maxRecent =
+    options?.maxRecent === undefined
+      ? Number.POSITIVE_INFINITY
+      : Math.max(1, options.maxRecent);
   const minAtrFraction = Math.max(0, options?.minAtrFraction ?? 0.05);
-  const recentCandles =
-    candles.length > 1200 ? candles.slice(-1200) : candles;
+  const recentCandles = candles;
   const atr = calculateAtr(recentCandles) ?? 0;
   const latestClose = recentCandles[recentCandles.length - 1].close;
   const minimumGap = Math.max(
@@ -483,7 +485,9 @@ export function detectFairValueGaps(
     gaps.push(gap);
   }
 
-  return gaps.slice(-maxRecent);
+  return Number.isFinite(maxRecent)
+    ? gaps.slice(-maxRecent)
+    : gaps;
 }
 
 export function detectLiquidityLevels(
