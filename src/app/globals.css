@@ -6407,6 +6407,29 @@ html[data-theme="light"] .volumeProfileLevel span {
   font-weight: 900;
 }
 
+.featureEditButton {
+  min-height: 27px;
+  padding: 0 8px;
+  border: 1px dashed #33445f;
+  border-radius: 6px;
+  background: transparent;
+  color: #8fa0b6;
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 850;
+  text-align: left;
+}
+
+.featureEditButton:hover {
+  border-color: #4d8dff;
+  color: #dce7fb;
+}
+
+html[data-theme="light"] .featureEditButton {
+  border-color: #cbd5e1;
+  color: #64748b;
+}
+
 
 /* FYERS-style technical meters built from existing calculations */
 .technicalMetersPanel {
