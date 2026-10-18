@@ -70,7 +70,8 @@ export async function getMarketCandleCoverage(options: {
     `select
        min(candle_time) as first_time,
        max(candle_time) as last_time,
-       count(*)::bigint as candles
+       count(*)::bigint as candles,
+       max(refreshed_at) as last_refresh
      from public.market_candles
      where provider = $1
        and market = $2
@@ -94,7 +95,11 @@ export async function getMarketCandleCoverage(options: {
       row?.last_time === null || row?.last_time === undefined
         ? null
         : Number(row.last_time),
-    candles: Number(row?.candles ?? 0)
+    candles: Number(row?.candles ?? 0),
+    lastRefresh:
+      row?.last_refresh == null
+        ? null
+        : new Date(row.last_refresh).getTime()
   };
 }
 
