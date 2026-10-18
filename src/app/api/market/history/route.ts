@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getHistory, type FyersCandle } from "@/lib/fyers";
 import { readFyersSession } from "@/lib/fyers-session";
+import { getOandaCandles } from "@/lib/oanda";
 import {
   getMarketCandleCoverage,
   readMarketCandles,
@@ -75,7 +76,7 @@ function resolutionSeconds(resolution: string) {
 function requestedLookback(
   range: RangeKey,
   resolution: string,
-  provider: "FYERS" | "KRAKEN"
+  provider: "FYERS" | "KRAKEN" | "OANDA"
 ) {
   const map: Record<Exclude<RangeKey, "MAX">, number> = {
     "1D": DAY,
@@ -87,14 +88,22 @@ function requestedLookback(
     "5Y": 5 * 366 * DAY
   };
 
+  const numericResolution = Number(resolution);
   const providerMax =
     provider === "FYERS"
       ? isDailyLike(resolution)
         ? 5 * 366 * DAY
         : 366 * DAY
-      : isDailyLike(resolution)
-        ? 5 * 366 * DAY
-        : 366 * DAY;
+      : provider === "OANDA"
+        ? isDailyLike(resolution)
+          ? 22 * 366 * DAY
+          : Number.isFinite(numericResolution) &&
+              numericResolution >= 60
+            ? 5 * 366 * DAY
+            : 366 * DAY
+        : isDailyLike(resolution)
+          ? 5 * 366 * DAY
+          : 366 * DAY;
 
   if (range !== "MAX") {
     return Math.min(map[range], providerMax);
@@ -138,6 +147,34 @@ async function fetchFyersHistory(options: {
       from: start,
       to: end,
       includeOi: /(?:FUT|CE|PE)$/.test(options.symbol)
+    });
+    all.push(...candles);
+  }
+
+  return dedupeAndSort(all);
+}
+
+async function fetchOandaHistory(options: {
+  symbol: string;
+  resolution: string;
+  from: number;
+  to: number;
+}) {
+  const step = resolutionSeconds(options.resolution);
+  const chunkSeconds = Math.max(step, step * 4500);
+  const all: StoredMarketCandle[] = [];
+
+  for (
+    let start = options.from;
+    start <= options.to;
+    start += chunkSeconds + 1
+  ) {
+    const end = Math.min(start + chunkSeconds, options.to);
+    const candles = await getOandaCandles({
+      symbol: options.symbol,
+      resolution: options.resolution,
+      from: start,
+      to: end
     });
     all.push(...candles);
   }
@@ -211,10 +248,19 @@ export async function GET(request: NextRequest) {
   const market =
     request.nextUrl.searchParams.get("market")?.trim().toUpperCase() ||
     "NSE";
-  const provider = market === "KRAKEN" ? "KRAKEN" : "FYERS";
+  const provider =
+    market === "KRAKEN"
+      ? "KRAKEN"
+      : market === "OANDA"
+        ? "OANDA"
+        : "FYERS";
   const symbol =
     request.nextUrl.searchParams.get("symbol")?.trim() ||
-    (provider === "KRAKEN" ? "BTC/USD" : "NSE:NIFTY50-INDEX");
+    (provider === "KRAKEN"
+      ? "BTC/USD"
+      : provider === "OANDA"
+        ? "XAU_USD"
+        : "NSE:NIFTY50-INDEX");
   const resolution = normalizeResolution(
     request.nextUrl.searchParams.get("resolution")?.trim() || "15"
   );
@@ -287,7 +333,14 @@ export async function GET(request: NextRequest) {
               from,
               to
             })
-          : await fetchKrakenRecent(symbol, resolution);
+          : provider === "OANDA"
+            ? await fetchOandaHistory({
+                symbol,
+                resolution,
+                from,
+                to
+              })
+            : await fetchKrakenRecent(symbol, resolution);
 
       if (cacheAvailable && upstream.length) {
         await upsertMarketCandles({
@@ -298,7 +351,9 @@ export async function GET(request: NextRequest) {
           source:
             provider === "FYERS"
               ? "FYERS Historical Data API"
-              : "Kraken Spot OHLC REST",
+              : provider === "OANDA"
+                ? "OANDA v20 midpoint candles"
+                : "Kraken Spot OHLC REST",
           quality: "exact_ohlcv",
           candles: upstream
         });
@@ -350,6 +405,10 @@ export async function GET(request: NextRequest) {
         "FYERS Standard intraday history is limited to the recent plan window."
       );
     }
+  } else if (provider === "OANDA") {
+    notes.push(
+      "OANDA v20 midpoint candles are cached in Neon. Available instruments come from the connected OANDA account."
+    );
   } else {
     notes.push(
       "Recent Kraken OHLC is cached in Neon; deep archive backfill is handled separately."
