@@ -6960,3 +6960,36 @@ html[data-theme="light"] .technicalIndicatorRows > div {
     font-size: 6px;
   }
 }
+
+
+/* Order-flow interaction must stay above non-interactive chart overlays. */
+.exactVolumeLayer {
+  z-index: 70;
+  overflow: visible;
+  clip-path: none;
+  contain: none;
+  pointer-events: none;
+}
+
+.exactVolumeBar {
+  z-index: 1;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+.exactVolumeBar:hover,
+.exactVolumeBar.active {
+  z-index: 90;
+}
+
+.exactVolumeTooltip {
+  z-index: 100;
+  visibility: hidden;
+}
+
+.exactVolumeBar:hover .exactVolumeTooltip,
+.exactVolumeBar.active .exactVolumeTooltip {
+  visibility: visible;
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
