@@ -317,7 +317,7 @@ export default function MarketChart({
   instrumentKey = "default"
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<IChartApi | null>(null);
+  const chartRef = useRef<IChartApi<Time> | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const vwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const futureAxisSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
