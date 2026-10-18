@@ -634,8 +634,21 @@ export function detectLiquidityLevels(
           };
         });
 
+      const distinctCandidates = candidates.filter((candidate) =>
+        selected.every((existing) => {
+          if (existing.side !== side) return true;
+          const zonesOverlap =
+            Math.max(candidate.zoneLower, existing.zoneLower) <=
+            Math.min(candidate.zoneUpper, existing.zoneUpper);
+          return (
+            candidate.sourceSwing.time !== existing.sourceSwing.time &&
+            !zonesOverlap
+          );
+        })
+      );
+
       const active = chooseStickyActive(
-        candidates,
+        distinctCandidates,
         usedSourceTimes[side]
       );
 
