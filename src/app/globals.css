@@ -6993,3 +6993,120 @@ html[data-theme="light"] .technicalIndicatorRows > div {
   opacity: 1;
   transform: translate(-50%, 0);
 }
+
+
+/* Final chart plot boundary + bottom volume pane */
+.chartToolbar {
+  position: relative;
+  z-index: 300;
+}
+
+.chartFeaturesMenu {
+  z-index: 320;
+}
+
+.chartFeaturesDropdown {
+  z-index: 1000;
+}
+
+/* Hard barrier: analytical overlays stop before the right price scale. */
+.sessionBreakLayer,
+.tradeMarkerLayer,
+.structureHistoryLayer,
+.liquidityLevelLayer,
+.fvgZoneLayer,
+.pivotLevelLayer,
+.fibOverlayLayer,
+.trendFibOverlayLayer,
+.orderBlockZoneLayer,
+.volumeProfileLayer {
+  right: var(--chart-right-scale, 58px) !important;
+  left: 0 !important;
+  width: auto !important;
+  overflow: hidden !important;
+}
+
+/* Session breaks only, slightly stronger so they are visible without grid noise. */
+.sessionBreakLine {
+  border-left-color: rgba(82, 101, 130, 0.58);
+}
+
+html[data-theme="light"] .sessionBreakLine {
+  border-left-color: rgba(71, 85, 105, 0.52);
+}
+
+/* Buyer / seller volume is a dedicated lower pane, not a floating overlay. */
+.exactVolumeLayer {
+  z-index: 12;
+  right: var(--chart-right-scale, 58px);
+  bottom: 28px;
+  left: 0;
+  height: 108px;
+  border-top: 1px solid rgba(121, 136, 158, 0.22);
+  background:
+    linear-gradient(
+      to top,
+      rgba(8, 13, 20, 0.08),
+      rgba(8, 13, 20, 0.015)
+    );
+  pointer-events: none;
+  overflow: visible;
+  clip-path: none;
+  contain: none;
+}
+
+html[data-theme="light"] .exactVolumeLayer {
+  border-top-color: rgba(100, 116, 139, 0.2);
+  background:
+    linear-gradient(
+      to top,
+      rgba(241, 245, 249, 0.36),
+      rgba(255, 255, 255, 0)
+    );
+}
+
+.exactVolumeBar {
+  bottom: 0;
+  max-height: 96px;
+  z-index: 1;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+.exactVolumeBar:hover,
+.exactVolumeBar.active {
+  z-index: 40;
+}
+
+.exactVolumeTooltip {
+  z-index: 50;
+}
+
+/* Keep all chart feature labels inside their own plotted segment. */
+.liquidityLevelLabel,
+.structureHistoryLabel,
+.fibOverlayLabel,
+.trendFibOverlayLabel,
+.orderBlockZoneLabel,
+.fvgZoneLabel,
+.pivotLevelLabel {
+  max-width: calc(100% - 8px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 700px) {
+  .exactVolumeLayer {
+    right: var(--chart-right-scale, 52px);
+    bottom: 26px;
+    height: 96px;
+  }
+
+  .exactVolumeBar {
+    max-height: 86px;
+  }
+
+  .sessionBreakLine {
+    border-left-color: rgba(82, 101, 130, 0.5);
+  }
+}
