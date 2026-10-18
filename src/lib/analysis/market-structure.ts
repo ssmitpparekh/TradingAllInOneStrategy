@@ -609,12 +609,15 @@ export function detectLiquidityLevels(
       const active = chooseStickyActive(candidates);
 
       if (active) {
-        const {
-          confirmationIndex: _confirmationIndex,
-          sweptIndex: _sweptIndex,
-          ...level
-        } = active;
-        selected.push(level);
+        selected.push({
+          side: active.side,
+          importance: active.importance,
+          level: active.level,
+          sourceSwing: active.sourceSwing,
+          confirmedTime: active.confirmedTime,
+          sweptTime: active.sweptTime,
+          status: active.status
+        });
       }
     }
   }
