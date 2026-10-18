@@ -7893,3 +7893,975 @@ html[data-theme="light"] .appNavDrawer nav a.active {
     width: min(84vw, 290px);
   }
 }
+
+
+/* Analytics dashboard pages */
+.analyticsPage {
+  width: min(1600px, calc(100% - 28px));
+  margin: 0 auto;
+  padding: 74px 0 56px;
+}
+
+.analyticsPageHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.analyticsPageHeader h1 {
+  margin: 5px 0 0;
+  color: #eef3f8;
+  font-size: clamp(34px, 5vw, 62px);
+  line-height: 0.95;
+}
+
+.analyticsPageHeader > div > p:last-child {
+  max-width: 840px;
+  margin: 12px 0 0;
+  color: #8390a3;
+  line-height: 1.5;
+}
+
+.analyticsSourceBadge {
+  flex: 0 0 auto;
+  padding: 8px 11px;
+  border: 1px solid #29405e;
+  border-radius: 999px;
+  background: #0c1521;
+  color: #8bb4ff;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.analyticsError,
+.analyticsLoading,
+.analyticsCoverageBar {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid #263143;
+  border-radius: 10px;
+  background: #0a1018;
+  color: #aab5c5;
+  font-size: 11px;
+}
+
+.analyticsError {
+  border-color: rgba(222, 83, 96, .34);
+  background: rgba(222, 83, 96, .08);
+  color: #ff9ea6;
+}
+
+.analyticsCoverageBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.analyticsCoverageBar small {
+  color: #6d7b8f;
+}
+
+.analyticsMetricGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.analyticsMetricCard {
+  min-height: 110px;
+  padding: 16px;
+  border: 1px solid #202937;
+  border-radius: 12px;
+  background: #0a1018;
+}
+
+.analyticsMetricCard > span,
+.analyticsMetricCard > strong,
+.analyticsMetricCard > small {
+  display: block;
+}
+
+.analyticsMetricCard > span {
+  color: #667489;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.analyticsMetricCard > strong {
+  margin-top: 10px;
+  color: #eef3f8;
+  font-size: 25px;
+}
+
+.analyticsMetricCard > small {
+  margin-top: 6px;
+  color: #748196;
+  font-size: 9px;
+}
+
+.analyticsSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.analyticsSectionHeader h2 {
+  margin-top: 4px;
+  color: #eef3f8;
+  font-size: 19px;
+}
+
+.analyticsSectionHeader > span {
+  color: #6f7d91;
+  font-size: 9px;
+}
+
+.analyticsBreadthCard,
+.analyticsTableCard,
+.analyticsMethodCard,
+.indexMoverDonutCard,
+.optionClockMain,
+.optionBuildCard,
+.optionPcrCard,
+.optionApexPanel,
+.optionFluxCard {
+  padding: 17px;
+}
+
+.breadthTrack,
+.sectorBreadthTrack,
+.optionBuildTrack {
+  display: flex;
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #141c28;
+}
+
+.analyticsBreadthCard .breadthTrack {
+  margin-top: 15px;
+}
+
+.breadthUp,
+.positiveFill,
+.putBuild {
+  background: #36c987;
+}
+
+.breadthFlat {
+  background: #68758a;
+}
+
+.breadthDown,
+.negativeFill,
+.callBuild {
+  background: #ef6b75;
+}
+
+.analyticsIndexStrip {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.analyticsIndexCard {
+  padding: 13px;
+  border: 1px solid #202937;
+  border-radius: 10px;
+  background: #0a1018;
+}
+
+.analyticsIndexCard span,
+.analyticsIndexCard strong,
+.analyticsIndexCard small {
+  display: block;
+}
+
+.analyticsIndexCard span {
+  color: #718096;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.analyticsIndexCard strong {
+  margin-top: 6px;
+  color: #edf2f8;
+  font-size: 15px;
+}
+
+.analyticsIndexCard small {
+  margin-top: 4px;
+  font-size: 9px;
+}
+
+.analyticsTwoColumn {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.analyticsRows {
+  display: grid;
+  margin-top: 10px;
+}
+
+.analyticsRow,
+.swingScanRow {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 45px;
+  border-top: 1px solid #182231;
+  color: #aeb8c7;
+  font-size: 10px;
+}
+
+.analyticsRow:first-child,
+.swingScanRow:first-child {
+  border-top: 0;
+}
+
+.analyticsRow .rank {
+  color: #617087;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.analyticsRow div strong,
+.analyticsRow div small,
+.swingScanRow div strong,
+.swingScanRow div small {
+  display: block;
+}
+
+.analyticsRow div strong,
+.swingScanRow div strong {
+  color: #e7edf5;
+  font-size: 10px;
+}
+
+.analyticsRow div small,
+.swingScanRow div small {
+  margin-top: 2px;
+  color: #657287;
+  font-size: 8px;
+}
+
+.sectorScoreGrid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sectorScoreGrid article {
+  padding: 11px;
+  border: 1px solid #202937;
+  border-radius: 9px;
+  background: #0a1018;
+}
+
+.sectorScoreGrid span,
+.sectorScoreGrid strong,
+.sectorScoreGrid small {
+  display: block;
+}
+
+.sectorScoreGrid span {
+  color: #68758a;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.sectorScoreGrid strong {
+  margin-top: 6px;
+  font-size: 15px;
+}
+
+.sectorScoreGrid small {
+  margin-top: 4px;
+  color: #69768a;
+  font-size: 8px;
+}
+
+.analyticsMethodNote {
+  margin: 10px 2px 0;
+  color: #68758a;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.sectorLeaderboard {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.sectorLeaderCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 9px;
+  padding: 11px;
+  border: 1px solid #202937;
+  border-radius: 10px;
+  background: #0a1018;
+}
+
+.sectorLeaderCard > span {
+  grid-row: span 2;
+  color: #607089;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.sectorLeaderCard div strong,
+.sectorLeaderCard div small {
+  display: block;
+}
+
+.sectorLeaderCard div strong {
+  color: #e8edf4;
+  font-size: 9px;
+}
+
+.sectorLeaderCard div small {
+  color: #657287;
+  font-size: 8px;
+}
+
+.sectorLeaderCard > strong {
+  grid-column: 2;
+  font-size: 12px;
+}
+
+.sectorScopeGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sectorScopeCard {
+  padding: 14px;
+}
+
+.sectorScopeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sectorScopeHeader h2 {
+  margin-top: 3px;
+  font-size: 18px;
+}
+
+.sectorScopeHeader > span {
+  color: #657287;
+  font-size: 9px;
+}
+
+.sectorBreadthTrack {
+  margin: 11px 0;
+  height: 5px;
+}
+
+.sectorTileGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 5px;
+}
+
+.sectorTile {
+  min-height: 82px;
+  padding: 10px;
+  border: 1px solid rgba(130, 144, 165, .15);
+  border-radius: 8px;
+}
+
+.sectorTile strong,
+.sectorTile span,
+.sectorTile small {
+  display: block;
+}
+
+.sectorTile strong {
+  color: #f2f6fb;
+  font-size: 10px;
+}
+
+.sectorTile span {
+  margin-top: 8px;
+  color: #eef3f8;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.sectorTile small {
+  margin-top: 4px;
+  color: #a6b2c1;
+  font-size: 8px;
+}
+
+.analyticsTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.analyticsTabs button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #263143;
+  border-radius: 8px;
+  background: #0a1018;
+  color: #7b889b;
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.analyticsTabs button.active {
+  border-color: #4776ff;
+  background: #162342;
+  color: #f3f7fb;
+}
+
+.indexMoverHeroGrid {
+  display: grid;
+  grid-template-columns: minmax(260px, .65fr) minmax(0, 1.35fr);
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.indexMoverQuote,
+.indexMoverBreadth {
+  padding: 16px;
+}
+
+.indexMoverQuote > strong,
+.indexMoverQuote > span {
+  display: block;
+}
+
+.indexMoverQuote > strong {
+  margin-top: 8px;
+  color: #eef3f8;
+  font-size: 34px;
+}
+
+.indexMoverQuote > span {
+  margin-top: 5px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.indexMoverBreadth {
+  display: grid;
+  align-content: center;
+}
+
+.indexMoverBreadth h2 {
+  margin: 5px 0 12px;
+  color: #eaf0f7;
+  font-size: 17px;
+}
+
+.indexMoverMain {
+  grid-template-columns: minmax(320px, .7fr) minmax(0, 1.3fr);
+}
+
+.indexBreadthDonut,
+.optionPcrDonut {
+  display: grid;
+  width: min(280px, 75vw);
+  aspect-ratio: 1;
+  place-items: center;
+  margin: 24px auto;
+  border-radius: 50%;
+}
+
+.indexBreadthDonut > div,
+.optionPcrDonut > div {
+  display: grid;
+  width: 60%;
+  aspect-ratio: 1;
+  place-items: center;
+  align-content: center;
+  border-radius: 50%;
+  background: #0a1018;
+}
+
+.indexBreadthDonut strong {
+  color: #eef3f8;
+  font-size: 35px;
+}
+
+.indexBreadthDonut span,
+.indexBreadthDonut small,
+.optionPcrDonut span {
+  color: #77859a;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.swingSpectrumGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.swingScanCard {
+  padding: 15px;
+}
+
+.swingScanRows {
+  margin-top: 10px;
+}
+
+.swingScanRow {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.analyticsEmptyState {
+  padding: 20px 0;
+  color: #637086;
+  font-size: 10px;
+}
+
+.methodRuleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.methodRuleGrid > div {
+  padding: 10px;
+  border: 1px solid #1c2634;
+  border-radius: 8px;
+  background: #090f17;
+}
+
+.methodRuleGrid strong,
+.methodRuleGrid span {
+  display: block;
+}
+
+.methodRuleGrid strong {
+  color: #8da2c1;
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.methodRuleGrid span {
+  margin-top: 4px;
+  color: #aeb8c7;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.optionsControls {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 12px 0;
+}
+
+.optionsControls label {
+  display: grid;
+  gap: 5px;
+  min-width: 190px;
+}
+
+.optionsControls label span {
+  color: #67758a;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.optionsControls select {
+  min-height: 36px;
+  border: 1px solid #263143;
+  border-radius: 8px;
+  background: #0a1018;
+  color: #e8eef5;
+  padding: 0 10px;
+}
+
+.optionClockGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(300px, .55fr);
+  gap: 12px;
+}
+
+.optionClockSide {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.optionClockLegend {
+  display: flex;
+  gap: 15px;
+  margin: 12px 0;
+  color: #7d899a;
+  font-size: 9px;
+}
+
+.optionClockLegend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.optionClockLegend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.callLegend {
+  background: #ef6b75;
+}
+
+.putLegend {
+  background: #36c987;
+}
+
+.optionClockRows {
+  display: grid;
+  gap: 2px;
+  max-height: 680px;
+  overflow-y: auto;
+  padding-right: 5px;
+}
+
+.optionClockRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px minmax(0, 1fr);
+  align-items: center;
+  min-height: 34px;
+  border-radius: 6px;
+}
+
+.optionClockRow.atm {
+  background: rgba(88, 127, 190, .12);
+  outline: 1px dashed #607798;
+}
+
+.optionClockRow > b {
+  color: #b8c4d2;
+  text-align: center;
+  font-size: 9px;
+}
+
+.optionBarSide {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 24px;
+}
+
+.optionBarSide span {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  min-width: 1px;
+  border-radius: 3px;
+  opacity: .88;
+}
+
+.optionBarSide strong {
+  position: relative;
+  z-index: 2;
+  color: #dce4ed;
+  font-size: 8px;
+}
+
+.optionBarSide.call {
+  justify-content: flex-end;
+}
+
+.optionBarSide.call span {
+  right: 0;
+  background: #ef6b75;
+}
+
+.optionBarSide.call strong {
+  padding-right: 5px;
+}
+
+.optionBarSide.put span {
+  left: 0;
+  background: #36c987;
+}
+
+.optionBarSide.put strong {
+  padding-left: 5px;
+}
+
+.optionBuildTrack {
+  margin: 16px 0;
+  height: 10px;
+}
+
+.optionBuildNumbers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.optionBuildNumbers > div {
+  padding: 9px;
+  border: 1px solid #1c2634;
+  border-radius: 8px;
+  background: #090f17;
+}
+
+.optionBuildNumbers span,
+.optionBuildNumbers strong {
+  display: block;
+}
+
+.optionBuildNumbers span {
+  color: #68758a;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.optionBuildNumbers strong {
+  margin-top: 5px;
+  font-size: 13px;
+}
+
+.optionPcrDonut {
+  width: min(210px, 65vw);
+}
+
+.optionPcrDonut strong {
+  color: #eef3f8;
+  font-size: 27px;
+}
+
+.optionsApexGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.greeksGrid,
+.oiWallsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 13px;
+}
+
+.greeksGrid > div,
+.oiWallsGrid > div {
+  padding: 12px;
+  border: 1px solid #1c2634;
+  border-radius: 9px;
+  background: #090f17;
+}
+
+.greeksGrid strong,
+.greeksGrid span {
+  display: block;
+}
+
+.greeksGrid strong {
+  color: #eef3f8;
+  font-size: 12px;
+}
+
+.greeksGrid span {
+  margin-top: 6px;
+  color: #9aa7b9;
+  font-size: 9px;
+}
+
+.oiWallsGrid > div > span {
+  color: #68758a;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.oiWallsGrid p {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 9px 0 0;
+}
+
+.oiWallsGrid p strong {
+  color: #eef3f8;
+  font-size: 12px;
+}
+
+.oiWallsGrid p small {
+  color: #7b899c;
+  font-size: 8px;
+}
+
+.optionFluxCard {
+  margin-top: 12px;
+}
+
+.optionFluxGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 5px;
+  margin-top: 12px;
+}
+
+.optionFluxTile {
+  min-height: 80px;
+  padding: 10px;
+  border: 1px solid rgba(120, 136, 158, .18);
+  border-radius: 8px;
+}
+
+.optionFluxTile.put {
+  background: rgba(38, 185, 113, .34);
+}
+
+.optionFluxTile.call {
+  background: rgba(224, 73, 87, .34);
+}
+
+.optionFluxTile strong,
+.optionFluxTile span {
+  display: block;
+}
+
+.optionFluxTile strong {
+  color: #f4f7fb;
+  font-size: 11px;
+}
+
+.optionFluxTile span {
+  margin-top: 8px;
+  color: #d8e1ea;
+  font-size: 8px;
+}
+
+html[data-theme="light"] .analyticsPageHeader h1,
+html[data-theme="light"] .analyticsMetricCard > strong,
+html[data-theme="light"] .analyticsIndexCard strong,
+html[data-theme="light"] .analyticsSectionHeader h2,
+html[data-theme="light"] .indexMoverQuote > strong,
+html[data-theme="light"] .greeksGrid strong,
+html[data-theme="light"] .oiWallsGrid p strong,
+html[data-theme="light"] .sectorTile strong,
+html[data-theme="light"] .sectorTile span {
+  color: #0f172a;
+}
+
+html[data-theme="light"] .analyticsMetricCard,
+html[data-theme="light"] .analyticsIndexCard,
+html[data-theme="light"] .sectorLeaderCard,
+html[data-theme="light"] .sectorScoreGrid article,
+html[data-theme="light"] .methodRuleGrid > div,
+html[data-theme="light"] .optionBuildNumbers > div,
+html[data-theme="light"] .greeksGrid > div,
+html[data-theme="light"] .oiWallsGrid > div,
+html[data-theme="light"] .optionsControls select,
+html[data-theme="light"] .analyticsTabs button {
+  border-color: #d8e0eb;
+  background: #ffffff;
+}
+
+@media (max-width: 1100px) {
+  .analyticsIndexStrip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .sectorLeaderboard {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .sectorScoreGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .optionClockGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .optionClockSide {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 800px) {
+  .analyticsPage {
+    width: min(100% - 16px, 1600px);
+    padding-top: 66px;
+  }
+
+  .analyticsPageHeader,
+  .analyticsCoverageBar,
+  .optionsControls {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .analyticsMetricGrid,
+  .analyticsTwoColumn,
+  .sectorScopeGrid,
+  .swingSpectrumGrid,
+  .optionsApexGrid,
+  .indexMoverHeroGrid,
+  .indexMoverMain {
+    grid-template-columns: 1fr;
+  }
+
+  .sectorLeaderboard,
+  .sectorScoreGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .analyticsIndexStrip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .methodRuleGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .optionsControls label {
+    width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .analyticsMetricGrid,
+  .analyticsIndexStrip,
+  .sectorLeaderboard,
+  .sectorScoreGrid,
+  .optionClockSide,
+  .greeksGrid,
+  .oiWallsGrid,
+  .optionBuildNumbers {
+    grid-template-columns: 1fr;
+  }
+
+  .optionClockRow {
+    grid-template-columns: minmax(0, 1fr) 72px minmax(0, 1fr);
+  }
+}
