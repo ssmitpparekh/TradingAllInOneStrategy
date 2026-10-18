@@ -5511,3 +5511,205 @@ html[data-theme="light"] .optionCapitalGrid strong {
   font-weight: 800;
   letter-spacing: 0.05em;
 }
+
+
+/* Full platform trade history */
+.performanceHeaderRow,
+.tradeHistoryHero,
+.tradeHistoryFullHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.tradeHistoryLink {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 13px;
+  border: 1px solid #2c3a4f;
+  border-radius: 8px;
+  background: #111827;
+  color: #e5edf7;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  text-decoration: none;
+}
+
+.tradeHistoryLink:hover {
+  border-color: #4d8dff;
+  color: #ffffff;
+}
+
+.tradeHistoryPage {
+  width: min(1600px, calc(100% - 28px));
+  margin: 14px auto 36px;
+}
+
+.tradeHistoryHero {
+  padding: 18px;
+}
+
+.tradeHistoryHero h1 {
+  margin: 2px 0 5px;
+  font-size: 28px;
+}
+
+.tradeHistoryHero p {
+  margin: 0;
+  color: #7d899b;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.tradeHistoryControlsCard {
+  display: grid;
+  grid-template-columns: auto auto minmax(220px, 1fr);
+  gap: 18px;
+  align-items: end;
+  margin-top: 12px;
+  padding: 14px 16px;
+}
+
+.tradeHistoryFilterBlock > span,
+.tradeHistorySearch > span,
+.tradeHistorySummaryCard > span {
+  display: block;
+  margin-bottom: 7px;
+  color: #69768a;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.tradeHistoryFilterRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tradeHistoryFilter {
+  min-height: 31px;
+  padding: 0 10px;
+  border: 1px solid #293244;
+  border-radius: 7px;
+  background: #0c1119;
+  color: #8290a4;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 850;
+}
+
+.tradeHistoryFilter.active {
+  border-color: #4d8dff;
+  background: #172238;
+  color: #ffffff;
+}
+
+.tradeHistorySearch input {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #293244;
+  border-radius: 7px;
+  outline: none;
+  background: #0c1119;
+  color: #e5edf7;
+  font: inherit;
+}
+
+.tradeHistorySearch input:focus {
+  border-color: #4d8dff;
+}
+
+.tradeHistorySummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.tradeHistorySummaryCard {
+  padding: 14px;
+}
+
+.tradeHistorySummaryCard strong {
+  color: #edf2f7;
+  font-size: 22px;
+}
+
+.tradeHistoryFullCard {
+  margin-top: 12px;
+  padding: 16px;
+}
+
+.tradeHistoryFullHeader h2 {
+  margin: 2px 0 0;
+  font-size: 18px;
+}
+
+.tradeHistoryFullHeader small {
+  color: #718096;
+  font-size: 9px;
+}
+
+@media (max-width: 980px) {
+  .tradeHistoryControlsCard {
+    grid-template-columns: 1fr;
+  }
+
+  .tradeHistorySummaryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .performanceHeaderRow,
+  .tradeHistoryHero,
+  .tradeHistoryFullHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .tradeHistoryLink {
+    width: 100%;
+  }
+
+  .tradeHistorySummaryGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+html[data-theme="light"] .tradeHistoryLink {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+}
+
+html[data-theme="light"] .tradeHistoryLink:hover {
+  border-color: #4d8dff;
+  color: #0f172a;
+}
+
+html[data-theme="light"] .tradeHistoryFilter,
+html[data-theme="light"] .tradeHistorySearch input {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+}
+
+html[data-theme="light"] .tradeHistoryFilter.active {
+  border-color: #4d8dff;
+  background: #e8eefc;
+  color: #0f172a;
+}
+
+html[data-theme="light"] .tradeHistorySummaryCard strong,
+html[data-theme="light"] .tradeHistoryHero h1,
+html[data-theme="light"] .tradeHistoryFullHeader h2 {
+  color: #0f172a;
+}
