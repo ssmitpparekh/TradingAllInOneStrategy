@@ -1757,7 +1757,7 @@ export default function MarketChart({
           } =>
             item.x !== null &&
             Number(item.x) >= -20 &&
-            Number(item.x) <= hostWidth + 20
+            Number(item.x) <= plotRight
         )
         .map((item) => ({
           bucket: item.bucket,
