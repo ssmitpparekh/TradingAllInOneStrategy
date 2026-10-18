@@ -9,7 +9,11 @@ import PwaInstallButton from "@/components/PwaInstallButton";
 import OpportunityScanner from "@/components/OpportunityScanner";
 import NewsImpactPanel from "@/components/NewsImpactPanel";
 import { buildTechnicalContext } from "@/lib/analysis/indicators";
-import { buildVolumeAnalytics } from "@/lib/analysis/volume";
+import {
+  buildVolumeAnalytics,
+  type VwapSettings
+} from "@/lib/analysis/volume";
+import { buildDailyTraditionalPivots } from "@/lib/analysis/pivots";
 import { buildReversalEngine } from "@/lib/analysis/confluence";
 import { buildSimpleTradePlan } from "@/lib/analysis/trade-plan";
 import { buildReactionTradePlan } from "@/lib/analysis/reaction-trade";
@@ -453,7 +457,21 @@ export default function Home() {
   const [showLiquidity, setShowLiquidity] = useState(false);
   const [showOrderBlocks, setShowOrderBlocks] = useState(false);
   const [showVwap, setShowVwap] = useState(false);
+  const [vwapEditorOpen, setVwapEditorOpen] = useState(false);
+  const [vwapSettings, setVwapSettings] = useState<VwapSettings>({
+    hideOnDailyOrAbove: true,
+    anchorPeriod: "session",
+    source: "hlc3",
+    offset: 0,
+    bandsMode: "stdev",
+    bands: [
+      { enabled: true, multiplier: 1 },
+      { enabled: false, multiplier: 2 },
+      { enabled: false, multiplier: 3 }
+    ]
+  });
   const [showProfile, setShowProfile] = useState(false);
+  const [showPivots, setShowPivots] = useState(false);
   const [emaPeriods, setEmaPeriods] = useState<number[]>([]);
   const [emaInput, setEmaInput] = useState("");
   const [emaEditorOpen, setEmaEditorOpen] = useState(false);
@@ -543,6 +561,14 @@ export default function Home() {
     () => buildOrderBlockSnapshot(candles),
     [candles]
   );
+  const dailyPivots = useMemo(
+    () =>
+      buildDailyTraditionalPivots(liveAnalysisCandles, {
+        timeZone: selectedIsKraken ? "UTC" : "Asia/Kolkata"
+      }),
+    [liveAnalysisCandles, selectedIsKraken]
+  );
+
   const volumeAnalytics = useMemo(
     () =>
       buildVolumeAnalytics(liveAnalysisCandles, {
@@ -1364,7 +1390,9 @@ export default function Home() {
     setShowLiquidity(false);
     setShowOrderBlocks(false);
     setShowVwap(false);
+    setVwapEditorOpen(false);
     setShowProfile(false);
+    setShowPivots(false);
     setEmaPeriods([]);
     setEmaInput("");
     setEmaEditorOpen(false);
@@ -2855,16 +2883,16 @@ export default function Home() {
                       toggle: () => setShowOrderBlocks((value) => !value)
                     },
                     {
-                      label: "VWAP",
-                      active: showVwap,
-                      disabled: !volumeAnalytics.available,
-                      toggle: () => setShowVwap((value) => !value)
-                    },
-                    {
                       label: "Volume Profile",
                       active: showProfile,
                       disabled: !volumeAnalytics.available,
                       toggle: () => setShowProfile((value) => !value)
+                    },
+                    {
+                      label: "Daily Pivot Levels",
+                      active: showPivots,
+                      disabled: dailyPivots.length === 0,
+                      toggle: () => setShowPivots((value) => !value)
                     },
                     {
                       label: "Session Breaks",
@@ -2894,6 +2922,168 @@ export default function Home() {
                       <strong>{feature.active ? "ON" : "OFF"}</strong>
                     </button>
                   ))}
+                  <div className="vwapFeatureControl">
+                    <button
+                      type="button"
+                      className={
+                        showVwap
+                          ? "chartFeatureOption active"
+                          : "chartFeatureOption"
+                      }
+                      disabled={!volumeAnalytics.available}
+                      onClick={() => {
+                        if (!showVwap) setShowVwap(true);
+                        setVwapEditorOpen((value) => !value);
+                      }}
+                    >
+                      <span>VWAP</span>
+                      <strong>{showVwap ? "ON" : "OFF"}</strong>
+                    </button>
+
+                    {vwapEditorOpen ? (
+                      <div className="vwapFeatureEditor">
+                        <label className="featureCheckboxRow">
+                          <input
+                            type="checkbox"
+                            checked={vwapSettings.hideOnDailyOrAbove}
+                            onChange={(event) =>
+                              setVwapSettings((current) => ({
+                                ...current,
+                                hideOnDailyOrAbove: event.target.checked
+                              }))
+                            }
+                          />
+                          <span>Hide VWAP on 1D or above</span>
+                        </label>
+
+                        <label className="featureField">
+                          <span>Anchor Period</span>
+                          <select
+                            value={vwapSettings.anchorPeriod}
+                            onChange={(event) =>
+                              setVwapSettings((current) => ({
+                                ...current,
+                                anchorPeriod: event.target.value as VwapSettings["anchorPeriod"]
+                              }))
+                            }
+                          >
+                            <option value="session">Session</option>
+                            <option value="week">Week</option>
+                            <option value="month">Month</option>
+                            <option value="quarter">Quarter</option>
+                            <option value="year">Year</option>
+                          </select>
+                        </label>
+
+                        <label className="featureField">
+                          <span>Source</span>
+                          <select
+                            value={vwapSettings.source}
+                            onChange={(event) =>
+                              setVwapSettings((current) => ({
+                                ...current,
+                                source: event.target.value as VwapSettings["source"]
+                              }))
+                            }
+                          >
+                            <option value="hlc3">HLC3</option>
+                            <option value="close">Close</option>
+                            <option value="open">Open</option>
+                            <option value="high">High</option>
+                            <option value="low">Low</option>
+                            <option value="hl2">HL2</option>
+                            <option value="ohlc4">OHLC4</option>
+                          </select>
+                        </label>
+
+                        <label className="featureField">
+                          <span>Offset</span>
+                          <input
+                            type="number"
+                            step="1"
+                            value={vwapSettings.offset}
+                            onChange={(event) =>
+                              setVwapSettings((current) => ({
+                                ...current,
+                                offset: Number.parseInt(event.target.value || "0", 10)
+                              }))
+                            }
+                          />
+                        </label>
+
+                        <label className="featureField">
+                          <span>Bands Calculation</span>
+                          <select
+                            value={vwapSettings.bandsMode}
+                            onChange={(event) =>
+                              setVwapSettings((current) => ({
+                                ...current,
+                                bandsMode: event.target.value as VwapSettings["bandsMode"]
+                              }))
+                            }
+                          >
+                            <option value="stdev">Standard Deviation</option>
+                            <option value="percentage">Percentage</option>
+                          </select>
+                        </label>
+
+                        <div className="vwapBandsEditor">
+                          {vwapSettings.bands.map((band, index) => (
+                            <div className="vwapBandRow" key={index}>
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  checked={band.enabled}
+                                  onChange={(event) =>
+                                    setVwapSettings((current) => ({
+                                      ...current,
+                                      bands: current.bands.map((item, bandIndex) =>
+                                        bandIndex === index
+                                          ? { ...item, enabled: event.target.checked }
+                                          : item
+                                      )
+                                    }))
+                                  }
+                                />
+                                <span>Band #{index + 1}</span>
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.1"
+                                value={band.multiplier}
+                                onChange={(event) =>
+                                  setVwapSettings((current) => ({
+                                    ...current,
+                                    bands: current.bands.map((item, bandIndex) =>
+                                      bandIndex === index
+                                        ? {
+                                            ...item,
+                                            multiplier: Number(event.target.value)
+                                          }
+                                        : item
+                                    )
+                                  }))
+                                }
+                              />
+                            </div>
+                          ))}
+                        </div>
+
+                        <button
+                          type="button"
+                          className="featureOffButton"
+                          onClick={() => {
+                            setShowVwap(false);
+                            setVwapEditorOpen(false);
+                          }}
+                        >
+                          Turn VWAP off
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+
                   <div className="emaFeatureControl">
                     <button
                       type="button"
@@ -3031,6 +3221,8 @@ export default function Home() {
           orderBlocks={orderBlocks}
           volumeAnalytics={volumeAnalytics}
           emaPeriods={emaPeriods}
+          vwapSettings={vwapSettings}
+          pivotSets={dailyPivots}
           showFib={showFib}
           showTrendFib={showTrendFib}
           showStructure={showStructure}
@@ -3039,6 +3231,7 @@ export default function Home() {
           showOrderBlocks={showOrderBlocks}
           showVwap={showVwap}
           showProfile={showProfile}
+          showPivots={showPivots}
           showEma={showEma}
           market={selected.market}
           resolution={resolution}
