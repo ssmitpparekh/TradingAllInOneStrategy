@@ -354,7 +354,10 @@ export async function GET(request: NextRequest) {
               : provider === "OANDA"
                 ? "OANDA v20 midpoint candles"
                 : "Kraken Spot OHLC REST",
-          quality: "exact_ohlcv",
+          quality:
+            provider === "OANDA"
+              ? "broker_mid_ohlc_tickcount"
+              : "exact_ohlcv",
           candles: upstream
         });
 
@@ -407,7 +410,7 @@ export async function GET(request: NextRequest) {
     }
   } else if (provider === "OANDA") {
     notes.push(
-      "OANDA v20 midpoint candles are cached in Neon. Available instruments come from the connected OANDA account."
+      "OANDA v20 midpoint candles are cached in Neon. OANDA candle volume is price/tick count rather than centralized exchange trade volume. Available instruments come from the connected OANDA account."
     );
   } else {
     notes.push(
