@@ -73,6 +73,15 @@ function resolutionSeconds(resolution: string) {
     : 15 * 60;
 }
 
+function fyersRefreshWindow(resolution: string) {
+  // FYERS Standard permits roughly one year of intraday history and five
+  // years of daily history. Keep a small safety margin so timezone/leap-day
+  // boundaries never push range_from outside the plan window.
+  return isDailyLike(resolution)
+    ? 5 * 365 * DAY - 2 * DAY
+    : 364 * DAY;
+}
+
 function requestedLookback(
   range: RangeKey,
   resolution: string,
@@ -91,9 +100,7 @@ function requestedLookback(
   const numericResolution = Number(resolution);
   const providerMax =
     provider === "FYERS"
-      ? isDailyLike(resolution)
-        ? 5 * 366 * DAY
-        : 366 * DAY
+      ? fyersRefreshWindow(resolution)
       : provider === "OANDA"
         ? isDailyLike(resolution)
           ? 22 * 366 * DAY
@@ -283,6 +290,10 @@ export async function GET(request: NextRequest) {
         ? 5 * DAY
         : 2 * DAY;
   const from = Math.max(0, to - lookback - calendarBuffer);
+  const upstreamFrom =
+    provider === "FYERS"
+      ? Math.max(from, to - fyersRefreshWindow(resolution))
+      : from;
 
   let cached: StoredMarketCandle[] = [];
   let cacheAvailable = true;
@@ -330,7 +341,7 @@ export async function GET(request: NextRequest) {
           ? await fetchFyersHistory({
               symbol,
               resolution,
-              from,
+              from: upstreamFrom,
               to
             })
           : provider === "OANDA"
@@ -418,9 +429,15 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  if (provider === "FYERS" && upstreamFrom > from) {
+    notes.push(
+      "Older candles are being served from Neon while FYERS refreshes only the history window permitted by the connected plan."
+    );
+  }
+
   if (upstreamError && candles.length) {
     notes.push(
-      `Serving cached candles because upstream refresh failed: ${upstreamError}`
+      "Cached candles are available; the latest provider refresh could not be completed."
     );
   }
 
