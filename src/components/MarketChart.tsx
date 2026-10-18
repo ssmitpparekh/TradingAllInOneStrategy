@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties
+} from "react";
 import {
   CandlestickSeries,
   ColorType,
@@ -200,11 +206,18 @@ function indianMarketMinute(timestamp: number) {
 function futureAxisTimes(
   lastTime: number,
   market: string,
-  resolution: string,
-  count = 80
+  resolution: string
 ) {
   const step = resolutionSeconds(resolution);
   const output: number[] = [];
+  const count = isIntradayResolution(resolution)
+    ? Math.min(
+        1600,
+        Math.max(120, Math.ceil((24 * 60 * 60) / step))
+      )
+    : resolution === "1D" || resolution === "D"
+      ? 90
+      : 40;
 
   if (!isIntradayResolution(resolution)) {
     for (let index = 1; index <= count; index += 1) {
@@ -327,6 +340,7 @@ export default function MarketChart({
     Map<string, ISeriesApi<"Line">>
   >(new Map());
   const emaSeriesRefs = useRef<Map<number, ISeriesApi<"Line">>>(new Map());
+  const [plotRightInset, setPlotRightInset] = useState(58);
   const [hovered, setHovered] = useState<ChartCandle | null>(null);
   const [activeOrderFlowTime, setActiveOrderFlowTime] = useState<number | null>(
     null
@@ -673,6 +687,13 @@ export default function MarketChart({
       if (overlayRafRef.current !== null) return;
       overlayRafRef.current = window.requestAnimationFrame(() => {
         overlayRafRef.current = null;
+        const nextInset = Math.max(
+          0,
+          Math.round(chart.priceScale("right").width())
+        );
+        setPlotRightInset((current) =>
+          current === nextInset ? current : nextInset
+        );
         setDrawingRevision((value) => value + 1);
       });
     };
@@ -685,6 +706,9 @@ export default function MarketChart({
       scheduleOverlayRedraw();
     });
     observer.observe(host);
+    setPlotRightInset(
+      Math.max(0, Math.round(chart.priceScale("right").width()))
+    );
 
     chart.timeScale().subscribeVisibleLogicalRangeChange(
       scheduleOverlayRedraw
@@ -2034,7 +2058,14 @@ export default function MarketChart({
   const readout = hovered ?? latest;
 
   return (
-    <div className="marketChartShell">
+    <div
+      className="marketChartShell"
+      style={
+        {
+          "--chart-right-scale": `${plotRightInset}px`
+        } as CSSProperties
+      }
+    >
       {readout ? (
         <div className="crosshairReadout">
           <span>{formatIst(readout.time)}</span>
