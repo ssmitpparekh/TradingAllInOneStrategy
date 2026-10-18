@@ -5863,3 +5863,66 @@ html[data-theme="light"] .chartFeatureOption.active {
     align-items: stretch;
   }
 }
+
+
+/* Four active virgin liquidity levels */
+.liquidityLevelLayer {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.liquidityLevel {
+  position: absolute;
+  height: 20px;
+  transform: translateY(-10px);
+}
+
+.liquidityLevelLine {
+  position: absolute;
+  top: 10px;
+  right: 0;
+  left: 0;
+  border-top: 2px solid currentColor;
+}
+
+.liquidityLevel.minor .liquidityLevelLine {
+  border-top-width: 1px;
+  border-top-style: dashed;
+  opacity: 0.86;
+}
+
+.liquidityLevel.major .liquidityLevelLine {
+  border-top-width: 2px;
+  border-top-style: solid;
+}
+
+.liquidityLevel.buy {
+  color: #f0a15a;
+}
+
+.liquidityLevel.sell {
+  color: #52c8b3;
+}
+
+.liquidityLevelLabel {
+  position: absolute;
+  top: -2px;
+  right: 4px;
+  padding: 1px 5px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: rgba(8, 13, 20, 0.88);
+  color: currentColor;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.035em;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+html[data-theme="light"] .liquidityLevelLabel {
+  background: rgba(255, 255, 255, 0.9);
+}
