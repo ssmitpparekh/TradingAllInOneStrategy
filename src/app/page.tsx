@@ -236,7 +236,7 @@ const TYPE_FILTERS = ["ALL", "INDEX", "EQUITY", "ETF", "SGB", "MF", "FUTURE", "O
 const LAST_VIEW_KEY = "allinoneview:last-view:v1";
 const TRADE_JOURNAL_KEY = "allinoneview:trade-journal:v1";
 const THEME_KEY = "allinoneview:theme:v1";
-const ORDER_FLOW_LOCAL_KEY = "allinoneview:order-flow:v2";
+const ORDER_FLOW_LOCAL_KEY = "allinoneview:order-flow:v3";
 
 const KRAKEN_RESOLUTIONS = new Set<Resolution>([
   "1", "5", "15", "30", "60", "240", "1D", "1W"
