@@ -54,11 +54,22 @@ export type LiquiditySweep = {
   sourceSwing: SwingPoint;
 };
 
+export type LiquidityLevel = {
+  side: "buy" | "sell";
+  importance: "minor" | "major";
+  level: number;
+  sourceSwing: SwingPoint;
+  confirmedTime: number;
+  sweptTime: number | null;
+  status: "virgin" | "swept";
+};
+
 export type ImbalanceLiquiditySnapshot = {
   recentFvgs: FairValueGap[];
   activeFvgs: FairValueGap[];
   recentSweeps: LiquiditySweep[];
   latestSweep: LiquiditySweep | null;
+  liquidityLevels: LiquidityLevel[];
 };
 
 export type OrderBlock = {
@@ -475,6 +486,117 @@ export function detectFairValueGaps(
   return gaps.slice(-maxRecent);
 }
 
+export function detectLiquidityLevels(
+  candles: AnalysisCandle[]
+): LiquidityLevel[] {
+  if (candles.length < 20) return [];
+
+  const definitions = [
+    {
+      importance: "minor" as const,
+      leftBars: 2,
+      rightBars: 2,
+      atrMultiplier: 0.35
+    },
+    {
+      importance: "major" as const,
+      leftBars: 6,
+      rightBars: 6,
+      atrMultiplier: 1
+    }
+  ];
+
+  const allLevels: LiquidityLevel[] = [];
+
+  for (const definition of definitions) {
+    const swings = detectSwings(candles, {
+      leftBars: definition.leftBars,
+      rightBars: definition.rightBars,
+      atrMultiplier: definition.atrMultiplier
+    });
+
+    for (const swing of swings) {
+      const confirmationIndex = Math.min(
+        candles.length - 1,
+        swing.index + definition.rightBars
+      );
+      let sweptTime: number | null = null;
+
+      for (
+        let index = confirmationIndex + 1;
+        index < candles.length;
+        index += 1
+      ) {
+        const candle = candles[index];
+        const swept =
+          swing.type === "high"
+            ? candle.high > swing.price
+            : candle.low < swing.price;
+
+        if (swept) {
+          sweptTime = candle.time;
+          break;
+        }
+      }
+
+      allLevels.push({
+        side: swing.type === "high" ? "buy" : "sell",
+        importance: definition.importance,
+        level: swing.price,
+        sourceSwing: swing,
+        confirmedTime: candles[confirmationIndex].time,
+        sweptTime,
+        status: sweptTime === null ? "virgin" : "swept"
+      });
+    }
+  }
+
+  const latestClose = candles[candles.length - 1].close;
+  const selected: LiquidityLevel[] = [];
+
+  for (const importance of ["major", "minor"] as const) {
+    for (const side of ["buy", "sell"] as const) {
+      const candidates = allLevels
+        .filter(
+          (level) =>
+            level.importance === importance &&
+            level.side === side &&
+            level.status === "virgin" &&
+            (side === "buy"
+              ? level.level >= latestClose
+              : level.level <= latestClose)
+        )
+        .sort((a, b) => {
+          const distanceA = Math.abs(a.level - latestClose);
+          const distanceB = Math.abs(b.level - latestClose);
+
+          if (distanceA !== distanceB) {
+            return distanceA - distanceB;
+          }
+
+          return b.sourceSwing.time - a.sourceSwing.time;
+        });
+
+      const duplicateSource = new Set(
+        selected
+          .filter((level) => level.side === side)
+          .map((level) => level.sourceSwing.time)
+      );
+
+      const preferred =
+        candidates.find(
+          (level) => !duplicateSource.has(level.sourceSwing.time)
+        ) ?? candidates[0];
+
+      if (preferred) {
+        selected.push(preferred);
+      }
+    }
+  }
+
+  return selected;
+}
+
 export function detectLiquiditySweeps(
   candles: AnalysisCandle[],
   options?: {
@@ -571,6 +693,7 @@ export function buildImbalanceLiquiditySnapshot(
 ): ImbalanceLiquiditySnapshot {
   const recentFvgs = detectFairValueGaps(candles);
   const recentSweeps = detectLiquiditySweeps(candles);
+  const liquidityLevels = detectLiquidityLevels(candles);
 
   return {
     recentFvgs,
@@ -578,7 +701,8 @@ export function buildImbalanceLiquiditySnapshot(
       .filter((gap) => gap.status !== "filled")
       .slice(-6),
     recentSweeps,
-    latestSweep: recentSweeps[recentSweeps.length - 1] ?? null
+    latestSweep: recentSweeps[recentSweeps.length - 1] ?? null,
+    liquidityLevels
   };
 }
 
