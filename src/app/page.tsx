@@ -2808,7 +2808,7 @@ export default function Home() {
                       toggle: () => setShowFvg((value) => !value)
                     },
                     {
-                      label: "Liquidity Sweeps",
+                      label: "Liquidity Levels",
                       active: showLiquidity,
                       disabled: false,
                       toggle: () => setShowLiquidity((value) => !value)
