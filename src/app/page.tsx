@@ -230,7 +230,7 @@ const RESOLUTIONS: Array<{ value: Resolution; label: string }> = [
 ];
 
 const RANGES: RangeKey[] = ["1D", "5D", "1M", "3M", "6M", "1Y", "5Y", "MAX"];
-const MARKET_FILTERS = ["ALL", "NSE", "BSE", "MCX", "KRAKEN"];
+const MARKET_FILTERS = ["ALL", "NSE", "BSE", "MCX", "OANDA", "KRAKEN"];
 const TYPE_FILTERS = ["ALL", "INDEX", "EQUITY", "ETF", "SGB", "MF", "FUTURE", "OPTION", "COMMODITY", "CURRENCY", "CRYPTO"];
 
 const LAST_VIEW_KEY = "allinoneview:last-view:v1";
@@ -240,6 +240,11 @@ const ORDER_FLOW_LOCAL_KEY = "allinoneview:order-flow:v2";
 
 const KRAKEN_RESOLUTIONS = new Set<Resolution>([
   "1", "5", "15", "30", "60", "240", "1D", "1W"
+]);
+
+const OANDA_RESOLUTIONS = new Set<Resolution>([
+  "1", "2", "3", "5", "10", "15", "30",
+  "60", "120", "180", "240", "1D", "1W", "1M"
 ]);
 
 const LIVE_GLOBAL_SHORTCUTS: Instrument[] = [
@@ -280,6 +285,7 @@ const LIVE_GLOBAL_SHORTCUTS: Instrument[] = [
 
 function resolvePrimaryAnalysisSymbol(instrument: Instrument) {
   if (instrument.market === "KRAKEN") return instrument.symbol;
+  if (instrument.market === "OANDA") return instrument.symbol;
   if (instrument.market === "MCX") return instrument.symbol;
   if (instrument.type !== "FUTURE" && instrument.type !== "OPTION") {
     return instrument.symbol;
@@ -512,6 +518,8 @@ export default function Home() {
   const orderFlowPartialBucketRef = useRef<number | null>(null);
 
   const selectedIsKraken = selected.market === "KRAKEN";
+  const selectedIsOanda = selected.market === "OANDA";
+  const selectedIsGlobal = selectedIsKraken || selectedIsOanda;
   const showEma = emaPeriods.length > 0;
   const liveAnalysisCandles = useMemo(
     () => mergeLiveCandle(candles, liveCandle),
@@ -564,18 +572,31 @@ export default function Home() {
   const dailyPivots = useMemo(
     () =>
       buildDailyTraditionalPivots(liveAnalysisCandles, {
-        timeZone: selectedIsKraken ? "UTC" : "Asia/Kolkata"
+        timeZone: selectedIsGlobal
+          ? selectedIsOanda
+            ? "America/New_York"
+            : "UTC"
+          : "Asia/Kolkata"
       }),
-    [liveAnalysisCandles, selectedIsKraken]
+    [liveAnalysisCandles, selectedIsGlobal, selectedIsOanda]
   );
 
   const volumeAnalytics = useMemo(
     () =>
       buildVolumeAnalytics(liveAnalysisCandles, {
-        timeZone: selectedIsKraken ? "UTC" : "Asia/Kolkata",
+        timeZone: selectedIsGlobal
+          ? selectedIsOanda
+            ? "America/New_York"
+            : "UTC"
+          : "Asia/Kolkata",
         anchorTime: fibonacci.anchorA?.time ?? null
       }),
-    [liveAnalysisCandles, selectedIsKraken, fibonacci.anchorA?.time]
+    [
+      liveAnalysisCandles,
+      selectedIsGlobal,
+      selectedIsOanda,
+      fibonacci.anchorA?.time
+    ]
   );
   const technicalContext = useMemo(
     () => buildTechnicalContext(liveAnalysisCandles),
@@ -1095,7 +1116,7 @@ export default function Home() {
   );
 
   async function fetchAnalysisContext(signal?: AbortSignal) {
-    if (!selectedIsKraken && !connected) {
+    if (!selectedIsGlobal && !connected) {
       setContext4h([]);
       setContext1h([]);
       setContext15m([]);
@@ -1112,7 +1133,9 @@ export default function Home() {
       const quoteEndpoint =
         selectedIsKraken
           ? "/api/kraken/quote"
-          : "/api/fyers/quote";
+          : selectedIsOanda
+            ? "/api/oanda/quote"
+            : "/api/fyers/quote";
 
       const historyRequest = (
         resolutionValue: string,
@@ -1217,7 +1240,7 @@ export default function Home() {
     silent = false,
     signal?: AbortSignal
   ) {
-    if (!viewReady || selectedIsKraken || !connected) {
+    if (!viewReady || selectedIsGlobal || !connected) {
       setDerivatives(null);
       return;
     }
@@ -1296,7 +1319,9 @@ export default function Home() {
       const endpoint =
         market === "KRAKEN"
           ? "/api/kraken/quote"
-          : "/api/fyers/quote";
+          : market === "OANDA"
+            ? "/api/oanda/quote"
+            : "/api/fyers/quote";
 
       const response = await fetch(
         `${endpoint}?symbol=${encodeURIComponent(symbol)}`,
@@ -1309,12 +1334,12 @@ export default function Home() {
       }
 
       setQuote(data.quote);
-      if (market !== "KRAKEN") {
+      if (market !== "KRAKEN" && market !== "OANDA") {
         setConnected(true);
       }
       if (!silent) {
         setMessage(
-          `${market === "KRAKEN" ? "Kraken" : "FYERS"} quote received successfully.`
+          `${market === "KRAKEN" ? "Kraken" : market === "OANDA" ? "OANDA" : "FYERS"} quote received successfully.`
         );
       }
     } catch (error) {
@@ -1382,7 +1407,7 @@ export default function Home() {
     setQuote(null);
     setCandles([]);
     setLiveCandle(null);
-    if (!selectedIsKraken) {
+    if (instrument.market !== "KRAKEN") {
       setOrderFlowBuckets([]);
     }
     orderFlowNeedsPartialRef.current = true;
@@ -2027,7 +2052,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!viewReady || (!selectedIsKraken && !connected)) return;
+    if (!viewReady || (!selectedIsGlobal && !connected)) return;
 
     const controller = new AbortController();
 
@@ -2529,8 +2554,15 @@ export default function Home() {
         (marketFilter === "ALL" || marketFilter === "KRAKEN") &&
         (typeFilter === "ALL" || typeFilter === "CRYPTO");
 
+      const wantsOanda =
+        (marketFilter === "ALL" || marketFilter === "OANDA") &&
+        !["ETF", "SGB", "MF", "FUTURE", "OPTION", "EQUITY"].includes(
+          typeFilter
+        );
+
       const wantsFyers =
         marketFilter !== "KRAKEN" &&
+        marketFilter !== "OANDA" &&
         typeFilter !== "CRYPTO";
 
       const requests: Promise<Instrument[]>[] = [];
@@ -2561,6 +2593,18 @@ export default function Home() {
         );
       }
 
+      if (wantsOanda) {
+        requests.push(
+          fetch(
+            `/api/oanda/instruments?q=${encodeURIComponent(query)}&type=${encodeURIComponent(typeFilter)}`,
+            { cache: "no-store" }
+          )
+            .then((response) => response.json())
+            .then((data) => (data.ok ? data.instruments : []))
+            .catch(() => [])
+        );
+      }
+
       void Promise.all(requests)
         .then((groups) => {
           const merged = groups.flat();
@@ -2583,6 +2627,23 @@ export default function Home() {
           };
 
           const localPriority = (item: Instrument) => {
+            const normalizedName = item.name
+              .toUpperCase()
+              .replace(/[^A-Z0-9]+/g, " ")
+              .trim();
+            const normalizedSymbol = item.symbol
+              .toUpperCase()
+              .replace(/[^A-Z0-9]+/g, " ")
+              .trim();
+
+            if (
+              item.market === "OANDA" &&
+              (normalizedName === normalizedQuery ||
+                normalizedSymbol === normalizedQuery)
+            ) {
+              return 9500;
+            }
+
             const aliases = indexAliases[item.symbol] ?? [];
             if (item.type === "INDEX") {
               if (aliases.includes(normalizedQuery)) return 10000;
@@ -2595,11 +2656,6 @@ export default function Home() {
               ) {
                 return 8000;
               }
-
-              const normalizedName = item.name
-                .toUpperCase()
-                .replace(/[^A-Z0-9]+/g, " ")
-                .trim();
 
               if (normalizedName === normalizedQuery) return 9000;
               if (normalizedName.startsWith(normalizedQuery)) return 7000;
@@ -2709,7 +2765,7 @@ export default function Home() {
         </div>
       </section>
 
-      {!connected && !selectedIsKraken ? (
+      {!connected && !selectedIsGlobal ? (
         <section className="card">
           <div className="row">
             <div>
@@ -2907,14 +2963,19 @@ export default function Home() {
                   className={resolution === item.value ? "timeframe active" : "timeframe"}
                   onClick={() => setResolution(item.value)}
                   disabled={
-                    selectedIsKraken &&
-                    !KRAKEN_RESOLUTIONS.has(item.value)
+                    (selectedIsKraken &&
+                      !KRAKEN_RESOLUTIONS.has(item.value)) ||
+                    (selectedIsOanda &&
+                      !OANDA_RESOLUTIONS.has(item.value))
                   }
                   title={
                     selectedIsKraken &&
                     !KRAKEN_RESOLUTIONS.has(item.value)
-                      ? "Kraken does not stream this candle interval."
-                      : undefined
+                      ? "Kraken does not provide this candle interval."
+                      : selectedIsOanda &&
+                          !OANDA_RESOLUTIONS.has(item.value)
+                        ? "OANDA does not provide this candle interval."
+                        : undefined
                   }
                 >
                   {item.label}
@@ -5434,7 +5495,7 @@ export default function Home() {
         xStreaming={newsXStreaming}
       />
 
-      {!selectedIsKraken && connected && !streamConnected && socketDiagnostic ? (
+      {!selectedIsGlobal && connected && !streamConnected && socketDiagnostic ? (
         <section className={showAdvancedAnalysis ? "card" : "card advancedHidden"}>
           <p className="label">Safe socket diagnostic</p>
           <div className="quoteGrid">
