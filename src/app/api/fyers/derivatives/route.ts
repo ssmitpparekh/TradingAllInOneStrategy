@@ -349,7 +349,14 @@ export async function GET(request: NextRequest) {
           putUnwinding: topBy(
             putLegs.filter((leg) => leg.oiChange < 0),
             (leg) => Math.abs(leg.oiChange)
-          )
+          ),
+          legs: optionChain.legs
+            .slice()
+            .sort(
+              (a, b) =>
+                a.strike - b.strike ||
+                a.optionType.localeCompare(b.optionType)
+            )
         }
       : null,
     diagnostics: errors.slice(-2)
