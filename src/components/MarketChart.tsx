@@ -201,6 +201,10 @@ export default function MarketChart({
   const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number } | null>(
     null
   );
+  const [tappedOrderFlow, setTappedOrderFlow] = useState<{
+    candle: ChartCandle;
+    point: { x: number; y: number };
+  } | null>(null);
   const [sessionBreakPositions, setSessionBreakPositions] = useState<
     Array<{ time: number; x: number }>
   >([]);
@@ -239,6 +243,7 @@ export default function MarketChart({
     "allinoneview:drawings:v1:" + instrumentKey;
 
   useEffect(() => {
+    setTappedOrderFlow(null);
     try {
       const saved = window.localStorage.getItem(drawingsStorageKey);
       const parsed = saved ? JSON.parse(saved) : [];
@@ -479,6 +484,46 @@ export default function MarketChart({
       });
     });
 
+    const onChartClick = (param: Parameters<IChartApi["subscribeClick"]>[0] extends (
+      value: infer P
+    ) => void
+      ? P
+      : never) => {
+      const item = param.seriesData.get(series);
+      if (!item || !("open" in item) || !param.time || !param.point) {
+        setTappedOrderFlow(null);
+        return;
+      }
+
+      const epoch = toEpoch(param.time);
+      if (!epoch) {
+        setTappedOrderFlow(null);
+        return;
+      }
+
+      const candle: ChartCandle = {
+        time: epoch,
+        open: Number(item.open),
+        high: Number(item.high),
+        low: Number(item.low),
+        close: Number(item.close)
+      };
+
+      setTappedOrderFlow((current) =>
+        current?.candle.time === epoch
+          ? null
+          : {
+              candle,
+              point: {
+                x: Number(param.point!.x),
+                y: Number(param.point!.y)
+              }
+            }
+      );
+    };
+
+    chart.subscribeClick(onChartClick);
+
     const observer = new ResizeObserver(() => {
       chart.applyOptions({
         width: host.clientWidth,
@@ -530,6 +575,7 @@ export default function MarketChart({
     return () => {
       host.removeEventListener("wheel", onVerticalWheel, true);
       observer.disconnect();
+      chart.unsubscribeClick(onChartClick);
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
@@ -1295,7 +1341,9 @@ export default function MarketChart({
     ];
   });
 
-  const readout = hovered ?? latest;
+  const detailReadout = hovered ?? tappedOrderFlow?.candle ?? null;
+  const detailPoint = hovered ? hoverPoint : tappedOrderFlow?.point ?? null;
+  const readout = detailReadout ?? latest;
   const readoutOrderFlow = readout
     ? orderFlowByTime.get(readout.time) ?? null
     : null;
@@ -1356,22 +1404,22 @@ export default function MarketChart({
           ) : null}
         </div>
       ) : null}
-      {hovered &&
+      {detailReadout &&
       readoutOrderFlow &&
       readoutOrderFlowStats &&
-      hoverPoint ? (
+      detailPoint ? (
         <div
           className="orderFlowHoverCard"
           style={{
             left:
-              hoverPoint.x >
+              detailPoint.x >
               (hostRef.current?.clientWidth ?? 0) - 250
-                ? Math.max(8, hoverPoint.x - 238)
-                : hoverPoint.x + 14,
-            top: Math.max(8, hoverPoint.y - 74)
+                ? Math.max(8, detailPoint.x - 238)
+                : detailPoint.x + 14,
+            top: Math.max(8, detailPoint.y - 74)
           }}
         >
-          <strong>{formatIst(hovered.time)}</strong>
+          <strong>{formatIst(detailReadout.time)}</strong>
           <span className="flowBuy">
             BUY {readoutOrderFlowStats.buyPercent.toFixed(1)}% ·{" "}
             {readoutOrderFlow.buyVolume.toLocaleString("en-IN", {
