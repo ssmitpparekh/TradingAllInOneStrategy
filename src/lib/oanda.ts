@@ -15,8 +15,6 @@ export type OandaCandle = {
   volume: number;
 };
 
-const accountCache: { id: string; fetchedAt: number } | null = null;
-
 function env(name: string) {
   return process.env[name]?.trim() || "";
 }
@@ -160,6 +158,7 @@ const GRANULARITY: Record<string, string> = {
   "1": "M1",
   "2": "M2",
   "3": "M3",
+  "4": "M4",
   "5": "M5",
   "10": "M10",
   "15": "M15",
