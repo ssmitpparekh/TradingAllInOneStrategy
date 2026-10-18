@@ -7110,3 +7110,35 @@ html[data-theme="light"] .exactVolumeLayer {
     border-left-color: rgba(82, 101, 130, 0.5);
   }
 }
+
+
+/* Volume-bar candle alignment guide */
+.exactVolumeCrosshair {
+  position: absolute;
+  z-index: 24;
+  top: -1000px;
+  bottom: 0;
+  width: 0;
+  border-left: 1px dashed rgba(82, 101, 130, 0.62);
+  pointer-events: none;
+  transform: translateX(-0.5px);
+}
+
+html[data-theme="light"] .exactVolumeCrosshair {
+  border-left-color: rgba(71, 85, 105, 0.55);
+}
+
+/* The toolbar/menu always wins over any interactive chart overlay. */
+.chartToolbar,
+.chartViewActions,
+.chartFeaturesMenu {
+  isolation: isolate;
+}
+
+.chartFeaturesDropdown {
+  z-index: 2000;
+}
+
+.exactVolumeLayer {
+  z-index: 12;
+}
