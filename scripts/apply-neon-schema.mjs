@@ -40,7 +40,10 @@ if (!rawConnectionString) {
   );
 }
 
-const sql = readFileSync("database/order-flow.sql", "utf8");
+const sql = [
+  readFileSync("database/order-flow.sql", "utf8"),
+  readFileSync("database/market-data.sql", "utf8")
+].join("\n\n");
 const client = new Client({
   connectionString: strictSslUrl(rawConnectionString)
 });
@@ -48,7 +51,7 @@ const client = new Client({
 try {
   await client.connect();
   await client.query(sql);
-  process.stdout.write("Neon order-flow schema applied successfully.\n");
+  process.stdout.write("Neon order-flow + market-data schemas applied successfully.\n");
 } finally {
   await client.end();
 }
