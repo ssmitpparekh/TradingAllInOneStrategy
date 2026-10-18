@@ -7142,3 +7142,24 @@ html[data-theme="light"] .exactVolumeCrosshair {
 .exactVolumeLayer {
   z-index: 12;
 }
+
+
+/* Search results must always sit above terminal/chart controls. */
+.instrumentPanel.searchOpen {
+  z-index: 2500;
+}
+
+.instrumentPanel.searchOpen .searchResults {
+  z-index: 2600;
+}
+
+.instrumentPanel.searchOpen + .opportunityScanner,
+.instrumentPanel.searchOpen ~ .terminalCard {
+  z-index: 1;
+}
+
+@media (max-width: 900px) {
+  .instrumentPanel.searchOpen .searchResults {
+    z-index: 3000;
+  }
+}
