@@ -7163,3 +7163,551 @@ html[data-theme="light"] .exactVolumeCrosshair {
     z-index: 3000;
   }
 }
+
+
+/* Manual trading journal */
+.tradeJournalPage {
+  width: min(1540px, calc(100% - 28px));
+  margin: 0 auto;
+  padding: 28px 0 60px;
+}
+
+.tradeJournalHero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+}
+
+.tradeJournalHero h1 {
+  font-size: clamp(38px, 6vw, 72px);
+}
+
+.tradeJournalHero p:last-child {
+  max-width: 720px;
+  margin: 12px 0 0;
+  color: #8f9bad;
+  line-height: 1.5;
+}
+
+.tradeJournalHeroActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tradeJournalTabs {
+  display: inline-flex;
+  gap: 4px;
+  margin-top: 14px;
+  padding: 4px;
+  border: 1px solid #202937;
+  border-radius: 10px;
+  background: #090e15;
+}
+
+.tradeJournalTabs button {
+  min-height: 36px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #7d899a;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.tradeJournalTabs button.active {
+  background: #202b3b;
+  color: #ffffff;
+}
+
+.tradeJournalMessage {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #2b3546;
+  border-radius: 9px;
+  background: #0b1119;
+  color: #aab5c5;
+  font-size: 11px;
+}
+
+.manualTradeEditor {
+  padding: 20px;
+}
+
+.manualTradeEditorHeader,
+.tradeJournalSectionHeader,
+.manualTradeEditorActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.manualTradeEditorHeader h2,
+.tradeJournalSectionHeader h2 {
+  margin-top: 3px;
+  font-size: 22px;
+}
+
+.manualTradeClose {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid #2a3546;
+  border-radius: 8px;
+  background: transparent;
+  color: #98a5b8;
+  cursor: pointer;
+  font-size: 20px;
+}
+
+.manualTradeFormGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.manualTradeFormGrid label,
+.tradeJournalFilters > label,
+.manualFilterSelects label {
+  display: grid;
+  gap: 6px;
+}
+
+.manualTradeFormGrid label > span,
+.tradeJournalFilters label > span,
+.manualFilterSelects label > span {
+  color: #68758a;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.manualTradeFormGrid input,
+.manualTradeFormGrid select,
+.manualTradeFormGrid textarea,
+.tradeJournalFilters input,
+.manualFilterSelects select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid #263143;
+  border-radius: 8px;
+  outline: none;
+  background: #070b11;
+  color: #eef3f8;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 11px;
+}
+
+.manualTradeFormGrid textarea {
+  min-height: 92px;
+  padding-block: 10px;
+  resize: vertical;
+}
+
+.manualTradeFormGrid input:focus,
+.manualTradeFormGrid select:focus,
+.manualTradeFormGrid textarea:focus,
+.tradeJournalFilters input:focus,
+.manualFilterSelects select:focus {
+  border-color: #4d6bff;
+  box-shadow: 0 0 0 2px rgba(77, 107, 255, 0.12);
+}
+
+.manualTradeWide {
+  grid-column: span 2;
+}
+
+.manualTradePreview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 220px)) 1fr;
+  gap: 10px;
+  align-items: center;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #202937;
+  border-radius: 10px;
+  background: #090e15;
+}
+
+.manualTradePreview > div {
+  padding: 8px 10px;
+  border: 1px solid #1b2533;
+  border-radius: 8px;
+}
+
+.manualTradePreview span,
+.manualTradePreview strong {
+  display: block;
+}
+
+.manualTradePreview span {
+  color: #68758a;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+}
+
+.manualTradePreview strong {
+  margin-top: 5px;
+  color: #edf2f8;
+  font-size: 14px;
+}
+
+.manualTradePreview small {
+  color: #6f7c90;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.manualTradeEditorActions {
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.tradeJournalSummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.tradeJournalSummaryCard {
+  min-height: 112px;
+}
+
+.tradeJournalSummaryCard span,
+.tradeJournalSummaryCard strong,
+.tradeJournalSummaryCard small {
+  display: block;
+}
+
+.tradeJournalSummaryCard span {
+  color: #68758a;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.tradeJournalSummaryCard strong {
+  margin-top: 8px;
+  color: #eef3f8;
+  font-size: 26px;
+}
+
+.tradeJournalSummaryCard small {
+  margin-top: 7px;
+  color: #6f7c90;
+  font-size: 9px;
+}
+
+.tradeJournalTotals {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.tradeJournalCurrencyTotals {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.tradeJournalCurrencyTotals > div {
+  min-width: 150px;
+  padding: 9px 12px;
+  border: 1px solid #202937;
+  border-radius: 9px;
+  background: #090e15;
+}
+
+.tradeJournalCurrencyTotals span,
+.tradeJournalCurrencyTotals strong {
+  display: block;
+}
+
+.tradeJournalCurrencyTotals span {
+  color: #68758a;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.tradeJournalCurrencyTotals strong {
+  margin-top: 4px;
+  font-size: 14px;
+}
+
+.tradeJournalMiddleGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.8fr);
+  gap: 12px;
+}
+
+.tradeJournalCalendar,
+.tradeJournalFilters {
+  min-height: 330px;
+}
+
+.tradeCalendarWeekdays,
+.tradeCalendarGrid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.tradeCalendarWeekdays {
+  margin-top: 18px;
+  color: #637086;
+  font-size: 8px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.tradeCalendarGrid {
+  margin-top: 8px;
+}
+
+.tradeCalendarGrid > div {
+  position: relative;
+  min-height: 44px;
+  padding: 7px;
+  border: 1px solid #1c2634;
+  border-radius: 7px;
+  background: #0a1018;
+}
+
+.tradeCalendarGrid > div.empty {
+  border-color: transparent;
+  background: transparent;
+}
+
+.tradeCalendarGrid > div.profit {
+  border-color: rgba(53, 185, 119, 0.3);
+  background: rgba(53, 185, 119, 0.10);
+}
+
+.tradeCalendarGrid > div.loss {
+  border-color: rgba(227, 93, 103, 0.3);
+  background: rgba(227, 93, 103, 0.10);
+}
+
+.tradeCalendarGrid span {
+  color: #aab5c5;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.tradeCalendarGrid small {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.tradeCalendarGrid .profit small {
+  color: #74e39b;
+}
+
+.tradeCalendarGrid .loss small {
+  color: #ff8587;
+}
+
+.tradeJournalFilters {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.tradeHistoryFilterBlock > span {
+  display: block;
+  margin-bottom: 7px;
+  color: #68758a;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.tradeHistoryFilterRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.tradeHistoryFilter {
+  min-height: 31px;
+  padding: 0 9px;
+  border: 1px solid #263143;
+  border-radius: 7px;
+  background: #0b1119;
+  color: #8793a6;
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.tradeHistoryFilter.active {
+  border-color: #4d6bff;
+  background: #1b2850;
+  color: #ffffff;
+}
+
+.manualFilterSelects {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.tradeJournalLedger {
+  padding: 18px;
+}
+
+.manualJournalTable {
+  min-width: 1700px;
+}
+
+.manualJournalTable td strong,
+.manualJournalTable td small {
+  display: block;
+}
+
+.manualJournalTable td small {
+  margin-top: 3px;
+  color: #69768a;
+  font-size: 8px;
+}
+
+.manualJournalNotes {
+  min-width: 190px;
+  max-width: 260px;
+  white-space: normal !important;
+}
+
+.manualJournalNotes small {
+  overflow: hidden;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.35;
+}
+
+.manualJournalActions {
+  display: flex;
+  gap: 5px;
+}
+
+.manualJournalActions button {
+  padding: 5px 7px;
+  border: 1px solid #2a3546;
+  border-radius: 6px;
+  background: #0b1119;
+  color: #aab5c5;
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.manualJournalActions button.danger {
+  color: #ff8587;
+}
+
+.tradeHistoryLink {
+  color: #8fa0b6;
+  font-size: 10px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.tradeHistoryLink:hover {
+  color: #ffffff;
+}
+
+html[data-theme="light"] .tradeJournalTabs,
+html[data-theme="light"] .tradeJournalMessage,
+html[data-theme="light"] .manualTradePreview,
+html[data-theme="light"] .tradeJournalCurrencyTotals > div,
+html[data-theme="light"] .tradeCalendarGrid > div,
+html[data-theme="light"] .manualJournalActions button {
+  border-color: #d8e0eb;
+  background: #ffffff;
+}
+
+html[data-theme="light"] .manualTradeFormGrid input,
+html[data-theme="light"] .manualTradeFormGrid select,
+html[data-theme="light"] .manualTradeFormGrid textarea,
+html[data-theme="light"] .tradeJournalFilters input,
+html[data-theme="light"] .manualFilterSelects select {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+}
+
+html[data-theme="light"] .tradeJournalSummaryCard strong,
+html[data-theme="light"] .manualTradePreview strong {
+  color: #0f172a;
+}
+
+@media (max-width: 980px) {
+  .manualTradeFormGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tradeJournalSummaryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tradeJournalMiddleGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .tradeJournalPage {
+    width: min(100% - 16px, 1540px);
+    padding-top: 12px;
+  }
+
+  .tradeJournalHero,
+  .tradeJournalTotals,
+  .tradeJournalSectionHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .tradeJournalHeroActions,
+  .tradeJournalHeroActions .button {
+    width: 100%;
+  }
+
+  .manualTradeFormGrid,
+  .tradeJournalSummaryGrid,
+  .manualFilterSelects {
+    grid-template-columns: 1fr;
+  }
+
+  .manualTradeWide {
+    grid-column: auto;
+  }
+
+  .manualTradePreview {
+    grid-template-columns: 1fr;
+  }
+
+  .tradeJournalCurrencyTotals {
+    justify-content: flex-start;
+  }
+
+  .tradeCalendarGrid > div {
+    min-height: 38px;
+    padding: 5px;
+  }
+}
