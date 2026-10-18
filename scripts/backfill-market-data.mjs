@@ -11,6 +11,7 @@ const sleep = (ms) =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 const profiles = [
+  { resolution: "1D", range: "1Y" },
   { resolution: "240", range: "6M" },
   { resolution: "60", range: "3M" },
   { resolution: "15", range: "1M" },
