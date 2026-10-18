@@ -488,6 +488,8 @@ export default function MarketChart({
       buyHeight: number;
       sellHeight: number;
       partial: boolean;
+      closed: boolean;
+      coverage: "full" | "partial";
       buyPercent: number;
       sellPercent: number;
       buyTrades: number;
@@ -1846,6 +1848,9 @@ export default function MarketChart({
             buyHeight,
             sellHeight,
             partial: bucket.partial,
+            closed: bucket.closed ?? !bucket.partial,
+            coverage:
+              bucket.coverage ?? (bucket.partial ? "partial" : "full"),
             buyPercent,
             sellPercent,
             buyTrades: bucket.buyTrades,
@@ -2694,7 +2699,13 @@ export default function MarketChart({
                   </span>
                 ) : null}
                 <small>
-                  {bar.partial ? "LIVE PARTIAL BAR" : "EXACT CLOSED BAR"}
+                  {bar.closed
+                    ? bar.coverage === "partial"
+                      ? "CLOSED · PARTIAL COVERAGE"
+                      : "EXACT CLOSED BAR"
+                    : bar.coverage === "partial"
+                      ? "LIVE · PARTIAL COVERAGE"
+                      : "LIVE · EXACT FROM OPEN SO FAR"}
                 </small>
               </div>
             </div>
