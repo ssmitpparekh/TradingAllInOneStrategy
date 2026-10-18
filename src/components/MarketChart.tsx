@@ -16,10 +16,7 @@ import {
   type Time
 } from "lightweight-charts";
 import type { TechnicalContext } from "@/lib/analysis/indicators";
-import {
-  orderFlowPercentages,
-  type OrderFlowBucket
-} from "@/lib/analysis/order-flow";
+import type { OrderFlowBucket } from "@/lib/analysis/order-flow";
 import type { VolumeAnalytics } from "@/lib/analysis/volume";
 import type {
   FibonacciSetup,
@@ -267,11 +264,6 @@ export default function MarketChart({
       JSON.stringify(drawings)
     );
   }, [drawingsStorageKey, drawings]);
-
-  const orderFlowByTime = useMemo(
-    () => new Map(orderFlowBuckets.map((bucket) => [bucket.time, bucket])),
-    [orderFlowBuckets]
-  );
 
   const cumulativeDeltaByTime = useMemo(() => {
     let cumulative = 0;
@@ -524,6 +516,7 @@ export default function MarketChart({
         from: anchor - (1 - yRatio) * nextSpan,
         to: anchor + yRatio * nextSpan
       });
+      setDrawingRevision((value) => value + 1);
     };
 
     host.addEventListener("wheel", onVerticalWheel, {
@@ -1029,7 +1022,7 @@ export default function MarketChart({
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateStructure);
       window.removeEventListener("resize", updateStructure);
     };
-  }, [showStructure, structure]);
+  }, [showStructure, structure, drawingRevision]);
 
   useEffect(() => {
     const chart = chartRef.current;
