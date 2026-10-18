@@ -7711,3 +7711,185 @@ html[data-theme="light"] .manualTradePreview strong {
     padding: 5px;
   }
 }
+
+
+/* Global collapsed navigation */
+.appNavTrigger {
+  position: fixed;
+  z-index: 4100;
+  top: 14px;
+  left: 14px;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-content: center;
+  gap: 4px;
+  border: 1px solid rgba(82, 96, 118, 0.55);
+  border-radius: 11px;
+  background: rgba(9, 14, 21, 0.92);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+}
+
+.appNavTrigger span {
+  width: 18px;
+  height: 2px;
+  border-radius: 999px;
+  background: #9aa7b9;
+}
+
+.appNavBackdrop {
+  position: fixed;
+  z-index: 4040;
+  inset: 0;
+  border: 0;
+  background: rgba(3, 7, 12, 0.36);
+  cursor: default;
+  backdrop-filter: blur(2px);
+}
+
+.appNavDrawer {
+  position: fixed;
+  z-index: 4050;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  width: 270px;
+  flex-direction: column;
+  border-right: 1px solid #202937;
+  background: rgba(7, 11, 17, 0.985);
+  box-shadow: 20px 0 52px rgba(0, 0, 0, 0.36);
+  transform: translateX(-102%);
+  transition: transform 170ms ease;
+}
+
+.appNavDrawer.open {
+  transform: translateX(0);
+}
+
+.appNavHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 16px 14px 68px;
+  border-bottom: 1px solid #182232;
+}
+
+.appNavHeader small,
+.appNavHeader strong {
+  display: block;
+}
+
+.appNavHeader small {
+  color: #617087;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.appNavHeader strong {
+  margin-top: 3px;
+  color: #f2f6fb;
+  font-size: 18px;
+}
+
+.appNavHeader button {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #263143;
+  border-radius: 8px;
+  background: #0c121b;
+  color: #9aa7b9;
+  cursor: pointer;
+  font-size: 19px;
+}
+
+.appNavDrawer nav {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.appNavDrawer nav a {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 42px;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: #8794a8;
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.appNavDrawer nav a:hover,
+.appNavDrawer nav a.active {
+  border-color: #263143;
+  background: #111925;
+  color: #f4f7fb;
+}
+
+.appNavIcon {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 6px;
+  background: #0c131d;
+  color: #7da2ff;
+  font-size: 13px;
+}
+
+.appNavFooter {
+  padding: 13px 16px;
+  border-top: 1px solid #182232;
+}
+
+.appNavFooter small,
+.appNavFooter span {
+  display: block;
+}
+
+.appNavFooter small {
+  color: #657287;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.appNavFooter span {
+  margin-top: 4px;
+  color: #8f9bad;
+  font-size: 9px;
+}
+
+html[data-theme="light"] .appNavTrigger,
+html[data-theme="light"] .appNavDrawer,
+html[data-theme="light"] .appNavHeader button {
+  border-color: #d4dce7;
+  background: rgba(255, 255, 255, 0.97);
+  color: #334155;
+}
+
+html[data-theme="light"] .appNavDrawer nav a:hover,
+html[data-theme="light"] .appNavDrawer nav a.active {
+  border-color: #d8e0eb;
+  background: #eef2f7;
+  color: #0f172a;
+}
+
+@media (max-width: 620px) {
+  .appNavTrigger {
+    top: 10px;
+    left: 10px;
+  }
+
+  .appNavDrawer {
+    width: min(84vw, 290px);
+  }
+}
