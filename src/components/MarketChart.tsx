@@ -11,6 +11,7 @@ import {
   CandlestickSeries,
   ColorType,
   CrosshairMode,
+  HistogramSeries,
   LineSeries,
   createChart,
   type CandlestickData,
@@ -359,6 +360,7 @@ export default function MarketChart({
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const vwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const futureAxisSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const futureAxisAnchorRef = useRef<string | null>(null);
   const overlayRafRef = useRef<number | null>(null);
@@ -673,6 +675,19 @@ export default function MarketChart({
       priceLineVisible: true
     });
 
+    const volumeSeries = chart.addSeries(HistogramSeries, {
+      priceScaleId: "volume",
+      priceFormat: { type: "volume" },
+      priceLineVisible: false,
+      lastValueVisible: false
+    });
+    volumeSeries.priceScale().applyOptions({
+      scaleMargins: {
+        top: 0.82,
+        bottom: 0
+      }
+    });
+
     const vwapSeries = chart.addSeries(LineSeries, {
       color: "#f5b942",
       lineWidth: 2,
@@ -692,6 +707,7 @@ export default function MarketChart({
 
     chartRef.current = chart;
     seriesRef.current = series;
+    volumeSeriesRef.current = volumeSeries;
     vwapSeriesRef.current = vwapSeries;
     futureAxisSeriesRef.current = futureAxisSeries;
 
@@ -812,6 +828,7 @@ export default function MarketChart({
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      volumeSeriesRef.current = null;
       vwapSeriesRef.current = null;
       futureAxisSeriesRef.current = null;
       futureAxisAnchorRef.current = null;
@@ -958,6 +975,52 @@ export default function MarketChart({
       to: lastTime as Time
     });
   }, [candles, rangeKey]);
+
+  useEffect(() => {
+    const volumeSeries = volumeSeriesRef.current;
+    if (!volumeSeries) return;
+
+    const exactKrakenFlowVisible =
+      market === "KRAKEN" &&
+      showOrderFlow &&
+      orderFlowBuckets.length > 0;
+
+    volumeSeries.applyOptions({
+      visible: !exactKrakenFlowVisible
+    });
+
+    const source =
+      liveCandle &&
+      (!candles.length ||
+        liveCandle.time >= candles[candles.length - 1].time)
+        ? liveCandle.time === candles[candles.length - 1]?.time
+          ? [...candles.slice(0, -1), liveCandle]
+          : [...candles, liveCandle]
+        : candles;
+
+    volumeSeries.setData(
+      source
+        .filter(
+          (candle) =>
+            Number.isFinite(Number(candle.volume)) &&
+            Number(candle.volume) >= 0
+        )
+        .map((candle) => ({
+          time: candle.time as Time,
+          value: Number(candle.volume ?? 0),
+          color:
+            candle.close >= candle.open
+              ? "rgba(40, 199, 111, 0.72)"
+              : "rgba(234, 84, 85, 0.72)"
+        }))
+    );
+  }, [
+    candles,
+    liveCandle,
+    market,
+    showOrderFlow,
+    orderFlowBuckets.length
+  ]);
 
   useEffect(() => {
     const futureSeries = futureAxisSeriesRef.current;
