@@ -198,13 +198,19 @@ export default function MarketChart({
   const ema200SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const analysisLinesRef = useRef<IPriceLine[]>([]);
   const [hovered, setHovered] = useState<ChartCandle | null>(null);
-  const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number } | null>(
+  const [activeOrderFlowTime, setActiveOrderFlowTime] = useState<number | null>(
     null
   );
-  const [tappedOrderFlow, setTappedOrderFlow] = useState<{
-    candle: ChartCandle;
-    point: { x: number; y: number };
-  } | null>(null);
+  const [structureEventPositions, setStructureEventPositions] = useState<
+    Array<{
+      key: string;
+      left: number;
+      width: number;
+      top: number;
+      type: "BOS" | "CHoCH";
+      direction: "bullish" | "bearish";
+    }>
+  >([]);
   const [sessionBreakPositions, setSessionBreakPositions] = useState<
     Array<{ time: number; x: number }>
   >([]);
@@ -243,7 +249,7 @@ export default function MarketChart({
     "allinoneview:drawings:v1:" + instrumentKey;
 
   useEffect(() => {
-    setTappedOrderFlow(null);
+    setActiveOrderFlowTime(null);
     try {
       const saved = window.localStorage.getItem(drawingsStorageKey);
       const parsed = saved ? JSON.parse(saved) : [];
@@ -459,22 +465,15 @@ export default function MarketChart({
       const item = param.seriesData.get(series);
       if (!item || !("open" in item) || !param.time) {
         setHovered(null);
-        setHoverPoint(null);
         return;
       }
 
       const epoch = toEpoch(param.time);
       if (!epoch) {
         setHovered(null);
-        setHoverPoint(null);
         return;
       }
 
-      setHoverPoint(
-        param.point
-          ? { x: Number(param.point.x), y: Number(param.point.y) }
-          : null
-      );
       setHovered({
         time: epoch,
         open: Number(item.open),
@@ -483,46 +482,6 @@ export default function MarketChart({
         close: Number(item.close)
       });
     });
-
-    const onChartClick = (param: Parameters<IChartApi["subscribeClick"]>[0] extends (
-      value: infer P
-    ) => void
-      ? P
-      : never) => {
-      const item = param.seriesData.get(series);
-      if (!item || !("open" in item) || !param.time || !param.point) {
-        setTappedOrderFlow(null);
-        return;
-      }
-
-      const epoch = toEpoch(param.time);
-      if (!epoch) {
-        setTappedOrderFlow(null);
-        return;
-      }
-
-      const candle: ChartCandle = {
-        time: epoch,
-        open: Number(item.open),
-        high: Number(item.high),
-        low: Number(item.low),
-        close: Number(item.close)
-      };
-
-      setTappedOrderFlow((current) =>
-        current?.candle.time === epoch
-          ? null
-          : {
-              candle,
-              point: {
-                x: Number(param.point!.x),
-                y: Number(param.point!.y)
-              }
-            }
-      );
-    };
-
-    chart.subscribeClick(onChartClick);
 
     const observer = new ResizeObserver(() => {
       chart.applyOptions({
@@ -575,7 +534,6 @@ export default function MarketChart({
     return () => {
       host.removeEventListener("wheel", onVerticalWheel, true);
       observer.disconnect();
-      chart.unsubscribeClick(onChartClick);
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
@@ -819,50 +777,6 @@ export default function MarketChart({
     }
     analysisLinesRef.current = [];
 
-    if (showStructure && structure) {
-      if (structure.activeSwingHigh) {
-        analysisLinesRef.current.push(
-          series.createPriceLine({
-            price: structure.activeSwingHigh.price,
-            color: "#8b96aa",
-            lineWidth: 1,
-            lineStyle: LineStyle.Dashed,
-            axisLabelVisible: false,
-            title: "Swing H"
-          })
-        );
-      }
-
-      if (structure.activeSwingLow) {
-        analysisLinesRef.current.push(
-          series.createPriceLine({
-            price: structure.activeSwingLow.price,
-            color: "#8b96aa",
-            lineWidth: 1,
-            lineStyle: LineStyle.Dashed,
-            axisLabelVisible: false,
-            title: "Swing L"
-          })
-        );
-      }
-
-      if (structure.latestEvent) {
-        analysisLinesRef.current.push(
-          series.createPriceLine({
-            price: structure.latestEvent.brokenLevel,
-            color:
-              structure.latestEvent.direction === "bullish"
-                ? "#45d483"
-                : "#ff7477",
-            lineWidth: 2,
-            lineStyle: LineStyle.Solid,
-            axisLabelVisible: true,
-            title: `${structure.latestEvent.type} ${structure.latestEvent.direction === "bullish" ? "↑" : "↓"}`
-          })
-        );
-      }
-    }
-
     if (showFvg && imbalance) {
       const visibleGaps = imbalance.activeFvgs.slice(-3);
 
@@ -1054,6 +968,68 @@ export default function MarketChart({
     showOrderBlocks,
     showProfile
   ]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const host = hostRef.current;
+
+    if (!chart || !series || !host || !showStructure || !structure?.events.length) {
+      setStructureEventPositions([]);
+      return;
+    }
+
+    const updateStructure = () => {
+      const hostWidth = host.clientWidth;
+
+      const positions = structure.events.flatMap((event) => {
+        const sourceX = chart.timeScale().timeToCoordinate(
+          event.sourceSwing.time as Time
+        );
+        const breakX = chart.timeScale().timeToCoordinate(event.time as Time);
+        const y = series.priceToCoordinate(event.brokenLevel);
+
+        if (sourceX === null || breakX === null || y === null) return [];
+
+        const rawLeft = Math.min(Number(sourceX), Number(breakX));
+        const rawRight = Math.max(Number(sourceX), Number(breakX));
+
+        if (rawRight < -20 || rawLeft > hostWidth + 20) return [];
+
+        const left = Math.max(0, rawLeft);
+        const right = Math.min(hostWidth, rawRight);
+
+        if (right - left < 2) return [];
+
+        return [{
+          key:
+            event.type +
+            ":" +
+            event.direction +
+            ":" +
+            event.sourceSwing.time +
+            ":" +
+            event.time,
+          left,
+          width: right - left,
+          top: Number(y),
+          type: event.type,
+          direction: event.direction
+        }];
+      });
+
+      setStructureEventPositions(positions);
+    };
+
+    updateStructure();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(updateStructure);
+    window.addEventListener("resize", updateStructure);
+
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateStructure);
+      window.removeEventListener("resize", updateStructure);
+    };
+  }, [showStructure, structure]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -1341,18 +1317,7 @@ export default function MarketChart({
     ];
   });
 
-  const detailReadout = hovered ?? tappedOrderFlow?.candle ?? null;
-  const detailPoint = hovered ? hoverPoint : tappedOrderFlow?.point ?? null;
-  const readout = detailReadout ?? latest;
-  const readoutOrderFlow = readout
-    ? orderFlowByTime.get(readout.time) ?? null
-    : null;
-  const readoutOrderFlowStats = readoutOrderFlow
-    ? orderFlowPercentages(readoutOrderFlow)
-    : null;
-  const readoutCumulativeDelta = readout
-    ? cumulativeDeltaByTime.get(readout.time) ?? null
-    : null;
+  const readout = hovered ?? latest;
 
   return (
     <div className="marketChartShell">
@@ -1363,102 +1328,6 @@ export default function MarketChart({
           <span>H <strong>{readout.high.toLocaleString("en-IN")}</strong></span>
           <span>L <strong>{readout.low.toLocaleString("en-IN")}</strong></span>
           <span>C <strong>{readout.close.toLocaleString("en-IN")}</strong></span>
-          {readoutOrderFlow && readoutOrderFlowStats ? (
-            <>
-              <span className="flowBuy">
-                BUY <strong>{readoutOrderFlowStats.buyPercent.toFixed(1)}%</strong>
-              </span>
-              <span className="flowSell">
-                SELL <strong>{readoutOrderFlowStats.sellPercent.toFixed(1)}%</strong>
-              </span>
-              <span>
-                B# <strong>{readoutOrderFlow.buyTrades}</strong>
-              </span>
-              <span>
-                S# <strong>{readoutOrderFlow.sellTrades}</strong>
-              </span>
-              <span>
-                Δ <strong>{readoutOrderFlowStats.deltaPercent >= 0 ? "+" : ""}{readoutOrderFlowStats.deltaPercent.toFixed(1)}%</strong>
-              </span>
-              {readoutCumulativeDelta !== null ? (
-                <span>
-                  CΔ <strong>{readoutCumulativeDelta >= 0 ? "+" : ""}{readoutCumulativeDelta.toFixed(4)}</strong>
-                </span>
-              ) : null}
-              {readoutOrderFlow.oi !== null &&
-              readoutOrderFlow.oi !== undefined ? (
-                <span>
-                  OI <strong>{readoutOrderFlow.oi.toLocaleString("en-IN")}</strong>
-                </span>
-              ) : null}
-              {readoutOrderFlow.oiChange !== null &&
-              readoutOrderFlow.oiChange !== undefined ? (
-                <span>
-                  ΔOI <strong>{readoutOrderFlow.oiChange.toLocaleString("en-IN")}</strong>
-                </span>
-              ) : null}
-              <span>
-                {readoutOrderFlow.partial ? "PARTIAL" : readoutOrderFlow.quality.toUpperCase()}
-              </span>
-            </>
-          ) : null}
-        </div>
-      ) : null}
-      {detailReadout &&
-      readoutOrderFlow &&
-      readoutOrderFlowStats &&
-      detailPoint ? (
-        <div
-          className="orderFlowHoverCard"
-          style={{
-            left:
-              detailPoint.x >
-              (hostRef.current?.clientWidth ?? 0) - 250
-                ? Math.max(8, detailPoint.x - 238)
-                : detailPoint.x + 14,
-            top: Math.max(8, detailPoint.y - 74)
-          }}
-        >
-          <strong>{formatIst(detailReadout.time)}</strong>
-          <span className="flowBuy">
-            BUY {readoutOrderFlowStats.buyPercent.toFixed(1)}% ·{" "}
-            {readoutOrderFlow.buyVolume.toLocaleString("en-IN", {
-              maximumFractionDigits: 6
-            })}{" "}
-            · B#{readoutOrderFlow.buyTrades}
-          </span>
-          <span className="flowSell">
-            SELL {readoutOrderFlowStats.sellPercent.toFixed(1)}% ·{" "}
-            {readoutOrderFlow.sellVolume.toLocaleString("en-IN", {
-              maximumFractionDigits: 6
-            })}{" "}
-            · S#{readoutOrderFlow.sellTrades}
-          </span>
-          <span>
-            Δ {readoutOrderFlowStats.deltaPercent >= 0 ? "+" : ""}
-            {readoutOrderFlowStats.deltaPercent.toFixed(1)}%
-            {readoutCumulativeDelta !== null
-              ? " · CΔ " +
-                (readoutCumulativeDelta >= 0 ? "+" : "") +
-                readoutCumulativeDelta.toLocaleString("en-IN", {
-                  maximumFractionDigits: 6
-                })
-              : ""}
-          </span>
-          {readoutOrderFlow.oi !== null &&
-          readoutOrderFlow.oi !== undefined ? (
-            <span>
-              OI {readoutOrderFlow.oi.toLocaleString("en-IN")}
-              {readoutOrderFlow.oiChange !== null &&
-              readoutOrderFlow.oiChange !== undefined
-                ? " · ΔOI " +
-                  readoutOrderFlow.oiChange.toLocaleString("en-IN")
-                : ""}
-            </span>
-          ) : null}
-          <small>
-            {readoutOrderFlow.partial ? "LIVE PARTIAL BAR" : "EXACT CLOSED BAR"}
-          </small>
         </div>
       ) : null}
       <div className="chartToolRail" aria-label="Chart tools">
@@ -1615,6 +1484,31 @@ export default function MarketChart({
         })}
       </svg>
 
+      {showStructure && structureEventPositions.length ? (
+        <div className="structureHistoryLayer" aria-hidden="true">
+          {structureEventPositions.map((event) => (
+            <div
+              className={
+                "structureHistoryEvent " +
+                event.type.toLowerCase() +
+                " " +
+                event.direction
+              }
+              key={event.key}
+              style={{
+                left: event.left,
+                top: event.top,
+                width: event.width
+              }}
+            >
+              <span className="structureHistoryLine" />
+              <span className="structureHistoryLabel">
+                {event.type} {event.direction === "bullish" ? "↑" : "↓"}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {tradeMarkerPositions.length ? (
         <div className="tradeMarkerLayer" aria-hidden="true">
           {tradeMarkerPositions.map((marker) => (
@@ -1651,11 +1545,17 @@ export default function MarketChart({
           {orderFlowBarPositions.map((bar) => (
             <div
               className={
-                bar.partial
-                  ? "exactVolumeBar partial"
-                  : "exactVolumeBar"
+                "exactVolumeBar " +
+                (bar.partial ? "partial " : "") +
+                (activeOrderFlowTime === bar.time ? "active" : "")
               }
               key={bar.time}
+              onClick={(event) => {
+                event.stopPropagation();
+                setActiveOrderFlowTime((current) =>
+                  current === bar.time ? null : bar.time
+                );
+              }}
               style={{
                 left: bar.x - bar.width / 2,
                 width: bar.width,
@@ -1676,6 +1576,43 @@ export default function MarketChart({
                 />
               </span>
 
+              <div className="exactVolumeTooltip" role="tooltip">
+                <strong>{formatIst(bar.time)}</strong>
+                <span className="flowBuy">
+                  BUY {bar.buyPercent.toFixed(1)}% ·{" "}
+                  {bar.buyVolume.toLocaleString("en-IN", {
+                    maximumFractionDigits: 6
+                  })}{" "}
+                  · B#{bar.buyTrades}
+                </span>
+                <span className="flowSell">
+                  SELL {bar.sellPercent.toFixed(1)}% ·{" "}
+                  {bar.sellVolume.toLocaleString("en-IN", {
+                    maximumFractionDigits: 6
+                  })}{" "}
+                  · S#{bar.sellTrades}
+                </span>
+                <span>
+                  Δ {bar.deltaPercent >= 0 ? "+" : ""}
+                  {bar.deltaPercent.toFixed(1)}% · CΔ{" "}
+                  {bar.cumulativeDelta >= 0 ? "+" : ""}
+                  {bar.cumulativeDelta.toLocaleString("en-IN", {
+                    maximumFractionDigits: 6
+                  })}
+                </span>
+                {bar.oi !== null ? (
+                  <span>
+                    OI {bar.oi.toLocaleString("en-IN")}
+                    {bar.oiChange !== null
+                      ? " · ΔOI " +
+                        bar.oiChange.toLocaleString("en-IN")
+                      : ""}
+                  </span>
+                ) : null}
+                <small>
+                  {bar.partial ? "LIVE PARTIAL BAR" : "EXACT CLOSED BAR"}
+                </small>
+              </div>
             </div>
           ))}
         </div>
