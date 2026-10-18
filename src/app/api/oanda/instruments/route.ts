@@ -151,6 +151,8 @@ export async function GET(request: NextRequest) {
   const type =
     request.nextUrl.searchParams.get("type")?.trim().toUpperCase() ||
     "ALL";
+  const returnAll =
+    request.nextUrl.searchParams.get("all") === "1";
 
   try {
     const instruments = await load();
@@ -163,7 +165,7 @@ export async function GET(request: NextRequest) {
           b.score - a.score ||
           a.item.name.localeCompare(b.item.name)
       )
-      .slice(0, 100)
+      .slice(0, returnAll ? 1000 : 100)
       .map(({ item }) => item);
 
     return NextResponse.json({
