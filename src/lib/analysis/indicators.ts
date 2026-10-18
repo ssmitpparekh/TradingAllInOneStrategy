@@ -25,7 +25,7 @@ export type TechnicalContext = {
   volatilityState: "low" | "normal" | "high";
 };
 
-function emaSeries(
+export function emaSeries(
   candles: AnalysisCandle[],
   period: number
 ): IndicatorPoint[] {

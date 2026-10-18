@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties
+} from "react";
 import {
   CandlestickSeries,
   ColorType,
@@ -11,16 +17,17 @@ import {
   type Coordinate,
   type IChartApi,
   LineStyle,
-  type IPriceLine,
   type ISeriesApi,
   type Time
 } from "lightweight-charts";
-import type { TechnicalContext } from "@/lib/analysis/indicators";
+import { emaSeries } from "@/lib/analysis/indicators";
+import type { OrderFlowBucket } from "@/lib/analysis/order-flow";
+import type { DailyPivotLevels } from "@/lib/analysis/pivots";
 import {
-  orderFlowPercentages,
-  type OrderFlowBucket
-} from "@/lib/analysis/order-flow";
-import type { VolumeAnalytics } from "@/lib/analysis/volume";
+  calculateVwapOverlay,
+  type VolumeAnalytics,
+  type VwapSettings
+} from "@/lib/analysis/volume";
 import type {
   FibonacciSetup,
   ImbalanceLiquiditySnapshot,
@@ -79,7 +86,9 @@ type Props = {
   imbalance?: ImbalanceLiquiditySnapshot | null;
   orderBlocks?: OrderBlockSnapshot | null;
   volumeAnalytics?: VolumeAnalytics | null;
-  technicalContext?: TechnicalContext | null;
+  emaPeriods?: number[];
+  vwapSettings?: VwapSettings;
+  pivotSets?: DailyPivotLevels[];
   showFib?: boolean;
   showTrendFib?: boolean;
   showStructure?: boolean;
@@ -88,6 +97,7 @@ type Props = {
   showOrderBlocks?: boolean;
   showVwap?: boolean;
   showProfile?: boolean;
+  showPivots?: boolean;
   showEma?: boolean;
   market?: string;
   resolution?: string;
@@ -144,7 +154,124 @@ function sessionKey(timestamp: number, market: string) {
 }
 
 function isIntradayResolution(resolution: string) {
-  return !["1D", "1W", "1M"].includes(resolution);
+  return !["1D", "1W", "1M", "D", "W", "M"].includes(resolution);
+}
+
+function resolutionSeconds(resolution: string) {
+  const numeric = Number(resolution);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return Math.round(numeric * 60);
+  }
+
+  const map: Record<string, number> = {
+    "1H": 60 * 60,
+    "2H": 2 * 60 * 60,
+    "3H": 3 * 60 * 60,
+    "4H": 4 * 60 * 60,
+    "1D": 24 * 60 * 60,
+    D: 24 * 60 * 60,
+    "1W": 7 * 24 * 60 * 60,
+    W: 7 * 24 * 60 * 60,
+    "1M": 30 * 24 * 60 * 60,
+    M: 30 * 24 * 60 * 60
+  };
+
+  return map[resolution] ?? 60;
+}
+
+function indianMarketMinute(timestamp: number) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(new Date(timestamp * 1000));
+
+  const weekday =
+    parts.find((part) => part.type === "weekday")?.value ?? "";
+  const hour = Number(
+    parts.find((part) => part.type === "hour")?.value ?? 0
+  );
+  const minute = Number(
+    parts.find((part) => part.type === "minute")?.value ?? 0
+  );
+
+  return {
+    weekday,
+    minuteOfDay: hour * 60 + minute
+  };
+}
+
+function futureAxisTimes(
+  lastTime: number,
+  market: string,
+  resolution: string
+) {
+  const step = resolutionSeconds(resolution);
+  const output: number[] = [];
+  const count = isIntradayResolution(resolution)
+    ? Math.min(
+        1600,
+        Math.max(120, Math.ceil((24 * 60 * 60) / step))
+      )
+    : resolution === "1D" || resolution === "D"
+      ? 90
+      : 40;
+
+  if (!isIntradayResolution(resolution)) {
+    for (let index = 1; index <= count; index += 1) {
+      output.push(lastTime + step * index);
+    }
+    return output;
+  }
+
+  let candidate = lastTime;
+
+  while (output.length < count) {
+    candidate += step;
+
+    if (market === "KRAKEN") {
+      output.push(candidate);
+      continue;
+    }
+
+    const local = indianMarketMinute(candidate);
+    const weekdayOkay =
+      local.weekday !== "Sat" && local.weekday !== "Sun";
+    const sessionOkay =
+      local.minuteOfDay >= 9 * 60 + 15 &&
+      local.minuteOfDay <= 15 * 60 + 30;
+
+    if (weekdayOkay && sessionOkay) {
+      output.push(candidate);
+    }
+  }
+
+  return output;
+}
+
+function formatAxisTick(
+  timestamp: number,
+  market: string,
+  resolution: string
+) {
+  const timeZone = market === "KRAKEN" ? "UTC" : "Asia/Kolkata";
+
+  if (isIntradayResolution(resolution)) {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }).format(new Date(timestamp * 1000));
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    day: "2-digit",
+    month: "short"
+  }).format(new Date(timestamp * 1000));
 }
 
 function toEpoch(time: Time): number | null {
@@ -169,7 +296,20 @@ export default function MarketChart({
   imbalance = null,
   orderBlocks = null,
   volumeAnalytics = null,
-  technicalContext = null,
+  emaPeriods = [],
+  pivotSets = [],
+  vwapSettings = {
+    hideOnDailyOrAbove: true,
+    anchorPeriod: "session",
+    source: "hlc3",
+    offset: 0,
+    bandsMode: "stdev",
+    bands: [
+      { enabled: true, multiplier: 1 },
+      { enabled: false, multiplier: 2 },
+      { enabled: false, multiplier: 3 }
+    ]
+  },
   showFib = true,
   showTrendFib = true,
   showStructure = true,
@@ -178,6 +318,7 @@ export default function MarketChart({
   showOrderBlocks = true,
   showVwap = true,
   showProfile = true,
+  showPivots = false,
   showEma = true,
   market = "NSE",
   resolution = "15",
@@ -191,13 +332,124 @@ export default function MarketChart({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const sessionVwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const anchoredVwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const ema20SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const ema50SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const ema200SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const analysisLinesRef = useRef<IPriceLine[]>([]);
+  const vwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const futureAxisSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const futureAxisAnchorRef = useRef<string | null>(null);
+  const overlayRafRef = useRef<number | null>(null);
+  const vwapBandSeriesRefs = useRef<
+    Map<string, ISeriesApi<"Line">>
+  >(new Map());
+  const emaSeriesRefs = useRef<Map<number, ISeriesApi<"Line">>>(new Map());
+  const [plotRightInset, setPlotRightInset] = useState(58);
   const [hovered, setHovered] = useState<ChartCandle | null>(null);
+  const [activeOrderFlowTime, setActiveOrderFlowTime] = useState<number | null>(
+    null
+  );
+  const [hoveredOrderFlowTime, setHoveredOrderFlowTime] = useState<
+    number | null
+  >(null);
+  const profileShiftAppliedRef = useRef(false);
+  const [fibLevelPositions, setFibLevelPositions] = useState<
+    Array<{
+      key: string;
+      left: number;
+      width: number;
+      top: number;
+      label: string;
+      important: boolean;
+      anchor: boolean;
+    }>
+  >([]);
+  const [fibGoldenZonePosition, setFibGoldenZonePosition] = useState<{
+    left: number;
+    width: number;
+    top: number;
+    height: number;
+  } | null>(null);
+  const [trendFibLevelPositions, setTrendFibLevelPositions] = useState<
+    Array<{
+      key: string;
+      left: number;
+      width: number;
+      top: number;
+      label: string;
+      important: boolean;
+    }>
+  >([]);
+  const [orderBlockZonePositions, setOrderBlockZonePositions] = useState<
+    Array<{
+      key: string;
+      left: number;
+      width: number;
+      top: number;
+      height: number;
+      direction: "bullish" | "bearish";
+    }>
+  >([]);
+  const [volumeProfilePositions, setVolumeProfilePositions] = useState<
+    Array<{
+      key: string;
+      left: number;
+      top: number;
+      height: number;
+      buyWidth: number;
+      sellWidth: number;
+      totalWidth: number;
+    }>
+  >([]);
+  const [volumeProfileLevelPositions, setVolumeProfileLevelPositions] = useState<
+    Array<{
+      key: string;
+      left: number;
+      width: number;
+      top: number;
+      label: "POC" | "VAH" | "VAL";
+    }>
+  >([]);
+  const [structureEventPositions, setStructureEventPositions] = useState<
+    Array<{
+      key: string;
+      left: number;
+      width: number;
+      top: number;
+      type: "BOS" | "CHoCH";
+      direction: "bullish" | "bearish";
+    }>
+  >([]);
+  const [fvgZonePositions, setFvgZonePositions] = useState<
+    Array<{
+      key: string;
+      left: number;
+      width: number;
+      top: number;
+      height: number;
+      direction: "bullish" | "bearish";
+      status: "active" | "touched" | "filled";
+    }>
+  >([]);
+  const [liquidityLevelPositions, setLiquidityLevelPositions] = useState<
+    Array<{
+      key: string;
+      left: number;
+      width: number;
+      top: number;
+      height: number;
+      side: "buy" | "sell";
+      importance: "minor" | "major";
+      level: number;
+    }>
+  >([]);
+  const [pivotLinePositions, setPivotLinePositions] = useState<
+    Array<{
+      key: string;
+      left: number;
+      width: number;
+      top: number;
+      label: string;
+      value: number;
+      kind: "pivot" | "resistance" | "support";
+    }>
+  >([]);
   const [sessionBreakPositions, setSessionBreakPositions] = useState<
     Array<{ time: number; x: number }>
   >([]);
@@ -219,9 +471,8 @@ export default function MarketChart({
       cumulativeDelta: number;
       oi: number | null;
       oiChange: number | null;
-      showPercent: boolean;
-      showCounts: boolean;
-      showMeta: boolean;
+      buyVolume: number;
+      sellVolume: number;
     }>
   >([]);
   const [tradeMarkerPositions, setTradeMarkerPositions] = useState<
@@ -233,10 +484,17 @@ export default function MarketChart({
     useState<DrawingPoint | null>(null);
   const [drawingRevision, setDrawingRevision] = useState(0);
 
+  const visibleRangeInitRef = useRef<string | null>(null);
+
   const drawingsStorageKey =
     "allinoneview:drawings:v1:" + instrumentKey;
 
   useEffect(() => {
+    setActiveOrderFlowTime(null);
+    setHoveredOrderFlowTime(null);
+    profileShiftAppliedRef.current = false;
+    visibleRangeInitRef.current = null;
+    futureAxisAnchorRef.current = null;
     try {
       const saved = window.localStorage.getItem(drawingsStorageKey);
       const parsed = saved ? JSON.parse(saved) : [];
@@ -254,11 +512,6 @@ export default function MarketChart({
       JSON.stringify(drawings)
     );
   }, [drawingsStorageKey, drawings]);
-
-  const orderFlowByTime = useMemo(
-    () => new Map(orderFlowBuckets.map((bucket) => [bucket.time, bucket])),
-    [orderFlowBuckets]
-  );
 
   const cumulativeDeltaByTime = useMemo(() => {
     let cumulative = 0;
@@ -328,8 +581,8 @@ export default function MarketChart({
         }
       },
       grid: {
-        vertLines: { color: isLight ? "#e5e7eb" : "#15202e" },
-        horzLines: { color: isLight ? "#e5e7eb" : "#15202e" }
+        vertLines: { color: "transparent" },
+        horzLines: { color: "transparent" }
       },
       rightPriceScale: {
         borderColor: isLight ? "#cbd5e1" : "#263143",
@@ -349,13 +602,7 @@ export default function MarketChart({
         shiftVisibleRangeOnNewBar: true,
         tickMarkFormatter: (time: Time) => {
           const epoch = toEpoch(time);
-          if (!epoch) return "";
-          const date = new Date(epoch * 1000);
-          return new Intl.DateTimeFormat("en-IN", {
-            timeZone: "Asia/Kolkata",
-            day: "2-digit",
-            month: "short"
-          }).format(date);
+          return epoch ? formatAxisTick(epoch, market, resolution) : "";
         }
       },
       crosshair: {
@@ -398,55 +645,27 @@ export default function MarketChart({
       priceLineVisible: true
     });
 
-    const sessionVwapSeries = chart.addSeries(LineSeries, {
-      color: "#4d8dff",
+    const vwapSeries = chart.addSeries(LineSeries, {
+      color: "#f5b942",
       lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: true,
       title: "VWAP"
     });
 
-    const anchoredVwapSeries = chart.addSeries(LineSeries, {
-      color: "#c386ff",
-      lineWidth: 2,
-      lineStyle: LineStyle.Dashed,
-      priceLineVisible: false,
-      lastValueVisible: true,
-      title: "AVWAP"
-    });
-
-    const ema20Series = chart.addSeries(LineSeries, {
-      color: "#56b4ff",
-      lineWidth: 1,
+    const futureAxisSeries = chart.addSeries(LineSeries, {
+      lineVisible: false,
+      pointMarkersVisible: false,
+      crosshairMarkerVisible: false,
       priceLineVisible: false,
       lastValueVisible: false,
-      title: "EMA20"
-    });
-
-    const ema50Series = chart.addSeries(LineSeries, {
-      color: "#f5b942",
-      lineWidth: 1,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      title: "EMA50"
-    });
-
-    const ema200Series = chart.addSeries(LineSeries, {
-      color: "#d67cff",
-      lineWidth: 1,
-      lineStyle: LineStyle.Dashed,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      title: "EMA200"
+      priceScaleId: "future-axis"
     });
 
     chartRef.current = chart;
     seriesRef.current = series;
-    sessionVwapSeriesRef.current = sessionVwapSeries;
-    anchoredVwapSeriesRef.current = anchoredVwapSeries;
-    ema20SeriesRef.current = ema20Series;
-    ema50SeriesRef.current = ema50Series;
-    ema200SeriesRef.current = ema200Series;
+    vwapSeriesRef.current = vwapSeries;
+    futureAxisSeriesRef.current = futureAxisSeries;
 
     chart.subscribeCrosshairMove((param) => {
       const item = param.seriesData.get(series);
@@ -470,14 +689,44 @@ export default function MarketChart({
       });
     });
 
+    const scheduleOverlayRedraw = () => {
+      if (overlayRafRef.current !== null) return;
+      overlayRafRef.current = window.requestAnimationFrame(() => {
+        overlayRafRef.current = null;
+        const nextInset = Math.max(
+          0,
+          Math.round(chart.priceScale("right").width())
+        );
+        setPlotRightInset((current) =>
+          current === nextInset ? current : nextInset
+        );
+        setDrawingRevision((value) => value + 1);
+      });
+    };
+
     const observer = new ResizeObserver(() => {
       chart.applyOptions({
         width: host.clientWidth,
         height: chartHeightForHost(host)
       });
-      setDrawingRevision((value) => value + 1);
+      scheduleOverlayRedraw();
     });
     observer.observe(host);
+    setPlotRightInset(
+      Math.max(0, Math.round(chart.priceScale("right").width()))
+    );
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(
+      scheduleOverlayRedraw
+    );
+
+    host.addEventListener("pointerup", scheduleOverlayRedraw, {
+      passive: true
+    });
+    host.addEventListener("touchend", scheduleOverlayRedraw, {
+      passive: true
+    });
+    window.addEventListener("resize", scheduleOverlayRedraw);
 
     const onVerticalWheel = (event: WheelEvent) => {
       const priceScale = chart.priceScale("right");
@@ -511,6 +760,7 @@ export default function MarketChart({
         from: anchor - (1 - yRatio) * nextSpan,
         to: anchor + yRatio * nextSpan
       });
+      scheduleOverlayRedraw();
     };
 
     host.addEventListener("wheel", onVerticalWheel, {
@@ -520,15 +770,25 @@ export default function MarketChart({
 
     return () => {
       host.removeEventListener("wheel", onVerticalWheel, true);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(
+        scheduleOverlayRedraw
+      );
+      host.removeEventListener("pointerup", scheduleOverlayRedraw);
+      host.removeEventListener("touchend", scheduleOverlayRedraw);
+      window.removeEventListener("resize", scheduleOverlayRedraw);
+      if (overlayRafRef.current !== null) {
+        window.cancelAnimationFrame(overlayRafRef.current);
+        overlayRafRef.current = null;
+      }
       observer.disconnect();
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
-      sessionVwapSeriesRef.current = null;
-      anchoredVwapSeriesRef.current = null;
-      ema20SeriesRef.current = null;
-      ema50SeriesRef.current = null;
-      ema200SeriesRef.current = null;
+      vwapSeriesRef.current = null;
+      futureAxisSeriesRef.current = null;
+      futureAxisAnchorRef.current = null;
+      vwapBandSeriesRefs.current.clear();
+      emaSeriesRefs.current.clear();
     };
   }, []);
 
@@ -548,8 +808,8 @@ export default function MarketChart({
         attributionLogo: true
       },
       grid: {
-        vertLines: { color: isLight ? "#e5e7eb" : "#15202e" },
-        horzLines: { color: isLight ? "#e5e7eb" : "#15202e" }
+        vertLines: { color: "transparent" },
+        horzLines: { color: "transparent" }
       },
       rightPriceScale: {
         borderColor: isLight ? "#cbd5e1" : "#263143"
@@ -574,6 +834,44 @@ export default function MarketChart({
   }, [theme]);
 
   useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    const timeZone = market === "KRAKEN" ? "UTC" : "Asia/Kolkata";
+
+    chart.applyOptions({
+      localization: {
+        locale: "en-IN",
+        timeFormatter: (time: Time) => {
+          const epoch = toEpoch(time);
+          if (!epoch) return "";
+          return new Intl.DateTimeFormat("en-GB", {
+            timeZone,
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false
+          }).format(new Date(epoch * 1000));
+        }
+      }
+    });
+
+    chart.applyOptions({
+      timeScale: {
+        timeVisible: true,
+        secondsVisible: false,
+        ignoreWhitespaceIndices: false,
+        tickMarkFormatter: (time: Time) => {
+          const epoch = toEpoch(time);
+          return epoch ? formatAxisTick(epoch, market, resolution) : "";
+        }
+      }
+    });
+  }, [market, resolution]);
+
+  useEffect(() => {
     if (!seriesRef.current) return;
 
     if (candles.length === 0) {
@@ -593,6 +891,20 @@ export default function MarketChart({
 
     const chart = chartRef.current;
     if (!chart) return;
+
+    const historyKey =
+      instrumentKey +
+      ":" +
+      rangeKey +
+      ":" +
+      candles[0].time +
+      ":" +
+      candles[candles.length - 1].time +
+      ":" +
+      candles.length;
+
+    if (visibleRangeInitRef.current === historyKey) return;
+    visibleRangeInitRef.current = historyKey;
 
     if (rangeKey === "MAX") {
       chart.timeScale().fitContent();
@@ -618,6 +930,33 @@ export default function MarketChart({
       to: lastTime as Time
     });
   }, [candles, rangeKey]);
+
+  useEffect(() => {
+    const futureSeries = futureAxisSeriesRef.current;
+    if (!futureSeries) return;
+
+    const lastTime =
+      liveCandle?.time ?? candles[candles.length - 1]?.time ?? null;
+
+    if (lastTime === null) {
+      if (futureAxisAnchorRef.current !== null) {
+        futureSeries.setData([]);
+        futureAxisAnchorRef.current = null;
+      }
+      return;
+    }
+
+    const anchorKey = `${market}:${resolution}:${lastTime}`;
+
+    if (futureAxisAnchorRef.current === anchorKey) return;
+
+    futureSeries.setData(
+      futureAxisTimes(lastTime, market, resolution).map((time) => ({
+        time: time as Time
+      }))
+    );
+    futureAxisAnchorRef.current = anchorKey;
+  }, [candles, liveCandle?.time, market, resolution]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -658,14 +997,7 @@ export default function MarketChart({
     };
 
     updatePositions();
-    chart.timeScale().subscribeVisibleLogicalRangeChange(updatePositions);
-    window.addEventListener("resize", updatePositions);
-
-    return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updatePositions);
-      window.removeEventListener("resize", updatePositions);
-    };
-  }, [sessionBreakTimes, showSessionBreaks]);
+  }, [sessionBreakTimes, showSessionBreaks, drawingRevision]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -709,28 +1041,7 @@ export default function MarketChart({
     };
 
     updateMarkers();
-    chart.timeScale().subscribeVisibleLogicalRangeChange(updateMarkers);
-    window.addEventListener("resize", updateMarkers);
-
-    return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateMarkers);
-      window.removeEventListener("resize", updateMarkers);
-    };
-  }, [tradeMarkers, candles, liveCandle]);
-
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart) return;
-
-    const redraw = () => {
-      setDrawingRevision((value) => value + 1);
-    };
-
-    chart.timeScale().subscribeVisibleLogicalRangeChange(redraw);
-    return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(redraw);
-    };
-  }, []);
+  }, [tradeMarkers, candles, liveCandle, drawingRevision]);
 
   useEffect(() => {
     if (!liveCandle || !seriesRef.current) return;
@@ -751,254 +1062,661 @@ export default function MarketChart({
     });
   }, [liveCandle, candles]);
 
+
   useEffect(() => {
+    const chart = chartRef.current;
     const series = seriesRef.current;
-    if (!series) return;
-
-    for (const line of analysisLinesRef.current) {
-      try {
-        series.removePriceLine(line);
-      } catch {
-        // A chart reset can remove a line before this cleanup runs.
-      }
-    }
-    analysisLinesRef.current = [];
-
-    if (showStructure && structure) {
-      if (structure.activeSwingHigh) {
-        analysisLinesRef.current.push(
-          series.createPriceLine({
-            price: structure.activeSwingHigh.price,
-            color: "#8b96aa",
-            lineWidth: 1,
-            lineStyle: LineStyle.Dashed,
-            axisLabelVisible: false,
-            title: "Swing H"
-          })
-        );
-      }
-
-      if (structure.activeSwingLow) {
-        analysisLinesRef.current.push(
-          series.createPriceLine({
-            price: structure.activeSwingLow.price,
-            color: "#8b96aa",
-            lineWidth: 1,
-            lineStyle: LineStyle.Dashed,
-            axisLabelVisible: false,
-            title: "Swing L"
-          })
-        );
-      }
-
-      if (structure.latestEvent) {
-        analysisLinesRef.current.push(
-          series.createPriceLine({
-            price: structure.latestEvent.brokenLevel,
-            color:
-              structure.latestEvent.direction === "bullish"
-                ? "#45d483"
-                : "#ff7477",
-            lineWidth: 2,
-            lineStyle: LineStyle.Solid,
-            axisLabelVisible: true,
-            title: `${structure.latestEvent.type} ${structure.latestEvent.direction === "bullish" ? "↑" : "↓"}`
-          })
-        );
-      }
-    }
-
-    if (showFvg && imbalance) {
-      const visibleGaps = imbalance.activeFvgs.slice(-3);
-
-      for (const gap of visibleGaps) {
-        const color =
-          gap.direction === "bullish" ? "#3fbf7f" : "#e66c70";
-        const prefix =
-          gap.direction === "bullish" ? "Bull FVG" : "Bear FVG";
-
-        analysisLinesRef.current.push(
-          series.createPriceLine({
-            price: gap.lower,
-            color,
-            lineWidth: 1,
-            lineStyle: LineStyle.Dotted,
-            axisLabelVisible: false,
-            title: `${prefix} L`
-          })
-        );
-
-        analysisLinesRef.current.push(
-          series.createPriceLine({
-            price: gap.upper,
-            color,
-            lineWidth: 1,
-            lineStyle: LineStyle.Dotted,
-            axisLabelVisible: false,
-            title: `${prefix} H`
-          })
-        );
-      }
-    }
-
-    if (showLiquidity && imbalance?.latestSweep) {
-      analysisLinesRef.current.push(
-        series.createPriceLine({
-          price: imbalance.latestSweep.level,
-          color:
-            imbalance.latestSweep.direction === "bullish"
-              ? "#69d6c5"
-              : "#ff9b6a",
-          lineWidth: 2,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: `Sweep ${imbalance.latestSweep.direction === "bullish" ? "↑" : "↓"}`
-        })
-      );
-    }
-
-    if (showOrderBlocks && orderBlocks) {
-      for (const block of orderBlocks.activeBlocks.slice(-3)) {
-        const color =
-          block.direction === "bullish" ? "#5cbf8a" : "#dc7377";
-        const prefix =
-          block.direction === "bullish" ? "Bull OB" : "Bear OB";
-
-        analysisLinesRef.current.push(
-          series.createPriceLine({
-            price: block.lower,
-            color,
-            lineWidth: 1,
-            lineStyle: LineStyle.Dashed,
-            axisLabelVisible: false,
-            title: `${prefix} L`
-          })
-        );
-
-        analysisLinesRef.current.push(
-          series.createPriceLine({
-            price: block.upper,
-            color,
-            lineWidth: 1,
-            lineStyle: LineStyle.Dashed,
-            axisLabelVisible: false,
-            title: `${prefix} H`
-          })
-        );
-      }
-    }
+    const host = hostRef.current;
 
     if (
-      showProfile &&
-      volumeAnalytics?.available &&
-      volumeAnalytics.profile.poc !== null
+      !chart ||
+      !series ||
+      !host ||
+      !showFib ||
+      !fibonacci?.anchorA ||
+      !fibonacci.anchorB ||
+      !fibonacci.retracements.length
     ) {
-      const profileLevels = [
-        {
-          title: "POC",
-          price: volumeAnalytics.profile.poc,
-          color: "#f5b942",
-          width: 2 as const
-        },
-        {
-          title: "VAH",
-          price: volumeAnalytics.profile.vah,
-          color: "#7d8ba1",
-          width: 1 as const
-        },
-        {
-          title: "VAL",
-          price: volumeAnalytics.profile.val,
-          color: "#7d8ba1",
-          width: 1 as const
+      setFibLevelPositions([]);
+      setFibGoldenZonePosition(null);
+      return;
+    }
+
+    const updateFib = () => {
+      const hostWidth = host.clientWidth;
+      const startX = chart.timeScale().timeToCoordinate(
+        fibonacci.anchorA!.time as Time
+      );
+      const latestTime =
+        liveCandle?.time ?? candles[candles.length - 1]?.time ?? null;
+      const latestX =
+        latestTime === null
+          ? null
+          : chart.timeScale().timeToCoordinate(latestTime as Time);
+      const anchorBX = chart.timeScale().timeToCoordinate(
+        fibonacci.anchorB!.time as Time
+      );
+
+      if (startX === null) {
+        setFibLevelPositions([]);
+        setFibGoldenZonePosition(null);
+        return;
+      }
+
+      const rawLeft = Number(startX);
+      const rawRight =
+        latestX !== null
+          ? Number(latestX)
+          : anchorBX !== null
+            ? Number(anchorBX)
+            : hostWidth;
+
+      const left = Math.max(0, rawLeft);
+      const right = Math.min(hostWidth, Math.max(rawLeft, rawRight));
+
+      if (right - left < 2) {
+        setFibLevelPositions([]);
+        setFibGoldenZonePosition(null);
+        return;
+      }
+
+      setFibLevelPositions(
+        fibonacci.retracements.flatMap((level) => {
+          const y = series.priceToCoordinate(level.price);
+          if (y === null) return [];
+
+          return [{
+            key: `fib:${level.ratio}`,
+            left,
+            width: right - left,
+            top: Number(y),
+            label:
+              `${level.ratio.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")} · ` +
+              level.price.toLocaleString("en-IN", {
+                maximumFractionDigits: 2
+              }),
+            important:
+              level.ratio === 0.5 ||
+              level.ratio === 0.618 ||
+              level.ratio === 0.705 ||
+              level.ratio === 0.786,
+            anchor: level.ratio === 0 || level.ratio === 1
+          }];
+        })
+      );
+
+      if (fibonacci.goldenZone) {
+        const upperY = series.priceToCoordinate(fibonacci.goldenZone.high);
+        const lowerY = series.priceToCoordinate(fibonacci.goldenZone.low);
+
+        if (upperY !== null && lowerY !== null) {
+          const top = Math.min(Number(upperY), Number(lowerY));
+          const bottom = Math.max(Number(upperY), Number(lowerY));
+          setFibGoldenZonePosition({
+            left,
+            width: right - left,
+            top,
+            height: Math.max(2, bottom - top)
+          });
+        } else {
+          setFibGoldenZonePosition(null);
         }
-      ];
-
-      for (const level of profileLevels) {
-        if (level.price === null) continue;
-
-        analysisLinesRef.current.push(
-          series.createPriceLine({
-            price: level.price,
-            color: level.color,
-            lineWidth: level.width,
-            lineStyle:
-              level.title === "POC"
-                ? LineStyle.Solid
-                : LineStyle.Dashed,
-            axisLabelVisible: true,
-            title: level.title
-          })
-        );
+      } else {
+        setFibGoldenZonePosition(null);
       }
-    }
-
-    if (!fibonacci) return;
-
-    if (showFib) {
-      for (const level of fibonacci.retracements) {
-        const important =
-          level.ratio === 0.618 ||
-          level.ratio === 0.705 ||
-          level.ratio === 0.786;
-
-        analysisLinesRef.current.push(
-          series.createPriceLine({
-            price: level.price,
-            color: important ? "#f5b942" : "#667085",
-            lineWidth: important ? 2 : 1,
-            lineStyle: important ? LineStyle.Solid : LineStyle.Dashed,
-            axisLabelVisible: true,
-            title: `Fib ${level.label}`
-          })
-        );
-      }
-    }
-
-    if (showTrendFib && fibonacci.trendExtension) {
-      for (const level of fibonacci.trendExtension.levels) {
-        const important = level.ratio === 1.272 || level.ratio === 1.618;
-
-        analysisLinesRef.current.push(
-          series.createPriceLine({
-            price: level.price,
-            color: important ? "#8b7cff" : "#536079",
-            lineWidth: important ? 2 : 1,
-            lineStyle: important ? LineStyle.Solid : LineStyle.Dotted,
-            axisLabelVisible: true,
-            title: `Trend ${level.label}`
-          })
-        );
-      }
-    }
-
-    return () => {
-      const activeSeries = seriesRef.current;
-      if (!activeSeries) return;
-
-      for (const line of analysisLinesRef.current) {
-        try {
-          activeSeries.removePriceLine(line);
-        } catch {
-          // no-op
-        }
-      }
-      analysisLinesRef.current = [];
     };
-  }, [
-    fibonacci,
-    structure,
-    imbalance,
-    orderBlocks,
-    volumeAnalytics,
-    showFib,
-    showTrendFib,
-    showStructure,
-    showFvg,
-    showLiquidity,
-    showOrderBlocks,
-    showProfile
-  ]);
+
+    updateFib();
+  }, [showFib, fibonacci, candles, liveCandle, drawingRevision]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const host = hostRef.current;
+    const trend = fibonacci?.trendExtension;
+
+    if (!chart || !series || !host || !showTrendFib || !trend) {
+      setTrendFibLevelPositions([]);
+      return;
+    }
+
+    const updateTrendFib = () => {
+      const hostWidth = host.clientWidth;
+      const startX = chart.timeScale().timeToCoordinate(
+        trend.anchorC.time as Time
+      );
+      const latestTime =
+        liveCandle?.time ?? candles[candles.length - 1]?.time ?? null;
+      const latestX =
+        latestTime === null
+          ? null
+          : chart.timeScale().timeToCoordinate(latestTime as Time);
+
+      if (startX === null) {
+        setTrendFibLevelPositions([]);
+        return;
+      }
+
+      const rawLeft = Number(startX);
+      const rawRight = latestX === null ? hostWidth : Number(latestX);
+      const left = Math.max(0, rawLeft);
+      const right = Math.min(hostWidth, Math.max(rawLeft, rawRight));
+
+      if (right - left < 2) {
+        setTrendFibLevelPositions([]);
+        return;
+      }
+
+      setTrendFibLevelPositions(
+        trend.levels.flatMap((level) => {
+          const y = series.priceToCoordinate(level.price);
+          if (y === null) return [];
+
+          return [{
+            key: `trend-fib:${level.ratio}`,
+            left,
+            width: right - left,
+            top: Number(y),
+            label:
+              `${level.label} · ` +
+              level.price.toLocaleString("en-IN", {
+                maximumFractionDigits: 2
+              }),
+            important:
+              level.ratio === 1 ||
+              level.ratio === 1.272 ||
+              level.ratio === 1.618
+          }];
+        })
+      );
+    };
+
+    updateTrendFib();
+  }, [showTrendFib, fibonacci, candles, liveCandle, drawingRevision]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const host = hostRef.current;
+
+    if (
+      !chart ||
+      !series ||
+      !host ||
+      !showOrderBlocks ||
+      !orderBlocks?.activeBlocks.length
+    ) {
+      setOrderBlockZonePositions([]);
+      return;
+    }
+
+    const updateOrderBlocks = () => {
+      const hostWidth = host.clientWidth;
+      const latestTime =
+        liveCandle?.time ?? candles[candles.length - 1]?.time ?? null;
+      const latestX =
+        latestTime === null
+          ? null
+          : chart.timeScale().timeToCoordinate(latestTime as Time);
+      const rightBoundary =
+        latestX === null ? hostWidth : Math.min(hostWidth, Number(latestX));
+
+      setOrderBlockZonePositions(
+        orderBlocks.activeBlocks.flatMap((block) => {
+          const startX = chart.timeScale().timeToCoordinate(
+            block.sourceTime as Time
+          );
+          const upperY = series.priceToCoordinate(block.upper);
+          const lowerY = series.priceToCoordinate(block.lower);
+
+          if (startX === null || upperY === null || lowerY === null) return [];
+
+          const rawLeft = Number(startX);
+          if (rawLeft > rightBoundary) return [];
+
+          const left = Math.max(0, rawLeft);
+          const right = Math.max(left, rightBoundary);
+          if (right - left < 2) return [];
+
+          const top = Math.min(Number(upperY), Number(lowerY));
+          const bottom = Math.max(Number(upperY), Number(lowerY));
+
+          return [{
+            key: `ob:${block.direction}:${block.sourceTime}`,
+            left,
+            width: right - left,
+            top,
+            height: Math.max(3, bottom - top),
+            direction: block.direction
+          }];
+        })
+      );
+    };
+
+    updateOrderBlocks();
+  }, [showOrderBlocks, orderBlocks, candles, liveCandle, drawingRevision]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const host = hostRef.current;
+
+    if (
+      !chart ||
+      !series ||
+      !host ||
+      !showProfile ||
+      !volumeAnalytics?.available ||
+      !volumeAnalytics.profile.bins.length
+    ) {
+      setVolumeProfilePositions([]);
+      setVolumeProfileLevelPositions([]);
+      return;
+    }
+
+    const updateProfile = () => {
+      const hostWidth = host.clientWidth;
+      const priceScaleWidth = chart.priceScale("right").width();
+      const plotRight = Math.max(80, hostWidth - priceScaleWidth);
+      const maxProfileWidth = Math.max(48, plotRight * 0.1);
+      const maxVolume = Math.max(
+        ...volumeAnalytics.profile.bins.map((bin) => bin.volume),
+        0
+      );
+
+      if (!(maxVolume > 0)) {
+        setVolumeProfilePositions([]);
+        setVolumeProfileLevelPositions([]);
+        return;
+      }
+
+      setVolumeProfilePositions(
+        volumeAnalytics.profile.bins.flatMap((bin, index) => {
+          if (!(bin.volume > 0)) return [];
+
+          const highY = series.priceToCoordinate(bin.high);
+          const lowY = series.priceToCoordinate(bin.low);
+          if (highY === null || lowY === null) return [];
+
+          const top = Math.min(Number(highY), Number(lowY));
+          const bottom = Math.max(Number(highY), Number(lowY));
+          const totalWidth = Math.max(
+            1,
+            maxProfileWidth * (bin.volume / maxVolume)
+          );
+          const buyShare =
+            bin.volume > 0 ? bin.buyVolume / bin.volume : 0.5;
+          const buyWidth = totalWidth * buyShare;
+          const sellWidth = Math.max(0, totalWidth - buyWidth);
+
+          return [{
+            key: `profile:${index}`,
+            left: plotRight - totalWidth,
+            top,
+            height: Math.max(2, bottom - top - 1),
+            buyWidth,
+            sellWidth,
+            totalWidth
+          }];
+        })
+      );
+
+      const profileLeft = plotRight - maxProfileWidth;
+      const levels = [
+        ["POC", volumeAnalytics.profile.poc],
+        ["VAH", volumeAnalytics.profile.vah],
+        ["VAL", volumeAnalytics.profile.val]
+      ] as const;
+
+      setVolumeProfileLevelPositions(
+        levels.flatMap(([label, price]) => {
+          if (price === null) return [];
+          const y = series.priceToCoordinate(price);
+          if (y === null) return [];
+          return [{
+            key: `profile-level:${label}`,
+            left: profileLeft,
+            width: maxProfileWidth,
+            top: Number(y),
+            label
+          }];
+        })
+      );
+    };
+
+    updateProfile();
+  }, [showProfile, volumeAnalytics, drawingRevision]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const host = hostRef.current;
+
+    if (
+      !chart ||
+      !series ||
+      !host ||
+      !showFvg ||
+      !imbalance?.recentFvgs.length
+    ) {
+      setFvgZonePositions([]);
+      return;
+    }
+
+    const updateFvgs = () => {
+      const hostWidth = host.clientWidth;
+      const latestTime =
+        liveCandle?.time ?? candles[candles.length - 1]?.time ?? null;
+      const latestX =
+        latestTime === null
+          ? null
+          : chart.timeScale().timeToCoordinate(latestTime as Time);
+      const activeRight =
+        latestX === null ? hostWidth : Math.min(hostWidth, Number(latestX));
+
+      const positions = imbalance.recentFvgs.flatMap((gap) => {
+        const startX = chart.timeScale().timeToCoordinate(
+          gap.createdTime as Time
+        );
+        const endX =
+          gap.filledTime === null
+            ? activeRight
+            : chart.timeScale().timeToCoordinate(gap.filledTime as Time);
+
+        const upperY = series.priceToCoordinate(gap.upper);
+        const lowerY = series.priceToCoordinate(gap.lower);
+
+        if (startX === null || upperY === null || lowerY === null) return [];
+
+        const rawLeft = Number(startX);
+        const rawRight = endX === null ? activeRight : Number(endX);
+
+        if (rawRight < -20 || rawLeft > hostWidth + 20) return [];
+
+        const left = Math.max(0, rawLeft);
+        const right = Math.min(hostWidth, Math.max(rawLeft, rawRight));
+
+        if (right - left < 2) return [];
+
+        const top = Math.min(Number(upperY), Number(lowerY));
+        const bottom = Math.max(Number(upperY), Number(lowerY));
+
+        return [{
+          key:
+            gap.direction +
+            ":" +
+            gap.createdTime +
+            ":" +
+            gap.lower +
+            ":" +
+            gap.upper,
+          left,
+          width: right - left,
+          top,
+          height: Math.max(2, bottom - top),
+          direction: gap.direction,
+          status: gap.status
+        }];
+      });
+
+      setFvgZonePositions(positions);
+    };
+
+    updateFvgs();
+  }, [showFvg, imbalance, candles, liveCandle, drawingRevision]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const host = hostRef.current;
+
+    if (!chart || !series || !host || !showPivots || !pivotSets.length) {
+      setPivotLinePositions([]);
+      return;
+    }
+
+    const updatePivots = () => {
+      const hostWidth = host.clientWidth;
+      const latestTime =
+        liveCandle?.time ?? candles[candles.length - 1]?.time ?? null;
+      const latestX =
+        latestTime === null
+          ? null
+          : chart.timeScale().timeToCoordinate(latestTime as Time);
+      const currentRight =
+        latestX === null ? hostWidth : Math.min(hostWidth, Number(latestX));
+      const positions: Array<{
+        key: string;
+        left: number;
+        width: number;
+        top: number;
+        label: string;
+        value: number;
+        kind: "pivot" | "resistance" | "support";
+      }> = [];
+
+      for (const set of pivotSets) {
+        const startX = chart.timeScale().timeToCoordinate(
+          set.sessionStart as Time
+        );
+        const endX =
+          set.sessionEnd === null
+            ? currentRight
+            : chart.timeScale().timeToCoordinate(set.sessionEnd as Time);
+
+        if (startX === null) continue;
+
+        const rawLeft = Number(startX);
+        const rawRight = endX === null ? currentRight : Number(endX);
+
+        if (rawRight < -20 || rawLeft > hostWidth + 20) continue;
+
+        const left = Math.max(0, rawLeft);
+        const right = Math.min(hostWidth, Math.max(rawLeft, rawRight));
+
+        if (right - left < 2) continue;
+
+        const levels: Array<{
+          label: string;
+          value: number;
+          kind: "pivot" | "resistance" | "support";
+        }> = [
+          { label: "R5", value: set.r5, kind: "resistance" },
+          { label: "R4", value: set.r4, kind: "resistance" },
+          { label: "R3", value: set.r3, kind: "resistance" },
+          { label: "R2", value: set.r2, kind: "resistance" },
+          { label: "R1", value: set.r1, kind: "resistance" },
+          { label: "P", value: set.p, kind: "pivot" },
+          { label: "S1", value: set.s1, kind: "support" },
+          { label: "S2", value: set.s2, kind: "support" },
+          { label: "S3", value: set.s3, kind: "support" },
+          { label: "S4", value: set.s4, kind: "support" },
+          { label: "S5", value: set.s5, kind: "support" }
+        ];
+
+        for (const level of levels) {
+          const y = series.priceToCoordinate(level.value);
+          if (y === null) continue;
+
+          positions.push({
+            key: `${set.sessionKey}:${level.label}`,
+            left,
+            width: right - left,
+            top: Number(y),
+            label: level.label,
+            value: level.value,
+            kind: level.kind
+          });
+        }
+      }
+
+      setPivotLinePositions(positions);
+    };
+
+    updatePivots();
+  }, [showPivots, pivotSets, candles, liveCandle, drawingRevision]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const host = hostRef.current;
+
+    if (
+      !chart ||
+      !series ||
+      !host ||
+      !showLiquidity ||
+      !imbalance?.liquidityLevels.length
+    ) {
+      setLiquidityLevelPositions([]);
+      return;
+    }
+
+    const updateLiquidity = () => {
+      const hostWidth = host.clientWidth;
+      const latestTime =
+        liveCandle?.time ?? candles[candles.length - 1]?.time ?? null;
+      const latestX =
+        latestTime === null
+          ? null
+          : chart.timeScale().timeToCoordinate(latestTime as Time);
+      const activeRight =
+        latestX === null ? hostWidth : Math.min(hostWidth, Number(latestX));
+
+      const positions = imbalance.liquidityLevels.flatMap((level) => {
+        const sourceX = chart.timeScale().timeToCoordinate(
+          level.sourceSwing.time as Time
+        );
+        const upperY = series.priceToCoordinate(level.zoneUpper);
+        const lowerY = series.priceToCoordinate(level.zoneLower);
+
+        if (sourceX === null || upperY === null || lowerY === null) return [];
+
+        const rawLeft = Number(sourceX);
+
+        if (rawLeft > hostWidth + 20) return [];
+
+        const left = Math.max(0, rawLeft);
+        const right = activeRight;
+
+        if (right - left < 2) return [];
+
+        const top = Math.min(Number(upperY), Number(lowerY));
+        const bottom = Math.max(Number(upperY), Number(lowerY));
+
+        return [{
+          key:
+            level.importance +
+            ":" +
+            level.side +
+            ":" +
+            level.sourceSwing.time,
+          left,
+          width: right - left,
+          top,
+          height: Math.max(
+            level.importance === "major" ? 7 : 4,
+            bottom - top
+          ),
+          side: level.side,
+          importance: level.importance,
+          level: level.level
+        }];
+      });
+
+      setLiquidityLevelPositions(positions);
+    };
+
+    updateLiquidity();
+  }, [showLiquidity, imbalance, candles, liveCandle, drawingRevision]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const host = hostRef.current;
+
+    if (!chart || !series || !host || !showStructure || !structure?.events.length) {
+      setStructureEventPositions([]);
+      return;
+    }
+
+    const updateStructure = () => {
+      const hostWidth = host.clientWidth;
+
+      const positions = structure.events.flatMap((event) => {
+        const sourceX = chart.timeScale().timeToCoordinate(
+          event.sourceSwing.time as Time
+        );
+        const breakX = chart.timeScale().timeToCoordinate(event.time as Time);
+        const y = series.priceToCoordinate(event.brokenLevel);
+
+        if (sourceX === null || breakX === null || y === null) return [];
+
+        const rawLeft = Math.min(Number(sourceX), Number(breakX));
+        const rawRight = Math.max(Number(sourceX), Number(breakX));
+
+        if (rawRight < -20 || rawLeft > hostWidth + 20) return [];
+
+        const left = Math.max(0, rawLeft);
+        const right = Math.min(hostWidth, rawRight);
+
+        if (right - left < 2) return [];
+
+        return [{
+          key:
+            event.type +
+            ":" +
+            event.direction +
+            ":" +
+            event.sourceSwing.time +
+            ":" +
+            event.time,
+          left,
+          width: right - left,
+          top: Number(y),
+          type: event.type,
+          direction: event.direction
+        }];
+      });
+
+      setStructureEventPositions(positions);
+    };
+
+    updateStructure();
+  }, [showStructure, structure, drawingRevision]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    const timeScale = chart.timeScale();
+    const options = timeScale.options();
+    const barSpacing = Math.max(1, options.barSpacing ?? 8);
+    const paneWidth = Math.max(1, chart.paneSize().width);
+    const baseRightOffset = 8;
+
+    if (showProfile) {
+      if (profileShiftAppliedRef.current) return;
+
+      const profileWidthPx = paneWidth * 0.1;
+      const breathingRoomPx = Math.max(28, paneWidth * 0.025);
+      const reservedBars =
+        (profileWidthPx + breathingRoomPx) / barSpacing;
+
+      timeScale.applyOptions({
+        rightOffset: baseRightOffset + reservedBars
+      });
+      profileShiftAppliedRef.current = true;
+      return;
+    }
+
+    if (profileShiftAppliedRef.current) {
+      timeScale.applyOptions({
+        rightOffset: baseRightOffset
+      });
+      profileShiftAppliedRef.current = false;
+    }
+  }, [showProfile]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -1016,6 +1734,10 @@ export default function MarketChart({
 
     const updateBars = () => {
       const hostWidth = host.clientWidth;
+      const plotRight = Math.max(
+        0,
+        hostWidth - chart.priceScale("right").width() - 2
+      );
       const maxPaneHeight = Math.max(
         48,
         Math.min(100, Math.round(host.clientHeight * 0.18))
@@ -1035,7 +1757,7 @@ export default function MarketChart({
           } =>
             item.x !== null &&
             Number(item.x) >= -20 &&
-            Number(item.x) <= hostWidth + 20
+            Number(item.x) <= plotRight
         )
         .map((item) => ({
           bucket: item.bucket,
@@ -1063,7 +1785,15 @@ export default function MarketChart({
       const width = Math.max(3, Math.min(52, spacing * 0.78));
 
       setOrderFlowBarPositions(
-        visible.map(({ bucket, x }) => {
+        visible.flatMap(({ bucket, x }) => {
+          if (x - width / 2 > plotRight || x + width / 2 < 0) {
+            return [];
+          }
+
+          const safeX = Math.min(
+            plotRight - width / 2 - 1,
+            Math.max(width / 2 + 1, x)
+          );
           const total = bucket.buyVolume + bucket.sellVolume;
           const totalHeight =
             maxTotal > 0
@@ -1082,9 +1812,9 @@ export default function MarketChart({
           const cumulativeDelta =
             cumulativeDeltaByTime.get(bucket.time) ?? delta;
 
-          return {
+          return [{
             time: bucket.time,
-            x,
+            x: safeX,
             width,
             totalHeight,
             buyHeight,
@@ -1099,83 +1829,172 @@ export default function MarketChart({
             cumulativeDelta,
             oi: bucket.oi ?? null,
             oiChange: bucket.oiChange ?? null,
-            showPercent: width >= 22,
-            showCounts: width >= 34,
-            showMeta: width >= 40
-          };
+            buyVolume: bucket.buyVolume,
+            sellVolume: bucket.sellVolume
+          }];
         })
       );
     };
 
     updateBars();
-    chart.timeScale().subscribeVisibleLogicalRangeChange(updateBars);
-    window.addEventListener("resize", updateBars);
-
-    return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateBars);
-      window.removeEventListener("resize", updateBars);
-    };
-  }, [orderFlowBuckets, showOrderFlow, cumulativeDeltaByTime]);
+  }, [
+    orderFlowBuckets,
+    showOrderFlow,
+    cumulativeDeltaByTime,
+    drawingRevision
+  ]);
 
   useEffect(() => {
-    const sessionSeries = sessionVwapSeriesRef.current;
-    const anchoredSeries = anchoredVwapSeriesRef.current;
-    if (!sessionSeries || !anchoredSeries) return;
+    const chart = chartRef.current;
+    const vwapSeries = vwapSeriesRef.current;
+    if (!chart || !vwapSeries) return;
 
-    if (!showVwap || !volumeAnalytics?.available) {
-      sessionSeries.setData([]);
-      anchoredSeries.setData([]);
+    const dailyOrAbove = ["1D", "1W", "1M"].includes(resolution);
+    const visible =
+      showVwap &&
+      Boolean(volumeAnalytics?.available) &&
+      !(vwapSettings.hideOnDailyOrAbove && dailyOrAbove);
+
+    if (!visible) {
+      vwapSeries.setData([]);
+      for (const series of vwapBandSeriesRefs.current.values()) {
+        try {
+          chart.removeSeries(series);
+        } catch {
+          // Series may already be gone during chart teardown.
+        }
+      }
+      vwapBandSeriesRefs.current.clear();
       return;
     }
 
-    sessionSeries.setData(
-      volumeAnalytics.sessionVwap.map((point) => ({
+    const source =
+      liveCandle &&
+      (!candles.length || liveCandle.time >= candles[candles.length - 1].time)
+        ? liveCandle.time === candles[candles.length - 1]?.time
+          ? [...candles.slice(0, -1), liveCandle]
+          : [...candles, liveCandle]
+        : candles;
+
+    const overlay = calculateVwapOverlay(
+      source,
+      vwapSettings,
+      market === "KRAKEN" ? "UTC" : "Asia/Kolkata"
+    );
+
+    vwapSeries.setData(
+      overlay.vwap.map((point) => ({
         time: point.time as Time,
         value: point.value
       }))
     );
 
-    anchoredSeries.setData(
-      volumeAnalytics.anchoredVwap.map((point) => ({
-        time: point.time as Time,
-        value: point.value
-      }))
-    );
-  }, [volumeAnalytics, showVwap]);
+    const wanted = new Set<string>();
+
+    overlay.bands.forEach((band, index) => {
+      const bandNumber = index + 1;
+      for (const side of ["upper", "lower"] as const) {
+        const key = `${bandNumber}:${side}`;
+        wanted.add(key);
+        const existingSeries = vwapBandSeriesRefs.current.get(key);
+        const series =
+          existingSeries ??
+          chart.addSeries(LineSeries, {
+            color: ["#4d8dff", "#8b7cff", "#94a3b8"][index] ?? "#94a3b8",
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            title: `VWAP B${bandNumber} ${side === "upper" ? "+" : "-"}`
+          });
+
+        if (!existingSeries) {
+          vwapBandSeriesRefs.current.set(key, series);
+        }
+
+        series.setData(
+          band[side].map((point) => ({
+            time: point.time as Time,
+            value: point.value
+          }))
+        );
+      }
+    });
+
+    for (const [key, series] of vwapBandSeriesRefs.current.entries()) {
+      if (wanted.has(key)) continue;
+      try {
+        chart.removeSeries(series);
+      } catch {
+        // Series may already be gone during chart teardown.
+      }
+      vwapBandSeriesRefs.current.delete(key);
+    }
+  }, [
+    candles,
+    liveCandle,
+    market,
+    resolution,
+    showVwap,
+    volumeAnalytics?.available,
+    vwapSettings
+  ]);
 
   useEffect(() => {
-    const ema20Series = ema20SeriesRef.current;
-    const ema50Series = ema50SeriesRef.current;
-    const ema200Series = ema200SeriesRef.current;
+    const chart = chartRef.current;
+    if (!chart) return;
 
-    if (!ema20Series || !ema50Series || !ema200Series) return;
+    const normalizedPeriods = showEma
+      ? [...new Set(emaPeriods)]
+          .map((period) => Math.trunc(period))
+          .filter((period) => Number.isFinite(period) && period > 0)
+          .sort((a, b) => a - b)
+      : [];
 
-    if (!showEma || !technicalContext) {
-      ema20Series.setData([]);
-      ema50Series.setData([]);
-      ema200Series.setData([]);
-      return;
+    const wanted = new Set(normalizedPeriods);
+
+    for (const [period, series] of emaSeriesRefs.current.entries()) {
+      if (wanted.has(period)) continue;
+      try {
+        chart.removeSeries(series);
+      } catch {
+        // Chart teardown can remove a dynamic EMA before this effect cleans it up.
+      }
+      emaSeriesRefs.current.delete(period);
     }
 
-    ema20Series.setData(
-      technicalContext.ema20.map((point) => ({
-        time: point.time as Time,
-        value: point.value
-      }))
-    );
-    ema50Series.setData(
-      technicalContext.ema50.map((point) => ({
-        time: point.time as Time,
-        value: point.value
-      }))
-    );
-    ema200Series.setData(
-      technicalContext.ema200.map((point) => ({
-        time: point.time as Time,
-        value: point.value
-      }))
-    );
-  }, [technicalContext, showEma]);
+    const source =
+      liveCandle &&
+      (!candles.length || liveCandle.time >= candles[candles.length - 1].time)
+        ? liveCandle.time === candles[candles.length - 1]?.time
+          ? [...candles.slice(0, -1), liveCandle]
+          : [...candles, liveCandle]
+        : candles;
+
+    for (const period of normalizedPeriods) {
+      const existingSeries = emaSeriesRefs.current.get(period);
+      const series =
+        existingSeries ??
+        chart.addSeries(LineSeries, {
+          color: `hsl(${(period * 47) % 360} 78% 55%)`,
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: true,
+          title: `EMA ${period}`
+        });
+
+      if (!existingSeries) {
+        emaSeriesRefs.current.set(period, series);
+      }
+
+      series.setData(
+        emaSeries(source, period).map((point) => ({
+          time: point.time as Time,
+          value: point.value
+        }))
+      );
+    }
+  }, [candles, liveCandle, showEma, emaPeriods]);
 
   useEffect(() => {
     if (fitNonce > 0) {
@@ -1288,18 +2107,16 @@ export default function MarketChart({
   });
 
   const readout = hovered ?? latest;
-  const readoutOrderFlow = readout
-    ? orderFlowByTime.get(readout.time) ?? null
-    : null;
-  const readoutOrderFlowStats = readoutOrderFlow
-    ? orderFlowPercentages(readoutOrderFlow)
-    : null;
-  const readoutCumulativeDelta = readout
-    ? cumulativeDeltaByTime.get(readout.time) ?? null
-    : null;
 
   return (
-    <div className="marketChartShell">
+    <div
+      className="marketChartShell"
+      style={
+        {
+          "--chart-right-scale": `${plotRightInset}px`
+        } as CSSProperties
+      }
+    >
       {readout ? (
         <div className="crosshairReadout">
           <span>{formatIst(readout.time)}</span>
@@ -1307,45 +2124,6 @@ export default function MarketChart({
           <span>H <strong>{readout.high.toLocaleString("en-IN")}</strong></span>
           <span>L <strong>{readout.low.toLocaleString("en-IN")}</strong></span>
           <span>C <strong>{readout.close.toLocaleString("en-IN")}</strong></span>
-          {readoutOrderFlow && readoutOrderFlowStats ? (
-            <>
-              <span className="flowBuy">
-                BUY <strong>{readoutOrderFlowStats.buyPercent.toFixed(1)}%</strong>
-              </span>
-              <span className="flowSell">
-                SELL <strong>{readoutOrderFlowStats.sellPercent.toFixed(1)}%</strong>
-              </span>
-              <span>
-                B# <strong>{readoutOrderFlow.buyTrades}</strong>
-              </span>
-              <span>
-                S# <strong>{readoutOrderFlow.sellTrades}</strong>
-              </span>
-              <span>
-                Δ <strong>{readoutOrderFlowStats.deltaPercent >= 0 ? "+" : ""}{readoutOrderFlowStats.deltaPercent.toFixed(1)}%</strong>
-              </span>
-              {readoutCumulativeDelta !== null ? (
-                <span>
-                  CΔ <strong>{readoutCumulativeDelta >= 0 ? "+" : ""}{readoutCumulativeDelta.toFixed(4)}</strong>
-                </span>
-              ) : null}
-              {readoutOrderFlow.oi !== null &&
-              readoutOrderFlow.oi !== undefined ? (
-                <span>
-                  OI <strong>{readoutOrderFlow.oi.toLocaleString("en-IN")}</strong>
-                </span>
-              ) : null}
-              {readoutOrderFlow.oiChange !== null &&
-              readoutOrderFlow.oiChange !== undefined ? (
-                <span>
-                  ΔOI <strong>{readoutOrderFlow.oiChange.toLocaleString("en-IN")}</strong>
-                </span>
-              ) : null}
-              <span>
-                {readoutOrderFlow.partial ? "PARTIAL" : readoutOrderFlow.quality.toUpperCase()}
-              </span>
-            </>
-          ) : null}
         </div>
       ) : null}
       <div className="chartToolRail" aria-label="Chart tools">
@@ -1502,6 +2280,225 @@ export default function MarketChart({
         })}
       </svg>
 
+      {showFib && fibLevelPositions.length ? (
+        <div className="fibOverlayLayer" aria-hidden="true">
+          {fibGoldenZonePosition ? (
+            <div
+              className="fibGoldenZone"
+              style={{
+                left: fibGoldenZonePosition.left,
+                top: fibGoldenZonePosition.top,
+                width: fibGoldenZonePosition.width,
+                height: fibGoldenZonePosition.height
+              }}
+            />
+          ) : null}
+          {fibLevelPositions.map((level) => (
+            <div
+              className={
+                "fibOverlayLevel " +
+                (level.important ? "important " : "") +
+                (level.anchor ? "anchor" : "")
+              }
+              key={level.key}
+              style={{
+                left: level.left,
+                top: level.top,
+                width: level.width
+              }}
+            >
+              <span className="fibOverlayLine" />
+              <span className="fibOverlayLabel">{level.label}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {showTrendFib && trendFibLevelPositions.length ? (
+        <div className="trendFibOverlayLayer" aria-hidden="true">
+          {trendFibLevelPositions.map((level) => (
+            <div
+              className={
+                "trendFibOverlayLevel " +
+                (level.important ? "important" : "")
+              }
+              key={level.key}
+              style={{
+                left: level.left,
+                top: level.top,
+                width: level.width
+              }}
+            >
+              <span className="trendFibOverlayLine" />
+              <span className="trendFibOverlayLabel">{level.label}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {showOrderBlocks && orderBlockZonePositions.length ? (
+        <div className="orderBlockZoneLayer" aria-hidden="true">
+          {orderBlockZonePositions.map((block) => (
+            <div
+              className={"orderBlockZone " + block.direction}
+              key={block.key}
+              style={{
+                left: block.left,
+                top: block.top,
+                width: block.width,
+                height: block.height
+              }}
+            >
+              <span className="orderBlockZoneLabel">
+                {block.direction === "bullish" ? "BUY OB" : "SELL OB"}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {showProfile && volumeProfilePositions.length ? (
+        <div className="volumeProfileLayer" aria-hidden="true">
+          {volumeProfilePositions.map((bin) => (
+            <div
+              className="volumeProfileBin"
+              key={bin.key}
+              style={{
+                left: bin.left,
+                top: bin.top,
+                width: bin.totalWidth,
+                height: bin.height
+              }}
+            >
+              <span
+                className="volumeProfileSell"
+                style={{ width: bin.sellWidth }}
+              />
+              <span
+                className="volumeProfileBuy"
+                style={{ width: bin.buyWidth }}
+              />
+            </div>
+          ))}
+          {volumeProfileLevelPositions.map((level) => (
+            <div
+              className={"volumeProfileLevel " + level.label.toLowerCase()}
+              key={level.key}
+              style={{
+                left: level.left,
+                top: level.top,
+                width: level.width
+              }}
+            >
+              <span>{level.label}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {showFvg && fvgZonePositions.length ? (
+        <div className="fvgZoneLayer" aria-hidden="true">
+          {fvgZonePositions.map((gap) => (
+            <div
+              className={
+                "fvgZone " +
+                gap.direction +
+                " " +
+                gap.status
+              }
+              key={gap.key}
+              style={{
+                left: gap.left,
+                top: gap.top,
+                width: gap.width,
+                height: gap.height
+              }}
+            >
+              <span className="fvgZoneLabel">
+                {gap.direction === "bullish" ? "BUY FVG" : "SELL FVG"}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {showPivots && pivotLinePositions.length ? (
+        <div className="pivotLevelLayer" aria-hidden="true">
+          {pivotLinePositions.map((level) => (
+            <div
+              className={"pivotLevel " + level.kind}
+              key={level.key}
+              style={{
+                left: level.left,
+                top: level.top,
+                width: level.width
+              }}
+            >
+              <span className="pivotLevelLine" />
+              <span className="pivotLevelLabel">
+                {level.label}{" "}
+                {level.value.toLocaleString("en-IN", {
+                  maximumFractionDigits: 2
+                })}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {showLiquidity && liquidityLevelPositions.length ? (
+        <div className="liquidityLevelLayer" aria-hidden="true">
+          {liquidityLevelPositions.map((level) => (
+            <div
+              className={
+                "liquidityLevel " +
+                level.importance +
+                " " +
+                level.side
+              }
+              key={level.key}
+              style={{
+                left: level.left,
+                top: level.top,
+                width: level.width,
+                height: level.height
+              }}
+            >
+              <span className="liquidityLevelLine" />
+              <span className="liquidityLevelLabel">
+                {level.importance === "major" ? "MAJOR" : "MINOR"}{" "}
+                {level.side === "buy" ? "SUPPLY" : "DEMAND"}{" "}
+                {level.level.toLocaleString("en-IN", {
+                  maximumFractionDigits: 2
+                })}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {showStructure && structureEventPositions.length ? (
+        <div className="structureHistoryLayer" aria-hidden="true">
+          {structureEventPositions.map((event) => (
+            <div
+              className={
+                "structureHistoryEvent " +
+                event.type.toLowerCase() +
+                " " +
+                event.direction
+              }
+              key={event.key}
+              style={{
+                left: event.left,
+                top: event.top,
+                width: event.width
+              }}
+            >
+              <span className="structureHistoryLine" />
+              <span className="structureHistoryLabel">
+                {event.type} {event.direction === "bullish" ? "↑" : "↓"}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {tradeMarkerPositions.length ? (
         <div className="tradeMarkerLayer" aria-hidden="true">
           {tradeMarkerPositions.map((marker) => (
@@ -1534,46 +2531,95 @@ export default function MarketChart({
         </div>
       ) : null}
       {showOrderFlow && orderFlowBarPositions.length ? (
-        <div className="exactVolumeLayer" aria-hidden="true">
+        <div className="exactVolumeLayer">
+          {(() => {
+            const guideTime =
+              hoveredOrderFlowTime ?? activeOrderFlowTime;
+            const guideBar = guideTime === null
+              ? null
+              : orderFlowBarPositions.find(
+                  (bar) => bar.time === guideTime
+                );
+
+            return guideBar ? (
+              <span
+                className="exactVolumeCrosshair"
+                style={{ left: guideBar.x }}
+              />
+            ) : null;
+          })()}
           {orderFlowBarPositions.map((bar) => (
             <div
               className={
-                bar.partial
-                  ? "exactVolumeBar partial"
-                  : "exactVolumeBar"
+                "exactVolumeBar " +
+                (bar.partial ? "partial " : "") +
+                (activeOrderFlowTime === bar.time ||
+                hoveredOrderFlowTime === bar.time
+                  ? "active"
+                  : "")
               }
               key={bar.time}
+              onMouseEnter={() => {
+                setHoveredOrderFlowTime(bar.time);
+
+                const chart = chartRef.current;
+                const series = seriesRef.current;
+                if (!chart || !series) return;
+
+                const matchingCandle =
+                  liveCandle?.time === bar.time
+                    ? liveCandle
+                    : candles.find((candle) => candle.time === bar.time);
+
+                if (matchingCandle) {
+                  chart.setCrosshairPosition(
+                    matchingCandle.close,
+                    bar.time as Time,
+                    series
+                  );
+                }
+              }}
+              onMouseLeave={() => {
+                setHoveredOrderFlowTime(null);
+                if (activeOrderFlowTime === null) {
+                  chartRef.current?.clearCrosshairPosition();
+                }
+              }}
+              onClick={(event) => {
+                event.stopPropagation();
+
+                setActiveOrderFlowTime((current) => {
+                  const next = current === bar.time ? null : bar.time;
+                  const chart = chartRef.current;
+                  const series = seriesRef.current;
+
+                  if (next === null) {
+                    chart?.clearCrosshairPosition();
+                    return null;
+                  }
+
+                  const matchingCandle =
+                    liveCandle?.time === bar.time
+                      ? liveCandle
+                      : candles.find((candle) => candle.time === bar.time);
+
+                  if (chart && series && matchingCandle) {
+                    chart.setCrosshairPosition(
+                      matchingCandle.close,
+                      bar.time as Time,
+                      series
+                    );
+                  }
+
+                  return next;
+                });
+              }}
               style={{
                 left: bar.x - bar.width / 2,
                 width: bar.width,
-                height:
-                  bar.totalHeight +
-                  (bar.showMeta ? 30 : 0)
+                height: bar.totalHeight
               }}
             >
-              {bar.showMeta ? (
-                <span className="exactVolumeMeta">
-                  <b>
-                    Δ{bar.deltaPercent >= 0 ? "+" : ""}
-                    {bar.deltaPercent.toFixed(0)}%
-                  </b>
-                  <small>
-                    CΔ{bar.cumulativeDelta >= 0 ? "+" : ""}
-                    {Math.abs(bar.cumulativeDelta) >= 1000
-                      ? (bar.cumulativeDelta / 1000).toFixed(1) + "k"
-                      : bar.cumulativeDelta.toFixed(1)}
-                  </small>
-                  {bar.oi !== null ? (
-                    <small>
-                      OI {bar.oi.toLocaleString("en-IN")}
-                      {bar.oiChange !== null
-                        ? " · Δ" +
-                          bar.oiChange.toLocaleString("en-IN")
-                        : ""}
-                    </small>
-                  ) : null}
-                </span>
-              ) : null}
               <span
                 className="exactVolumeStack"
                 style={{ height: bar.totalHeight }}
@@ -1581,30 +2627,50 @@ export default function MarketChart({
                 <span
                   className="exactVolumeBuy"
                   style={{ height: bar.buyHeight }}
-                >
-                  {bar.showPercent && bar.buyHeight >= 16 ? (
-                    <span className="exactVolumeSegmentLabel">
-                      <b>{bar.buyPercent.toFixed(0)}%</b>
-                      {bar.showCounts && bar.buyHeight >= 28 ? (
-                        <small>B#{bar.buyTrades}</small>
-                      ) : null}
-                    </span>
-                  ) : null}
-                </span>
+                />
                 <span
                   className="exactVolumeSell"
                   style={{ height: bar.sellHeight }}
-                >
-                  {bar.showPercent && bar.sellHeight >= 16 ? (
-                    <span className="exactVolumeSegmentLabel">
-                      <b>{bar.sellPercent.toFixed(0)}%</b>
-                      {bar.showCounts && bar.sellHeight >= 28 ? (
-                        <small>S#{bar.sellTrades}</small>
-                      ) : null}
-                    </span>
-                  ) : null}
-                </span>
+                />
               </span>
+
+              <div className="exactVolumeTooltip" role="tooltip">
+                <strong>{formatIst(bar.time)}</strong>
+                <span className="flowBuy">
+                  BUY {bar.buyPercent.toFixed(1)}% ·{" "}
+                  {bar.buyVolume.toLocaleString("en-IN", {
+                    maximumFractionDigits: 6
+                  })}{" "}
+                  · B#{bar.buyTrades}
+                </span>
+                <span className="flowSell">
+                  SELL {bar.sellPercent.toFixed(1)}% ·{" "}
+                  {bar.sellVolume.toLocaleString("en-IN", {
+                    maximumFractionDigits: 6
+                  })}{" "}
+                  · S#{bar.sellTrades}
+                </span>
+                <span>
+                  Δ {bar.deltaPercent >= 0 ? "+" : ""}
+                  {bar.deltaPercent.toFixed(1)}% · CΔ{" "}
+                  {bar.cumulativeDelta >= 0 ? "+" : ""}
+                  {bar.cumulativeDelta.toLocaleString("en-IN", {
+                    maximumFractionDigits: 6
+                  })}
+                </span>
+                {bar.oi !== null ? (
+                  <span>
+                    OI {bar.oi.toLocaleString("en-IN")}
+                    {bar.oiChange !== null
+                      ? " · ΔOI " +
+                        bar.oiChange.toLocaleString("en-IN")
+                      : ""}
+                  </span>
+                ) : null}
+                <small>
+                  {bar.partial ? "LIVE PARTIAL BAR" : "EXACT CLOSED BAR"}
+                </small>
+              </div>
             </div>
           ))}
         </div>

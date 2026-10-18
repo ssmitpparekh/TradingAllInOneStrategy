@@ -183,7 +183,7 @@ h2 {
 
 .heroRow {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 24px;
 }
@@ -2690,62 +2690,40 @@ button {
 /* Exact live buyer/seller volume bars */
 .exactVolumeLayer {
   position: absolute;
-  z-index: 2;
+  z-index: 4;
   right: 0;
   bottom: 22px;
   left: 0;
   height: 122px;
   pointer-events: none;
-  overflow: hidden;
-}
-
-.exactVolumeLegend {
-  position: absolute;
-  right: 10px;
-  bottom: 100px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 7px;
-  border: 1px solid rgba(80, 94, 116, 0.35);
-  border-radius: 7px;
-  background: rgba(9, 14, 21, 0.78);
-  color: #8e9bad;
-  font-size: 8px;
-  font-weight: 850;
-  letter-spacing: 0.06em;
-}
-
-.exactVolumeLegend .buyKey,
-.exactVolumeLegend .sellKey {
-  width: 6px;
-  height: 6px;
-  border-radius: 2px;
-}
-
-.exactVolumeLegend .buyKey {
-  background: #28c76f;
-}
-
-.exactVolumeLegend .sellKey {
-  margin-left: 5px;
-  background: #ea5455;
+  overflow: visible;
 }
 
 .exactVolumeBar {
   position: absolute;
   bottom: 0;
   display: flex;
-  min-width: 3px;
+  min-width: 5px;
+  overflow: visible;
+  flex-direction: column;
+  justify-content: flex-end;
+  pointer-events: auto;
+  cursor: pointer;
+  opacity: 0.86;
+  transform: translateZ(0);
+  outline: none;
+}
+
+.exactVolumeStack {
+  display: flex;
+  width: 100%;
   overflow: hidden;
   flex-direction: column;
   justify-content: flex-end;
   border-radius: 2px 2px 0 0;
-  opacity: 0.82;
-  transform: translateZ(0);
 }
 
-.exactVolumeBar.partial {
+.exactVolumeBar.partial .exactVolumeStack {
   opacity: 0.48;
   outline: 1px dashed rgba(255, 255, 255, 0.28);
   outline-offset: 1px;
@@ -2766,15 +2744,67 @@ button {
   background: rgba(234, 84, 85, 0.86);
 }
 
+.exactVolumeTooltip {
+  position: absolute;
+  z-index: 20;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  display: grid;
+  width: max-content;
+  min-width: 210px;
+  max-width: 260px;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid rgba(100, 116, 139, 0.4);
+  border-radius: 8px;
+  background: rgba(9, 14, 21, 0.96);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
+  color: #cbd5e1;
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+
+.exactVolumeTooltip strong {
+  color: #f8fafc;
+  font-size: 10px;
+}
+
+.exactVolumeTooltip small {
+  margin-top: 2px;
+  color: #94a3b8;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.exactVolumeBar:hover,
+.exactVolumeBar.active {
+  z-index: 30;
+  opacity: 1;
+}
+
+.exactVolumeBar:hover .exactVolumeTooltip,
+.exactVolumeBar.active .exactVolumeTooltip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
 @media (max-width: 700px) {
   .exactVolumeLayer {
     bottom: 20px;
     height: 104px;
   }
 
-  .exactVolumeLegend {
-    right: 6px;
-    bottom: 84px;
+  .exactVolumeTooltip {
+    min-width: 190px;
+    font-size: 9px;
   }
 }
 
@@ -5442,3 +5472,1673 @@ html[data-theme="light"] .optionCapitalGrid strong {
   }
 }
 
+
+
+/* Full platform trade history */
+.performanceHeaderRow,
+.tradeHistoryHero,
+.tradeHistoryFullHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.tradeHistoryLink {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 13px;
+  border: 1px solid #2c3a4f;
+  border-radius: 8px;
+  background: #111827;
+  color: #e5edf7;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  text-decoration: none;
+}
+
+.tradeHistoryLink:hover {
+  border-color: #4d8dff;
+  color: #ffffff;
+}
+
+.tradeHistoryPage {
+  width: min(1600px, calc(100% - 28px));
+  margin: 14px auto 36px;
+}
+
+.tradeHistoryHero {
+  padding: 18px;
+}
+
+.tradeHistoryHero h1 {
+  margin: 2px 0 5px;
+  font-size: 28px;
+}
+
+.tradeHistoryHero p {
+  margin: 0;
+  color: #7d899b;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.tradeHistoryControlsCard {
+  display: grid;
+  grid-template-columns: auto auto minmax(220px, 1fr);
+  gap: 18px;
+  align-items: end;
+  margin-top: 12px;
+  padding: 14px 16px;
+}
+
+.tradeHistoryFilterBlock > span,
+.tradeHistorySearch > span,
+.tradeHistorySummaryCard > span {
+  display: block;
+  margin-bottom: 7px;
+  color: #69768a;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.tradeHistoryFilterRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tradeHistoryFilter {
+  min-height: 31px;
+  padding: 0 10px;
+  border: 1px solid #293244;
+  border-radius: 7px;
+  background: #0c1119;
+  color: #8290a4;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 850;
+}
+
+.tradeHistoryFilter.active {
+  border-color: #4d8dff;
+  background: #172238;
+  color: #ffffff;
+}
+
+.tradeHistorySearch input {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #293244;
+  border-radius: 7px;
+  outline: none;
+  background: #0c1119;
+  color: #e5edf7;
+  font: inherit;
+}
+
+.tradeHistorySearch input:focus {
+  border-color: #4d8dff;
+}
+
+.tradeHistorySummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.tradeHistorySummaryCard {
+  padding: 14px;
+}
+
+.tradeHistorySummaryCard strong {
+  color: #edf2f7;
+  font-size: 22px;
+}
+
+.tradeHistoryFullCard {
+  margin-top: 12px;
+  padding: 16px;
+}
+
+.tradeHistoryFullHeader h2 {
+  margin: 2px 0 0;
+  font-size: 18px;
+}
+
+.tradeHistoryFullHeader small {
+  color: #718096;
+  font-size: 9px;
+}
+
+@media (max-width: 980px) {
+  .tradeHistoryControlsCard {
+    grid-template-columns: 1fr;
+  }
+
+  .tradeHistorySummaryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .performanceHeaderRow,
+  .tradeHistoryHero,
+  .tradeHistoryFullHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .tradeHistoryLink {
+    width: 100%;
+  }
+
+  .tradeHistorySummaryGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+html[data-theme="light"] .tradeHistoryLink {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+}
+
+html[data-theme="light"] .tradeHistoryLink:hover {
+  border-color: #4d8dff;
+  color: #0f172a;
+}
+
+html[data-theme="light"] .tradeHistoryFilter,
+html[data-theme="light"] .tradeHistorySearch input {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+}
+
+html[data-theme="light"] .tradeHistoryFilter.active {
+  border-color: #4d8dff;
+  background: #e8eefc;
+  color: #0f172a;
+}
+
+html[data-theme="light"] .tradeHistorySummaryCard strong,
+html[data-theme="light"] .tradeHistoryHero h1,
+html[data-theme="light"] .tradeHistoryFullHeader h2 {
+  color: #0f172a;
+}
+
+
+/* Historical market-structure event segments */
+.structureHistoryLayer {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.structureHistoryEvent {
+  position: absolute;
+  height: 18px;
+  transform: translateY(-9px);
+}
+
+.structureHistoryLine {
+  position: absolute;
+  top: 9px;
+  right: 0;
+  left: 0;
+  border-top: 2px solid currentColor;
+}
+
+.structureHistoryLabel {
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(8, 13, 20, 0.78);
+  color: currentColor;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  line-height: 1.35;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.structureHistoryEvent.bullish {
+  color: #2fc477;
+}
+
+.structureHistoryEvent.bearish {
+  color: #ed5b62;
+}
+
+.structureHistoryEvent.choch .structureHistoryLine {
+  border-top-style: dashed;
+}
+
+.structureHistoryEvent.bos .structureHistoryLine {
+  border-top-style: solid;
+}
+
+/* Chart feature dropdown */
+.chartViewActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chartFeaturesMenu {
+  position: relative;
+}
+
+.chartFeaturesMenu > summary {
+  list-style: none;
+}
+
+.chartFeaturesMenu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.chartFeaturesSummary {
+  cursor: pointer;
+}
+
+.chartFeaturesSummary::after {
+  margin-left: 6px;
+  content: "▾";
+  font-size: 9px;
+}
+
+.chartFeaturesMenu[open] .chartFeaturesSummary {
+  background: #202b3b;
+  color: #ffffff;
+}
+
+.chartFeaturesDropdown {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 7px);
+  right: 0;
+  display: grid;
+  width: 250px;
+  max-height: min(72vh, 640px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  touch-action: pan-y;
+  gap: 4px;
+  padding: 7px;
+  border: 1px solid #293244;
+  border-radius: 9px;
+  background: rgba(8, 13, 20, 0.98);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.36);
+}
+
+.chartFeatureOption {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #8c98aa;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.chartFeatureOption:hover {
+  background: #151e2b;
+  color: #eef4fb;
+}
+
+.chartFeatureOption.active {
+  background: rgba(77, 141, 255, 0.14);
+  color: #ffffff;
+}
+
+.chartFeatureOption strong {
+  color: #68768a;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+}
+
+.chartFeatureOption.active strong {
+  color: #73a4ff;
+}
+
+.chartFeatureOption:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+html[data-theme="light"] .structureHistoryLabel {
+  background: rgba(255, 255, 255, 0.86);
+}
+
+html[data-theme="light"] .chartFeaturesMenu[open] .chartFeaturesSummary {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+html[data-theme="light"] .chartFeaturesDropdown {
+  border-color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.14);
+}
+
+html[data-theme="light"] .chartFeatureOption {
+  color: #64748b;
+}
+
+html[data-theme="light"] .chartFeatureOption:hover,
+html[data-theme="light"] .chartFeatureOption.active {
+  background: #eef3fb;
+  color: #0f172a;
+}
+
+@media (max-width: 760px) {
+  .chartFeaturesDropdown {
+    position: fixed;
+    top: auto;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: auto;
+    max-height: min(70vh, 520px);
+    overflow-y: auto;
+  }
+
+  .chartViewActions {
+    align-items: stretch;
+  }
+}
+
+
+/* Four active virgin liquidity levels */
+.liquidityLevelLayer {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.liquidityLevel {
+  position: absolute;
+  min-height: 4px;
+  overflow: visible;
+  border: 1px solid currentColor;
+  border-right: 0;
+  background: color-mix(in srgb, currentColor 15%, transparent);
+}
+
+.liquidityLevelLine {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  border-top: 1px solid currentColor;
+  transform: translateY(-50%);
+}
+
+.liquidityLevel.minor {
+  opacity: 0.88;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+}
+
+.liquidityLevel.minor .liquidityLevelLine {
+  border-top-style: dashed;
+}
+
+.liquidityLevel.major {
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.liquidityLevel.major .liquidityLevelLine {
+  border-top-width: 2px;
+  border-top-style: solid;
+}
+
+/* Supply above price */
+.liquidityLevel.minor.buy {
+  color: #f3a7ae;
+}
+
+.liquidityLevel.major.buy {
+  color: #bf3f4c;
+}
+
+/* Demand below price */
+.liquidityLevel.minor.sell {
+  color: #9ddfbc;
+}
+
+.liquidityLevel.major.sell {
+  color: #218d5e;
+}
+
+.liquidityLevelLabel {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  padding: 1px 5px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: rgba(8, 13, 20, 0.88);
+  color: currentColor;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.035em;
+  line-height: 1.35;
+  white-space: nowrap;
+  transform: translateY(-50%);
+}
+
+html[data-theme="light"] .liquidityLevelLabel {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+
+
+/* Configurable EMA + VWAP editors */
+.emaFeatureControl,
+.vwapFeatureControl {
+  display: grid;
+  gap: 4px;
+}
+
+.emaFeatureEditor,
+.vwapFeatureEditor {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid #243044;
+  border-radius: 7px;
+  background: #0b121c;
+}
+
+.emaFeatureHint,
+.featureField > span,
+.featureCheckboxRow span {
+  color: #7f8ba0;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.055em;
+}
+
+.emaFeatureInputRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.emaFeatureInputRow input,
+.featureField input,
+.featureField select,
+.vwapBandRow > input {
+  min-width: 0;
+  height: 31px;
+  padding: 0 8px;
+  border: 1px solid #2c384b;
+  border-radius: 6px;
+  outline: none;
+  background: #101823;
+  color: #e7edf6;
+  font: inherit;
+  font-size: 10px;
+}
+
+.emaFeatureInputRow input:focus,
+.featureField input:focus,
+.featureField select:focus,
+.vwapBandRow > input:focus {
+  border-color: #4d8dff;
+}
+
+.emaFeatureInputRow button,
+.emaPresetRow button,
+.emaPeriodChips button,
+.emaClearButton,
+.featureOffButton {
+  min-height: 29px;
+  padding: 0 8px;
+  border: 1px solid #2d394d;
+  border-radius: 6px;
+  background: #121b28;
+  color: #cbd5e1;
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 850;
+}
+
+.emaPresetRow,
+.emaPeriodChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.emaPresetRow button.active,
+.emaPeriodChips button {
+  border-color: #4d8dff;
+  background: rgba(77, 141, 255, 0.14);
+  color: #e8f0ff;
+}
+
+.emaPeriodChips small {
+  color: #657287;
+  font-size: 8px;
+}
+
+.emaClearButton,
+.featureOffButton {
+  justify-self: start;
+  color: #ff8b8d;
+}
+
+.featureField {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(90px, 1.25fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.featureCheckboxRow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+
+.featureCheckboxRow input,
+.vwapBandRow input[type="checkbox"] {
+  accent-color: #4d8dff;
+}
+
+.vwapBandsEditor {
+  display: grid;
+  gap: 5px;
+  padding-top: 2px;
+}
+
+.vwapBandRow {
+  display: grid;
+  grid-template-columns: 1fr 82px;
+  align-items: center;
+  gap: 8px;
+}
+
+.vwapBandRow label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #a8b3c4;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+/* Daily Traditional pivot sets */
+.pivotLevelLayer {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.pivotLevel {
+  position: absolute;
+  height: 18px;
+  transform: translateY(-9px);
+}
+
+.pivotLevelLine {
+  position: absolute;
+  top: 9px;
+  right: 0;
+  left: 0;
+  border-top: 1px solid currentColor;
+}
+
+.pivotLevel.resistance {
+  color: #df5f68;
+}
+
+.pivotLevel.support {
+  color: #35b977;
+}
+
+.pivotLevel.pivot {
+  color: #d5a73b;
+}
+
+.pivotLevel.pivot .pivotLevelLine {
+  border-top-width: 2px;
+}
+
+.pivotLevelLabel {
+  position: absolute;
+  top: -3px;
+  left: 3px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(8, 13, 20, 0.86);
+  color: currentColor;
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+html[data-theme="light"] .emaFeatureEditor,
+html[data-theme="light"] .vwapFeatureEditor {
+  border-color: #d6deea;
+  background: #f8fafc;
+}
+
+html[data-theme="light"] .emaFeatureInputRow input,
+html[data-theme="light"] .featureField input,
+html[data-theme="light"] .featureField select,
+html[data-theme="light"] .vwapBandRow > input {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+}
+
+html[data-theme="light"] .emaFeatureInputRow button,
+html[data-theme="light"] .emaPresetRow button,
+html[data-theme="light"] .emaPeriodChips button,
+html[data-theme="light"] .emaClearButton,
+html[data-theme="light"] .featureOffButton {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+}
+
+html[data-theme="light"] .pivotLevelLabel {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+
+/* Fair Value Gap zones */
+.fvgZoneLayer {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.fvgZone {
+  position: absolute;
+  min-height: 2px;
+  border: 1px solid currentColor;
+  border-right: 0;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  color: #35b977;
+}
+
+.fvgZone.bearish {
+  color: #e35d67;
+}
+
+.fvgZone.touched {
+  opacity: 0.72;
+}
+
+.fvgZone.filled {
+  opacity: 0.24;
+}
+
+.fvgZoneLabel {
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(8, 13, 20, 0.72);
+  color: currentColor;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+html[data-theme="light"] .fvgZoneLabel {
+  background: rgba(255, 255, 255, 0.78);
+}
+
+
+/* Bounded Fibonacci overlays */
+.fibOverlayLayer,
+.trendFibOverlayLayer,
+.orderBlockZoneLayer,
+.volumeProfileLayer {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.fibOverlayLevel,
+.trendFibOverlayLevel {
+  position: absolute;
+  height: 16px;
+  transform: translateY(-8px);
+}
+
+.fibOverlayLine,
+.trendFibOverlayLine {
+  position: absolute;
+  top: 8px;
+  right: 0;
+  left: 0;
+  border-top: 1px dashed currentColor;
+}
+
+.fibOverlayLevel {
+  color: #778397;
+}
+
+.fibOverlayLevel.important {
+  color: #d9a934;
+}
+
+.fibOverlayLevel.anchor {
+  color: #50617b;
+}
+
+.fibOverlayLevel.important .fibOverlayLine,
+.fibOverlayLevel.anchor .fibOverlayLine {
+  border-top-style: solid;
+}
+
+.fibOverlayLabel,
+.trendFibOverlayLabel {
+  position: absolute;
+  top: -3px;
+  left: 4px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(8, 13, 20, 0.78);
+  color: currentColor;
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.fibGoldenZone {
+  position: absolute;
+  border: 1px solid rgba(217, 169, 52, 0.22);
+  background: rgba(217, 169, 52, 0.07);
+}
+
+.trendFibOverlayLevel {
+  color: #6f7f9b;
+}
+
+.trendFibOverlayLevel.important {
+  color: #7f69ff;
+}
+
+.trendFibOverlayLevel.important .trendFibOverlayLine {
+  border-top-style: solid;
+  border-top-width: 2px;
+}
+
+html[data-theme="light"] .fibOverlayLabel,
+html[data-theme="light"] .trendFibOverlayLabel {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+/* Virgin order-block zones */
+.orderBlockZone {
+  position: absolute;
+  min-height: 4px;
+  border: 1px solid currentColor;
+  border-right: 0;
+  background: color-mix(in srgb, currentColor 15%, transparent);
+}
+
+.orderBlockZone.bullish {
+  color: #2fb879;
+}
+
+.orderBlockZone.bearish {
+  color: #df5d67;
+}
+
+.orderBlockZoneLabel {
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(8, 13, 20, 0.76);
+  color: currentColor;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+html[data-theme="light"] .orderBlockZoneLabel {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+/* Compact right-side volume profile: max 10% of plot width */
+.volumeProfileBin {
+  position: absolute;
+  display: flex;
+  justify-content: flex-end;
+  min-height: 2px;
+  overflow: hidden;
+  opacity: 0.78;
+}
+
+.volumeProfileSell {
+  display: block;
+  height: 100%;
+  background: #e54867;
+}
+
+.volumeProfileBuy {
+  display: block;
+  height: 100%;
+  background: #20b97a;
+}
+
+.volumeProfileLevel {
+  position: absolute;
+  height: 14px;
+  transform: translateY(-7px);
+  border-top: 1px dashed #7d8ba1;
+}
+
+.volumeProfileLevel.poc {
+  border-top: 2px solid #e3a824;
+}
+
+.volumeProfileLevel span {
+  position: absolute;
+  top: -12px;
+  left: 0;
+  padding: 0 3px;
+  background: rgba(8, 13, 20, 0.78);
+  color: #8fa0b6;
+  font-size: 7px;
+  font-weight: 900;
+}
+
+.volumeProfileLevel.poc span {
+  color: #e3a824;
+}
+
+html[data-theme="light"] .volumeProfileLevel span {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+/* Feature editor footer controls */
+.featureEditorActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.featureDoneButton {
+  min-height: 31px;
+  padding: 0 10px;
+  border: 1px solid #2563eb;
+  border-radius: 6px;
+  background: #2563eb;
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.featureEditButton {
+  min-height: 27px;
+  padding: 0 8px;
+  border: 1px dashed #33445f;
+  border-radius: 6px;
+  background: transparent;
+  color: #8fa0b6;
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 850;
+  text-align: left;
+}
+
+.featureEditButton:hover {
+  border-color: #4d8dff;
+  color: #dce7fb;
+}
+
+html[data-theme="light"] .featureEditButton {
+  border-color: #cbd5e1;
+  color: #64748b;
+}
+
+html[data-theme="light"] .featureDoneButton {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+
+/* FYERS-style technical meters built from existing calculations */
+.technicalMetersPanel {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr 0.9fr 1.35fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.technicalMeterCard,
+.technicalMaCard {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid #202937;
+  border-radius: 10px;
+  background: #090e15;
+}
+
+.technicalMeterHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.technicalMeterHeader > span {
+  color: #68768a;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.075em;
+}
+
+.technicalMeterHeader > strong {
+  color: #e7edf6;
+  font-size: 11px;
+}
+
+.technicalMeterCard > small {
+  display: block;
+  margin-top: 8px;
+  color: #657287;
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.fiveStateMeter {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 3px;
+  margin-top: 10px;
+}
+
+.fiveStateMeter i {
+  height: 8px;
+  border-radius: 999px;
+  background: #1b2431;
+  opacity: 0.7;
+}
+
+.fiveStateMeter i.strong_bearish,
+.fiveStateMeter i.bearish {
+  background: #6f3038;
+}
+
+.fiveStateMeter i.neutral {
+  background: #555f70;
+}
+
+.fiveStateMeter i.bullish,
+.fiveStateMeter i.strong_bullish {
+  background: #285b47;
+}
+
+.fiveStateMeter i.active {
+  opacity: 1;
+  box-shadow: 0 0 0 1px currentColor, 0 0 12px rgba(255, 255, 255, 0.08);
+}
+
+.fiveStateMeter i.active.strong_bearish,
+.fiveStateMeter i.active.bearish {
+  background: #e35d67;
+}
+
+.fiveStateMeter i.active.neutral {
+  background: #94a3b8;
+}
+
+.fiveStateMeter i.active.bullish,
+.fiveStateMeter i.active.strong_bullish {
+  background: #35b977;
+}
+
+.technicalLinearMeter {
+  height: 8px;
+  margin-top: 11px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(227, 93, 103, 0.7) 0 30%,
+    rgba(148, 163, 184, 0.35) 30% 70%,
+    rgba(53, 185, 119, 0.7) 70% 100%
+  );
+}
+
+.technicalLinearMeter.adx {
+  background: #1b2431;
+}
+
+.technicalLinearMeter > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: rgba(77, 141, 255, 0.92);
+  box-shadow: 0 0 10px rgba(77, 141, 255, 0.28);
+}
+
+.volatilityBadge {
+  display: inline-flex;
+  margin-top: 10px;
+  padding: 5px 8px;
+  border: 1px solid #2b3548;
+  border-radius: 999px;
+  color: #aab5c5;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.065em;
+}
+
+.volatilityBadge.low {
+  color: #82a7ff;
+}
+
+.volatilityBadge.normal {
+  color: #e4bd61;
+}
+
+.volatilityBadge.high {
+  color: #ff8587;
+}
+
+.technicalMaCard {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+}
+
+.technicalMaRow {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-top: 1px solid #182232;
+}
+
+.technicalMaRow span {
+  color: #8592a5;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.technicalMaRow strong {
+  color: #e5ebf4;
+  font-size: 10px;
+}
+
+.technicalMaRow b {
+  min-width: 46px;
+  text-align: right;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.technicalMaRow b.buy {
+  color: #74e39b;
+}
+
+.technicalMaRow b.sell {
+  color: #ff8587;
+}
+
+.technicalMaRow b.neutral {
+  color: #8a97aa;
+}
+
+html[data-theme="light"] .technicalMeterCard,
+html[data-theme="light"] .technicalMaCard {
+  border-color: #d5deea;
+  background: #ffffff;
+}
+
+html[data-theme="light"] .technicalMeterHeader > strong,
+html[data-theme="light"] .technicalMaRow strong {
+  color: #0f172a;
+}
+
+html[data-theme="light"] .technicalMaRow {
+  border-color: #e2e8f0;
+}
+
+@media (max-width: 1180px) {
+  .technicalMetersPanel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .technicalMaCard {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 620px) {
+  .technicalMetersPanel {
+    grid-template-columns: 1fr;
+  }
+
+  .technicalMaCard {
+    grid-column: auto;
+  }
+}
+
+
+/* FYERS-style technical dashboard */
+.technicalDashboard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(320px, 1.35fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.technicalGaugeCard,
+.technicalDetailCard {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #202937;
+  border-radius: 12px;
+  background: #090e15;
+}
+
+.technicalDashboardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.technicalDashboardHeader span,
+.technicalDashboardHeader strong {
+  display: block;
+}
+
+.technicalDashboardHeader span {
+  color: #68768a;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.technicalDashboardHeader strong {
+  margin-top: 4px;
+  color: #eef3f8;
+  font-size: 14px;
+}
+
+.technicalDashboardHeader > b {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border: 1px solid #2a3546;
+  border-radius: 999px;
+  color: #94a3b8;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.technicalDashboardHeader > b.buy,
+.technicalDashboardHeader > b.strong-buy {
+  border-color: rgba(53, 185, 119, 0.35);
+  background: rgba(53, 185, 119, 0.08);
+  color: #35b977;
+}
+
+.technicalDashboardHeader > b.sell,
+.technicalDashboardHeader > b.strong-sell {
+  border-color: rgba(227, 93, 103, 0.35);
+  background: rgba(227, 93, 103, 0.08);
+  color: #e35d67;
+}
+
+.technicalGauge {
+  margin-top: 16px;
+}
+
+.technicalGaugeArc {
+  position: relative;
+  width: min(210px, 92%);
+  height: 102px;
+  margin: 0 auto;
+  overflow: hidden;
+}
+
+.technicalGaugeArc::before {
+  position: absolute;
+  inset: 0 0 auto;
+  width: 100%;
+  height: 210px;
+  border-radius: 50%;
+  background:
+    conic-gradient(
+      from 270deg,
+      #d94f5b 0deg 32deg,
+      #b46b71 32deg 64deg,
+      #818b99 64deg 116deg,
+      #5c947d 116deg 148deg,
+      #2fb879 148deg 180deg,
+      transparent 180deg 360deg
+    );
+  content: "";
+}
+
+.technicalGaugeArc::after {
+  position: absolute;
+  top: 19px;
+  left: 50%;
+  width: 156px;
+  height: 156px;
+  border-radius: 50%;
+  background: #090e15;
+  content: "";
+  transform: translateX(-50%);
+}
+
+.technicalGaugeNeedle {
+  position: absolute;
+  z-index: 3;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  height: 76px;
+  border-radius: 999px;
+  background: #eef3f8;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.25);
+  transform-origin: 50% 100%;
+  transition: transform 180ms ease;
+}
+
+.technicalGaugeHub {
+  position: absolute;
+  z-index: 4;
+  bottom: -5px;
+  left: 50%;
+  width: 13px;
+  height: 13px;
+  border: 3px solid #eef3f8;
+  border-radius: 50%;
+  background: #090e15;
+  transform: translateX(-50%);
+}
+
+.technicalGaugeScale {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 3px;
+  margin-top: 4px;
+  color: #6f7c90;
+  font-size: 7px;
+  text-align: center;
+}
+
+.technicalGaugeStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.technicalGaugeStats > div {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #1d2735;
+  border-radius: 8px;
+  background: #0b1119;
+}
+
+.technicalGaugeStats span,
+.technicalGaugeStats strong {
+  display: block;
+}
+
+.technicalGaugeStats span {
+  color: #66758a;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+}
+
+.technicalGaugeStats strong {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  color: #e8eef6;
+  font-size: 10px;
+}
+
+.technicalIndicatorRows {
+  margin-top: 12px;
+  border: 1px solid #1d2735;
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.technicalIndicatorRows > div {
+  display: grid;
+  grid-template-columns: minmax(82px, 1fr) minmax(74px, auto) minmax(72px, auto);
+  gap: 10px;
+  align-items: center;
+  min-height: 40px;
+  padding: 7px 10px;
+  border-bottom: 1px solid #1d2735;
+}
+
+.technicalIndicatorRows > div:last-child {
+  border-bottom: 0;
+}
+
+.technicalIndicatorRows span {
+  color: #8995a8;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.technicalIndicatorRows strong {
+  color: #e8eef6;
+  font-size: 10px;
+  text-align: right;
+}
+
+.technicalIndicatorRows b {
+  font-size: 8px;
+  font-weight: 900;
+  text-align: right;
+}
+
+.technicalIndicatorRows b.buy {
+  color: #35b977;
+}
+
+.technicalIndicatorRows b.sell {
+  color: #e35d67;
+}
+
+.technicalIndicatorRows b.neutral {
+  color: #8f9bad;
+}
+
+html[data-theme="light"] .technicalGaugeCard,
+html[data-theme="light"] .technicalDetailCard {
+  border-color: #d7dee9;
+  background: #ffffff;
+}
+
+html[data-theme="light"] .technicalGaugeArc::after,
+html[data-theme="light"] .technicalGaugeHub {
+  background: #ffffff;
+}
+
+html[data-theme="light"] .technicalGaugeNeedle {
+  background: #111827;
+  box-shadow: 0 0 6px rgba(15, 23, 42, 0.18);
+}
+
+html[data-theme="light"] .technicalGaugeHub {
+  border-color: #111827;
+}
+
+html[data-theme="light"] .technicalDashboardHeader strong,
+html[data-theme="light"] .technicalGaugeStats strong,
+html[data-theme="light"] .technicalIndicatorRows strong {
+  color: #0f172a;
+}
+
+html[data-theme="light"] .technicalGaugeStats > div,
+html[data-theme="light"] .technicalIndicatorRows {
+  border-color: #dfe6ef;
+  background: #ffffff;
+}
+
+html[data-theme="light"] .technicalIndicatorRows > div {
+  border-color: #e5eaf1;
+}
+
+@media (max-width: 1100px) {
+  .technicalDashboard {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .technicalDetailCard {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 700px) {
+  .technicalDashboard {
+    grid-template-columns: 1fr;
+  }
+
+  .technicalDetailCard {
+    grid-column: auto;
+  }
+
+  .technicalGaugeScale {
+    font-size: 6px;
+  }
+}
+
+
+/* Order-flow interaction must stay above non-interactive chart overlays. */
+.exactVolumeLayer {
+  z-index: 70;
+  overflow: visible;
+  clip-path: none;
+  contain: none;
+  pointer-events: none;
+}
+
+.exactVolumeBar {
+  z-index: 1;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+.exactVolumeBar:hover,
+.exactVolumeBar.active {
+  z-index: 90;
+}
+
+.exactVolumeTooltip {
+  z-index: 100;
+  visibility: hidden;
+}
+
+.exactVolumeBar:hover .exactVolumeTooltip,
+.exactVolumeBar.active .exactVolumeTooltip {
+  visibility: visible;
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+
+/* Final chart plot boundary + bottom volume pane */
+.chartToolbar {
+  position: relative;
+  z-index: 300;
+}
+
+.chartFeaturesMenu {
+  z-index: 320;
+}
+
+.chartFeaturesDropdown {
+  z-index: 1000;
+}
+
+/* Hard barrier: analytical overlays stop before the right price scale. */
+.sessionBreakLayer,
+.tradeMarkerLayer,
+.structureHistoryLayer,
+.liquidityLevelLayer,
+.fvgZoneLayer,
+.pivotLevelLayer,
+.fibOverlayLayer,
+.trendFibOverlayLayer,
+.orderBlockZoneLayer,
+.volumeProfileLayer {
+  right: var(--chart-right-scale, 58px) !important;
+  left: 0 !important;
+  width: auto !important;
+  overflow: hidden !important;
+}
+
+/* Session breaks only, slightly stronger so they are visible without grid noise. */
+.sessionBreakLine {
+  border-left-color: rgba(82, 101, 130, 0.58);
+}
+
+html[data-theme="light"] .sessionBreakLine {
+  border-left-color: rgba(71, 85, 105, 0.52);
+}
+
+/* Buyer / seller volume is a dedicated lower pane, not a floating overlay. */
+.exactVolumeLayer {
+  z-index: 12;
+  right: var(--chart-right-scale, 58px);
+  bottom: 28px;
+  left: 0;
+  height: 108px;
+  border-top: 1px solid rgba(121, 136, 158, 0.22);
+  background:
+    linear-gradient(
+      to top,
+      rgba(8, 13, 20, 0.08),
+      rgba(8, 13, 20, 0.015)
+    );
+  pointer-events: none;
+  overflow: visible;
+  clip-path: none;
+  contain: none;
+}
+
+html[data-theme="light"] .exactVolumeLayer {
+  border-top-color: rgba(100, 116, 139, 0.2);
+  background:
+    linear-gradient(
+      to top,
+      rgba(241, 245, 249, 0.36),
+      rgba(255, 255, 255, 0)
+    );
+}
+
+.exactVolumeBar {
+  bottom: 0;
+  max-height: 96px;
+  z-index: 1;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+.exactVolumeBar:hover,
+.exactVolumeBar.active {
+  z-index: 40;
+}
+
+.exactVolumeTooltip {
+  z-index: 50;
+}
+
+/* Keep all chart feature labels inside their own plotted segment. */
+.liquidityLevelLabel,
+.structureHistoryLabel,
+.fibOverlayLabel,
+.trendFibOverlayLabel,
+.orderBlockZoneLabel,
+.fvgZoneLabel,
+.pivotLevelLabel {
+  max-width: calc(100% - 8px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 700px) {
+  .exactVolumeLayer {
+    right: var(--chart-right-scale, 52px);
+    bottom: 26px;
+    height: 96px;
+  }
+
+  .exactVolumeBar {
+    max-height: 86px;
+  }
+
+  .sessionBreakLine {
+    border-left-color: rgba(82, 101, 130, 0.5);
+  }
+}
+
+
+/* Volume-bar candle alignment guide */
+.exactVolumeCrosshair {
+  position: absolute;
+  z-index: 24;
+  top: -1000px;
+  bottom: 0;
+  width: 0;
+  border-left: 1px dashed rgba(82, 101, 130, 0.62);
+  pointer-events: none;
+  transform: translateX(-0.5px);
+}
+
+html[data-theme="light"] .exactVolumeCrosshair {
+  border-left-color: rgba(71, 85, 105, 0.55);
+}
+
+/* The toolbar/menu always wins over any interactive chart overlay. */
+.chartToolbar,
+.chartViewActions,
+.chartFeaturesMenu {
+  isolation: isolate;
+}
+
+.chartFeaturesDropdown {
+  z-index: 2000;
+}
+
+.exactVolumeLayer {
+  z-index: 12;
+}

@@ -9,7 +9,11 @@ import PwaInstallButton from "@/components/PwaInstallButton";
 import OpportunityScanner from "@/components/OpportunityScanner";
 import NewsImpactPanel from "@/components/NewsImpactPanel";
 import { buildTechnicalContext } from "@/lib/analysis/indicators";
-import { buildVolumeAnalytics } from "@/lib/analysis/volume";
+import {
+  buildVolumeAnalytics,
+  type VwapSettings
+} from "@/lib/analysis/volume";
+import { buildDailyTraditionalPivots } from "@/lib/analysis/pivots";
 import { buildReversalEngine } from "@/lib/analysis/confluence";
 import { buildSimpleTradePlan } from "@/lib/analysis/trade-plan";
 import { buildReactionTradePlan } from "@/lib/analysis/reaction-trade";
@@ -453,8 +457,24 @@ export default function Home() {
   const [showLiquidity, setShowLiquidity] = useState(false);
   const [showOrderBlocks, setShowOrderBlocks] = useState(false);
   const [showVwap, setShowVwap] = useState(false);
+  const [vwapEditorOpen, setVwapEditorOpen] = useState(false);
+  const [vwapSettings, setVwapSettings] = useState<VwapSettings>({
+    hideOnDailyOrAbove: true,
+    anchorPeriod: "session",
+    source: "hlc3",
+    offset: 0,
+    bandsMode: "stdev",
+    bands: [
+      { enabled: true, multiplier: 1 },
+      { enabled: false, multiplier: 2 },
+      { enabled: false, multiplier: 3 }
+    ]
+  });
   const [showProfile, setShowProfile] = useState(false);
-  const [showEma, setShowEma] = useState(false);
+  const [showPivots, setShowPivots] = useState(false);
+  const [emaPeriods, setEmaPeriods] = useState<number[]>([]);
+  const [emaInput, setEmaInput] = useState("");
+  const [emaEditorOpen, setEmaEditorOpen] = useState(false);
   const [showSessionBreaks, setShowSessionBreaks] = useState(false);
   const [showOrderFlow, setShowOrderFlow] = useState(true);
   const [showAdvancedAnalysis, setShowAdvancedAnalysis] = useState(false);
@@ -492,6 +512,7 @@ export default function Home() {
   const orderFlowPartialBucketRef = useRef<number | null>(null);
 
   const selectedIsKraken = selected.market === "KRAKEN";
+  const showEma = emaPeriods.length > 0;
   const liveAnalysisCandles = useMemo(
     () => mergeLiveCandle(candles, liveCandle),
     [candles, liveCandle]
@@ -540,6 +561,14 @@ export default function Home() {
     () => buildOrderBlockSnapshot(candles),
     [candles]
   );
+  const dailyPivots = useMemo(
+    () =>
+      buildDailyTraditionalPivots(liveAnalysisCandles, {
+        timeZone: selectedIsKraken ? "UTC" : "Asia/Kolkata"
+      }),
+    [liveAnalysisCandles, selectedIsKraken]
+  );
+
   const volumeAnalytics = useMemo(
     () =>
       buildVolumeAnalytics(liveAnalysisCandles, {
@@ -552,6 +581,58 @@ export default function Home() {
     () => buildTechnicalContext(liveAnalysisCandles),
     [liveAnalysisCandles]
   );
+
+  const latestTechnicalPrice =
+    quote?.lp ??
+    liveCandle?.close ??
+    liveAnalysisCandles[liveAnalysisCandles.length - 1]?.close ??
+    null;
+
+  const movingAverageSignals = [
+    technicalContext.latestEma20,
+    technicalContext.latestEma50,
+    technicalContext.latestEma200
+  ].flatMap((value) =>
+    value === null || latestTechnicalPrice === null
+      ? []
+      : [latestTechnicalPrice >= value ? 1 : -1]
+  );
+
+  const maBuyCount = movingAverageSignals.filter((value) => value > 0).length;
+  const maSellCount = movingAverageSignals.filter((value) => value < 0).length;
+  const movingAverageScore = movingAverageSignals.length
+    ? ((maBuyCount - maSellCount) / movingAverageSignals.length) * 100
+    : 0;
+
+  const trendScore =
+    technicalContext.trendState === "strong_bullish"
+      ? 100
+      : technicalContext.trendState === "bullish"
+        ? 55
+        : technicalContext.trendState === "strong_bearish"
+          ? -100
+          : technicalContext.trendState === "bearish"
+            ? -55
+            : 0;
+
+  const momentumScore =
+    technicalContext.rsi14 === null
+      ? 0
+      : Math.max(-100, Math.min(100, (technicalContext.rsi14 - 50) * 2));
+
+  const technicalMeterLabel = (score: number) =>
+    score >= 70
+      ? "STRONG BUY"
+      : score >= 25
+        ? "BUY"
+        : score <= -70
+          ? "STRONG SELL"
+          : score <= -25
+            ? "SELL"
+            : "NEUTRAL";
+
+  const technicalNeedleAngle = (score: number) =>
+    -78 + ((Math.max(-100, Math.min(100, score)) + 100) / 200) * 156;
   const closedContext1m = useMemo(() => {
     const now = Math.floor(Date.now() / 1000);
     return context1m.filter((candle) => candle.time + 60 <= now);
@@ -1323,6 +1404,36 @@ export default function Home() {
     }
   }
 
+  function addEmaPeriods(raw = emaInput) {
+    const parsed = raw
+      .split(/[\s,;]+/)
+      .map((value) => Number.parseInt(value, 10))
+      .filter(
+        (value) =>
+          Number.isFinite(value) &&
+          value >= 1 &&
+          value <= 5000
+      );
+
+    if (!parsed.length) {
+      setMessage("Enter EMA periods such as 9, 20, 50, 100, 200.");
+      return;
+    }
+
+    setEmaPeriods((current) =>
+      [...new Set([...current, ...parsed])].sort((a, b) => a - b)
+    );
+    setEmaInput("");
+  }
+
+  function toggleEmaPeriod(period: number) {
+    setEmaPeriods((current) =>
+      current.includes(period)
+        ? current.filter((value) => value !== period)
+        : [...current, period].sort((a, b) => a - b)
+    );
+  }
+
   function resetChartView() {
     setShowFib(false);
     setShowTrendFib(false);
@@ -1331,8 +1442,12 @@ export default function Home() {
     setShowLiquidity(false);
     setShowOrderBlocks(false);
     setShowVwap(false);
+    setVwapEditorOpen(false);
     setShowProfile(false);
-    setShowEma(false);
+    setShowPivots(false);
+    setEmaPeriods([]);
+    setEmaInput("");
+    setEmaEditorOpen(false);
     setShowSessionBreaks(false);
     setShowOrderFlow(true);
     setShowAdvancedAnalysis(false);
@@ -2769,13 +2884,434 @@ export default function Home() {
 
           <div className="toolbarGroup chartViewGroup">
             <span className="toolbarLabel">VIEW</span>
-            <button
-              type="button"
-              className="timeframe chartResetButton"
-              onClick={resetChartView}
-            >
-              Reset
-            </button>
+            <div className="chartViewActions">
+              <button
+                type="button"
+                className="timeframe chartResetButton"
+                onClick={resetChartView}
+              >
+                Reset
+              </button>
+              <details className="chartFeaturesMenu">
+                <summary className="timeframe chartFeaturesSummary">
+                  Features
+                </summary>
+                <div className="chartFeaturesDropdown">
+                  {[
+                    {
+                      label: "Fibonacci",
+                      active: showFib,
+                      disabled: false,
+                      toggle: () => setShowFib((value) => !value)
+                    },
+                    {
+                      label: "Trend Fibonacci",
+                      active: showTrendFib,
+                      disabled: false,
+                      toggle: () => setShowTrendFib((value) => !value)
+                    },
+                    {
+                      label: "Market Structure",
+                      active: showStructure,
+                      disabled: false,
+                      toggle: () => setShowStructure((value) => !value)
+                    },
+                    {
+                      label: "Fair Value Gaps",
+                      active: showFvg,
+                      disabled: false,
+                      toggle: () => setShowFvg((value) => !value)
+                    },
+                    {
+                      label: "Liquidity Levels",
+                      active: showLiquidity,
+                      disabled: false,
+                      toggle: () => setShowLiquidity((value) => !value)
+                    },
+                    {
+                      label: "Order Blocks",
+                      active: showOrderBlocks,
+                      disabled: false,
+                      toggle: () => setShowOrderBlocks((value) => !value)
+                    },
+                    {
+                      label: "Volume Profile",
+                      active: showProfile,
+                      disabled: !volumeAnalytics.available,
+                      toggle: () => setShowProfile((value) => !value)
+                    },
+                    {
+                      label: "Daily Pivot Levels",
+                      active: showPivots,
+                      disabled: dailyPivots.length === 0,
+                      toggle: () => setShowPivots((value) => !value)
+                    },
+                    {
+                      label: "Session Breaks",
+                      active: showSessionBreaks,
+                      disabled: false,
+                      toggle: () => setShowSessionBreaks((value) => !value)
+                    },
+                    {
+                      label: "Buy / Sell Volume",
+                      active: showOrderFlow,
+                      disabled: !selectedIsKraken,
+                      toggle: () => setShowOrderFlow((value) => !value)
+                    }
+                  ].map((feature) => (
+                    <button
+                      type="button"
+                      className={
+                        feature.active
+                          ? "chartFeatureOption active"
+                          : "chartFeatureOption"
+                      }
+                      disabled={feature.disabled}
+                      key={feature.label}
+                      onClick={(event) => {
+                        feature.toggle();
+                        (
+                          event.currentTarget.closest(
+                            "details"
+                          ) as HTMLDetailsElement | null
+                        )?.removeAttribute("open");
+                      }}
+                    >
+                      <span>{feature.label}</span>
+                      <strong>{feature.active ? "ON" : "OFF"}</strong>
+                    </button>
+                  ))}
+                  <div className="vwapFeatureControl">
+                    <button
+                      type="button"
+                      className={
+                        showVwap
+                          ? "chartFeatureOption active"
+                          : "chartFeatureOption"
+                      }
+                      disabled={!volumeAnalytics.available}
+                      onClick={() => {
+                        if (showVwap) {
+                          setShowVwap(false);
+                          setVwapEditorOpen(false);
+                        } else {
+                          setShowVwap(true);
+                          setVwapEditorOpen(true);
+                        }
+                      }}
+                    >
+                      <span>VWAP</span>
+                      <strong>{showVwap ? "ON" : "OFF"}</strong>
+                    </button>
+                    {showVwap && !vwapEditorOpen ? (
+                      <button
+                        type="button"
+                        className="featureEditButton"
+                        onClick={() => setVwapEditorOpen(true)}
+                      >
+                        Edit VWAP settings
+                      </button>
+                    ) : null}
+
+                    {vwapEditorOpen ? (
+                      <div className="vwapFeatureEditor">
+                        <label className="featureCheckboxRow">
+                          <input
+                            type="checkbox"
+                            checked={vwapSettings.hideOnDailyOrAbove}
+                            onChange={(event) =>
+                              setVwapSettings((current) => ({
+                                ...current,
+                                hideOnDailyOrAbove: event.target.checked
+                              }))
+                            }
+                          />
+                          <span>Hide VWAP on 1D or above</span>
+                        </label>
+
+                        <label className="featureField">
+                          <span>Anchor Period</span>
+                          <select
+                            value={vwapSettings.anchorPeriod}
+                            onChange={(event) =>
+                              setVwapSettings((current) => ({
+                                ...current,
+                                anchorPeriod: event.target.value as VwapSettings["anchorPeriod"]
+                              }))
+                            }
+                          >
+                            <option value="session">Session</option>
+                            <option value="week">Week</option>
+                            <option value="month">Month</option>
+                            <option value="quarter">Quarter</option>
+                            <option value="year">Year</option>
+                          </select>
+                        </label>
+
+                        <label className="featureField">
+                          <span>Source</span>
+                          <select
+                            value={vwapSettings.source}
+                            onChange={(event) =>
+                              setVwapSettings((current) => ({
+                                ...current,
+                                source: event.target.value as VwapSettings["source"]
+                              }))
+                            }
+                          >
+                            <option value="hlc3">HLC3</option>
+                            <option value="close">Close</option>
+                            <option value="open">Open</option>
+                            <option value="high">High</option>
+                            <option value="low">Low</option>
+                            <option value="hl2">HL2</option>
+                            <option value="ohlc4">OHLC4</option>
+                          </select>
+                        </label>
+
+                        <label className="featureField">
+                          <span>Offset</span>
+                          <input
+                            type="number"
+                            step="1"
+                            value={vwapSettings.offset}
+                            onChange={(event) =>
+                              setVwapSettings((current) => ({
+                                ...current,
+                                offset: Number.parseInt(event.target.value || "0", 10)
+                              }))
+                            }
+                          />
+                        </label>
+
+                        <label className="featureField">
+                          <span>Bands Calculation</span>
+                          <select
+                            value={vwapSettings.bandsMode}
+                            onChange={(event) =>
+                              setVwapSettings((current) => ({
+                                ...current,
+                                bandsMode: event.target.value as VwapSettings["bandsMode"]
+                              }))
+                            }
+                          >
+                            <option value="stdev">Standard Deviation</option>
+                            <option value="percentage">Percentage</option>
+                          </select>
+                        </label>
+
+                        <div className="vwapBandsEditor">
+                          {vwapSettings.bands.map((band, index) => (
+                            <div className="vwapBandRow" key={index}>
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  checked={band.enabled}
+                                  onChange={(event) =>
+                                    setVwapSettings((current) => ({
+                                      ...current,
+                                      bands: current.bands.map((item, bandIndex) =>
+                                        bandIndex === index
+                                          ? { ...item, enabled: event.target.checked }
+                                          : item
+                                      )
+                                    }))
+                                  }
+                                />
+                                <span>Band #{index + 1}</span>
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.1"
+                                value={band.multiplier}
+                                onChange={(event) =>
+                                  setVwapSettings((current) => ({
+                                    ...current,
+                                    bands: current.bands.map((item, bandIndex) =>
+                                      bandIndex === index
+                                        ? {
+                                            ...item,
+                                            multiplier: Number(event.target.value)
+                                          }
+                                        : item
+                                    )
+                                  }))
+                                }
+                              />
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="featureEditorActions">
+                          <button
+                            type="button"
+                            className="featureOffButton"
+                            onClick={() => {
+                              setShowVwap(false);
+                              setVwapEditorOpen(false);
+                            }}
+                          >
+                            Turn VWAP off
+                          </button>
+                          <button
+                            type="button"
+                            className="featureDoneButton"
+                            onClick={(event) => {
+                              setVwapEditorOpen(false);
+                              (
+                                event.currentTarget.closest(
+                                  "details"
+                                ) as HTMLDetailsElement | null
+                              )?.removeAttribute("open");
+                            }}
+                          >
+                            Done
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="emaFeatureControl">
+                    <button
+                      type="button"
+                      className={
+                        showEma
+                          ? "chartFeatureOption active"
+                          : "chartFeatureOption"
+                      }
+                      onClick={() => {
+                        if (showEma) {
+                          setEmaPeriods([]);
+                          setEmaInput("");
+                          setEmaEditorOpen(false);
+                        } else {
+                          setEmaEditorOpen(true);
+                        }
+                      }}
+                    >
+                      <span>EMA</span>
+                      <strong>
+                        {showEma
+                          ? `${emaPeriods.length} ON`
+                          : "OFF"}
+                      </strong>
+                    </button>
+                    {showEma && !emaEditorOpen ? (
+                      <button
+                        type="button"
+                        className="featureEditButton"
+                        onClick={() => setEmaEditorOpen(true)}
+                      >
+                        Edit EMA settings
+                      </button>
+                    ) : null}
+
+                    {emaEditorOpen ? (
+                      <div className="emaFeatureEditor">
+                        <span className="emaFeatureHint">
+                          Add one or many EMA periods
+                        </span>
+
+                        <div className="emaFeatureInputRow">
+                          <input
+                            inputMode="numeric"
+                            value={emaInput}
+                            onChange={(event) =>
+                              setEmaInput(event.target.value)
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                addEmaPeriods();
+                              }
+                            }}
+                            placeholder="9, 20, 50, 100, 200"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => addEmaPeriods()}
+                          >
+                            Add
+                          </button>
+                        </div>
+
+                        <div className="emaPresetRow">
+                          {[9, 20, 50, 100, 200].map((period) => (
+                            <button
+                              type="button"
+                              className={
+                                emaPeriods.includes(period)
+                                  ? "active"
+                                  : ""
+                              }
+                              key={period}
+                              onClick={() => toggleEmaPeriod(period)}
+                            >
+                              {period}
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              addEmaPeriods("9,20,50,100,200")
+                            }
+                          >
+                            Add all
+                          </button>
+                        </div>
+
+                        <div className="emaPeriodChips">
+                          {emaPeriods.length ? (
+                            emaPeriods.map((period) => (
+                              <button
+                                type="button"
+                                key={period}
+                                onClick={() => toggleEmaPeriod(period)}
+                                title={`Remove EMA ${period}`}
+                              >
+                                EMA {period} ×
+                              </button>
+                            ))
+                          ) : (
+                            <small>No EMA periods selected.</small>
+                          )}
+                        </div>
+
+                        <div className="featureEditorActions">
+                          {emaPeriods.length ? (
+                            <button
+                              type="button"
+                              className="emaClearButton"
+                              onClick={() => setEmaPeriods([])}
+                            >
+                              Clear all
+                            </button>
+                          ) : (
+                            <span />
+                          )}
+                          <button
+                            type="button"
+                            className="featureDoneButton"
+                            onClick={(event) => {
+                              setEmaEditorOpen(false);
+                              (
+                                event.currentTarget.closest(
+                                  "details"
+                                ) as HTMLDetailsElement | null
+                              )?.removeAttribute("open");
+                            }}
+                          >
+                            Done
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </details>
+            </div>
           </div>
 
           <div className="historyStatus">
@@ -2806,7 +3342,9 @@ export default function Home() {
           imbalance={imbalance}
           orderBlocks={orderBlocks}
           volumeAnalytics={volumeAnalytics}
-          technicalContext={technicalContext}
+          emaPeriods={emaPeriods}
+          vwapSettings={vwapSettings}
+          pivotSets={dailyPivots}
           showFib={showFib}
           showTrendFib={showTrendFib}
           showStructure={showStructure}
@@ -2815,6 +3353,7 @@ export default function Home() {
           showOrderBlocks={showOrderBlocks}
           showVwap={showVwap}
           showProfile={showProfile}
+          showPivots={showPivots}
           showEma={showEma}
           market={selected.market}
           resolution={resolution}
@@ -3763,15 +4302,18 @@ export default function Home() {
       </section>
 
       <section className="card performanceCard">
-        <div className="performanceHeader">
+        <div className="performanceHeader performanceHeaderRow">
           <div>
             <p className="label">TRADE HISTORY & RESULTS · REAL SIGNAL RECORD</p>
-            <h3>Every confirmed platform trade</h3>
+            <h3>Latest confirmed platform trades</h3>
             <p>
-              Signals are stored locally and remain on the chart after refresh.
-              No account size or position size is assumed.
+              The dashboard keeps only the latest 3 signals visible. Open Trade
+              History for the complete journal and filters.
             </p>
           </div>
+          <a className="tradeHistoryLink" href="/trades">
+            VIEW ALL TRADES
+          </a>
         </div>
 
         <div className="performanceGrid">
@@ -3834,7 +4376,7 @@ export default function Home() {
                 tradeJournal
                   .slice()
                   .sort((a, b) => b.signalTime - a.signalTime)
-                  .slice(0, 100)
+                  .slice(0, 3)
                   .map((trade) => (
                     <tr key={trade.id}>
                       <td>
@@ -3913,105 +4455,6 @@ export default function Home() {
                   ? "Bearish swing"
                   : "Waiting for confirmed swing"}
             </h3>
-          </div>
-          <div className="analysisToggles">
-            <button
-              className={showFib ? "analysisToggle active" : "analysisToggle"}
-              onClick={() => setShowFib((value) => !value)}
-            >
-              Fib {showFib ? "ON" : "OFF"}
-            </button>
-            <button
-              className={
-                showTrendFib
-                  ? "analysisToggle active"
-                  : "analysisToggle"
-              }
-              onClick={() => setShowTrendFib((value) => !value)}
-            >
-              Trend Fib {showTrendFib ? "ON" : "OFF"}
-            </button>
-            <button
-              className={
-                showStructure
-                  ? "analysisToggle active"
-                  : "analysisToggle"
-              }
-              onClick={() => setShowStructure((value) => !value)}
-            >
-              Structure {showStructure ? "ON" : "OFF"}
-            </button>
-            <button
-              className={showFvg ? "analysisToggle active" : "analysisToggle"}
-              onClick={() => setShowFvg((value) => !value)}
-            >
-              FVG {showFvg ? "ON" : "OFF"}
-            </button>
-            <button
-              className={
-                showLiquidity
-                  ? "analysisToggle active"
-                  : "analysisToggle"
-              }
-              onClick={() => setShowLiquidity((value) => !value)}
-            >
-              Liquidity {showLiquidity ? "ON" : "OFF"}
-            </button>
-            <button
-              className={
-                showOrderBlocks
-                  ? "analysisToggle active"
-                  : "analysisToggle"
-              }
-              onClick={() => setShowOrderBlocks((value) => !value)}
-            >
-              Order Blocks {showOrderBlocks ? "ON" : "OFF"}
-            </button>
-            <button
-              className={
-                showVwap ? "analysisToggle active" : "analysisToggle"
-              }
-              onClick={() => setShowVwap((value) => !value)}
-              disabled={!volumeAnalytics.available}
-            >
-              VWAP {showVwap ? "ON" : "OFF"}
-            </button>
-            <button
-              className={
-                showProfile ? "analysisToggle active" : "analysisToggle"
-              }
-              onClick={() => setShowProfile((value) => !value)}
-              disabled={!volumeAnalytics.available}
-            >
-              Profile {showProfile ? "ON" : "OFF"}
-            </button>
-            <button
-              className={showEma ? "analysisToggle active" : "analysisToggle"}
-              onClick={() => setShowEma((value) => !value)}
-            >
-              EMA {showEma ? "ON" : "OFF"}
-            </button>
-            <button
-              className={
-                showSessionBreaks
-                  ? "analysisToggle active"
-                  : "analysisToggle"
-              }
-              onClick={() => setShowSessionBreaks((value) => !value)}
-            >
-              Sessions {showSessionBreaks ? "ON" : "OFF"}
-            </button>
-            <button
-              className={
-                showOrderFlow
-                  ? "analysisToggle active"
-                  : "analysisToggle"
-              }
-              onClick={() => setShowOrderFlow((value) => !value)}
-              disabled={!selectedIsKraken}
-            >
-              Buy/Sell Vol {showOrderFlow ? "ON" : "OFF"}
-            </button>
           </div>
         </div>
 
@@ -4401,69 +4844,222 @@ export default function Home() {
           )}
         </section>
 
-        <div className="technicalStrip">
-          <div>
-            <span>TREND STATE</span>
-            <strong className={`technicalTrend ${technicalContext.trendState}`}>
-              {technicalContext.trendState.replaceAll("_", " ").toUpperCase()}
-            </strong>
+        <section className="technicalDashboard">
+          <div className="technicalGaugeCard">
+            <div className="technicalDashboardHeader">
+              <div>
+                <span>TECHNICAL METER</span>
+                <strong>Trend</strong>
+              </div>
+              <b className={technicalMeterLabel(trendScore).toLowerCase().replaceAll(" ", "-")}>
+                {technicalMeterLabel(trendScore)}
+              </b>
+            </div>
+
+            <div className="technicalGauge" aria-label={`Trend meter ${technicalMeterLabel(trendScore)}`}>
+              <div className="technicalGaugeArc">
+                <i
+                  className="technicalGaugeNeedle"
+                  style={{
+                    transform: `translateX(-50%) rotate(${technicalNeedleAngle(
+                      trendScore
+                    )}deg)`
+                  }}
+                />
+                <span className="technicalGaugeHub" />
+              </div>
+              <div className="technicalGaugeScale">
+                <span>Strong Sell</span>
+                <span>Sell</span>
+                <span>Neutral</span>
+                <span>Buy</span>
+                <span>Strong Buy</span>
+              </div>
+            </div>
+
+            <div className="technicalGaugeStats">
+              <div>
+                <span>ADX (14)</span>
+                <strong>
+                  {technicalContext.adx14 !== null
+                    ? technicalContext.adx14.toFixed(1)
+                    : "—"}
+                </strong>
+              </div>
+              <div>
+                <span>STATE</span>
+                <strong>
+                  {technicalContext.trendState
+                    .replaceAll("_", " ")
+                    .toUpperCase()}
+                </strong>
+              </div>
+            </div>
           </div>
-          <div>
-            <span>RSI(14)</span>
-            <strong>
-              {technicalContext.rsi14 !== null
-                ? technicalContext.rsi14.toFixed(1)
-                : "—"}
-            </strong>
+
+          <div className="technicalGaugeCard">
+            <div className="technicalDashboardHeader">
+              <div>
+                <span>TECHNICAL METER</span>
+                <strong>Moving Averages</strong>
+              </div>
+              <b
+                className={technicalMeterLabel(movingAverageScore)
+                  .toLowerCase()
+                  .replaceAll(" ", "-")}
+              >
+                {technicalMeterLabel(movingAverageScore)}
+              </b>
+            </div>
+
+            <div
+              className="technicalGauge"
+              aria-label={`Moving average meter ${technicalMeterLabel(
+                movingAverageScore
+              )}`}
+            >
+              <div className="technicalGaugeArc">
+                <i
+                  className="technicalGaugeNeedle"
+                  style={{
+                    transform: `translateX(-50%) rotate(${technicalNeedleAngle(
+                      movingAverageScore
+                    )}deg)`
+                  }}
+                />
+                <span className="technicalGaugeHub" />
+              </div>
+              <div className="technicalGaugeScale">
+                <span>Strong Sell</span>
+                <span>Sell</span>
+                <span>Neutral</span>
+                <span>Buy</span>
+                <span>Strong Buy</span>
+              </div>
+            </div>
+
+            <div className="technicalGaugeStats">
+              <div>
+                <span>BUY</span>
+                <strong className="positive">{maBuyCount}</strong>
+              </div>
+              <div>
+                <span>SELL</span>
+                <strong className="negative">{maSellCount}</strong>
+              </div>
+              <div>
+                <span>AVAILABLE</span>
+                <strong>{movingAverageSignals.length}</strong>
+              </div>
+            </div>
           </div>
-          <div>
-            <span>ADX(14)</span>
-            <strong>
-              {technicalContext.adx14 !== null
-                ? technicalContext.adx14.toFixed(1)
-                : "—"}
-            </strong>
+
+          <div className="technicalDetailCard">
+            <div className="technicalDashboardHeader">
+              <div>
+                <span>INDICATOR DETAIL</span>
+                <strong>Momentum & volatility</strong>
+              </div>
+              <b
+                className={technicalMeterLabel(momentumScore)
+                  .toLowerCase()
+                  .replaceAll(" ", "-")}
+              >
+                RSI {technicalMeterLabel(momentumScore)}
+              </b>
+            </div>
+
+            <div className="technicalIndicatorRows">
+              <div>
+                <span>RSI 14</span>
+                <strong>
+                  {technicalContext.rsi14 !== null
+                    ? technicalContext.rsi14.toFixed(2)
+                    : "—"}
+                </strong>
+                <b
+                  className={
+                    technicalContext.rsi14 === null
+                      ? "neutral"
+                      : technicalContext.rsi14 >= 55
+                        ? "buy"
+                        : technicalContext.rsi14 <= 45
+                          ? "sell"
+                          : "neutral"
+                  }
+                >
+                  {technicalContext.rsi14 === null
+                    ? "—"
+                    : technicalContext.rsi14 >= 70
+                      ? "OVERBOUGHT"
+                      : technicalContext.rsi14 <= 30
+                        ? "OVERSOLD"
+                        : technicalContext.rsi14 >= 55
+                          ? "BUY"
+                          : technicalContext.rsi14 <= 45
+                            ? "SELL"
+                            : "NEUTRAL"}
+                </b>
+              </div>
+
+              <div>
+                <span>ADX 14</span>
+                <strong>
+                  {technicalContext.adx14 !== null
+                    ? technicalContext.adx14.toFixed(2)
+                    : "—"}
+                </strong>
+                <b className="neutral">
+                  {technicalContext.adx14 === null
+                    ? "—"
+                    : technicalContext.adx14 >= 25
+                      ? "TRENDING"
+                      : "WEAK"}
+                </b>
+              </div>
+
+              <div>
+                <span>ATR / PRICE</span>
+                <strong>
+                  {technicalContext.atrPercent !== null
+                    ? `${technicalContext.atrPercent.toFixed(2)}%`
+                    : "—"}
+                </strong>
+                <b className="neutral">
+                  {technicalContext.volatilityState.toUpperCase()}
+                </b>
+              </div>
+
+              {[
+                ["EMA 20", technicalContext.latestEma20],
+                ["EMA 50", technicalContext.latestEma50],
+                ["EMA 200", technicalContext.latestEma200]
+              ].map(([label, value]) => {
+                const emaValue = value as number | null;
+                const signal =
+                  emaValue === null || latestTechnicalPrice === null
+                    ? "NEUTRAL"
+                    : latestTechnicalPrice >= emaValue
+                      ? "BUY"
+                      : "SELL";
+
+                return (
+                  <div key={label as string}>
+                    <span>{label}</span>
+                    <strong>
+                      {emaValue !== null
+                        ? emaValue.toLocaleString("en-IN", {
+                            maximumFractionDigits: 2
+                          })
+                        : "—"}
+                    </strong>
+                    <b className={signal.toLowerCase()}>{signal}</b>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-          <div>
-            <span>ATR / PRICE</span>
-            <strong>
-              {technicalContext.atrPercent !== null
-                ? `${technicalContext.atrPercent.toFixed(2)}%`
-                : "—"}
-            </strong>
-            <small>{technicalContext.volatilityState.toUpperCase()} VOLATILITY</small>
-          </div>
-          <div>
-            <span>EMA20</span>
-            <strong>
-              {technicalContext.latestEma20 !== null
-                ? technicalContext.latestEma20.toLocaleString("en-IN", {
-                    maximumFractionDigits: 2
-                  })
-                : "—"}
-            </strong>
-          </div>
-          <div>
-            <span>EMA50</span>
-            <strong>
-              {technicalContext.latestEma50 !== null
-                ? technicalContext.latestEma50.toLocaleString("en-IN", {
-                    maximumFractionDigits: 2
-                  })
-                : "—"}
-            </strong>
-          </div>
-          <div>
-            <span>EMA200</span>
-            <strong>
-              {technicalContext.latestEma200 !== null
-                ? technicalContext.latestEma200.toLocaleString("en-IN", {
-                    maximumFractionDigits: 2
-                  })
-                : "—"}
-            </strong>
-          </div>
-        </div>
+        </section>
 
         <div className="analysisSummary">
           <div>

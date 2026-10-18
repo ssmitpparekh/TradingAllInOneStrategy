@@ -9,11 +9,52 @@ export type VwapPoint = {
   value: number;
 };
 
+export type VwapSource =
+  | "hlc3"
+  | "close"
+  | "open"
+  | "high"
+  | "low"
+  | "hl2"
+  | "ohlc4";
+
+export type VwapAnchorPeriod =
+  | "session"
+  | "week"
+  | "month"
+  | "quarter"
+  | "year";
+
+export type VwapBandMode = "stdev" | "percentage";
+
+export type VwapSettings = {
+  hideOnDailyOrAbove: boolean;
+  anchorPeriod: VwapAnchorPeriod;
+  source: VwapSource;
+  offset: number;
+  bandsMode: VwapBandMode;
+  bands: Array<{
+    enabled: boolean;
+    multiplier: number;
+  }>;
+};
+
+export type VwapOverlay = {
+  vwap: VwapPoint[];
+  bands: Array<{
+    multiplier: number;
+    upper: VwapPoint[];
+    lower: VwapPoint[];
+  }>;
+};
+
 export type VolumeProfileBin = {
   low: number;
   high: number;
   midpoint: number;
   volume: number;
+  buyVolume: number;
+  sellVolume: number;
 };
 
 export type VolumeProfile = {
@@ -121,6 +162,161 @@ function calculateAnchoredVwap(
   return points;
 }
 
+function vwapSourcePrice(
+  candle: VolumeCandle,
+  source: VwapSource
+): number {
+  if (source === "close") return candle.close;
+  if (source === "open") return candle.open;
+  if (source === "high") return candle.high;
+  if (source === "low") return candle.low;
+  if (source === "hl2") return (candle.high + candle.low) / 2;
+  if (source === "ohlc4") {
+    return (candle.open + candle.high + candle.low + candle.close) / 4;
+  }
+  return (candle.high + candle.low + candle.close) / 3;
+}
+
+function vwapAnchorKey(
+  timestamp: number,
+  timeZone: string,
+  period: VwapAnchorPeriod
+): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date(timestamp * 1000));
+
+  const year = Number(parts.find((part) => part.type === "year")?.value ?? 0);
+  const month = Number(parts.find((part) => part.type === "month")?.value ?? 1);
+  const day = Number(parts.find((part) => part.type === "day")?.value ?? 1);
+
+  if (period === "year") return String(year);
+  if (period === "quarter") {
+    return `${year}-Q${Math.floor((month - 1) / 3) + 1}`;
+  }
+  if (period === "month") {
+    return `${year}-${String(month).padStart(2, "0")}`;
+  }
+  if (period === "week") {
+    const localDate = new Date(Date.UTC(year, month - 1, day));
+    const weekday = localDate.getUTCDay() || 7;
+    localDate.setUTCDate(localDate.getUTCDate() - weekday + 1);
+    return localDate.toISOString().slice(0, 10);
+  }
+
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+export function calculateVwapOverlay(
+  candles: VolumeCandle[],
+  settings: VwapSettings,
+  timeZone = "UTC"
+): VwapOverlay {
+  const enabledBands = settings.bands
+    .map((band, index) => ({
+      index,
+      enabled: Boolean(band.enabled),
+      multiplier: Number(band.multiplier)
+    }))
+    .filter(
+      (band) =>
+        band.enabled &&
+        Number.isFinite(band.multiplier) &&
+        band.multiplier >= 0
+    );
+
+  const raw: Array<{
+    candleIndex: number;
+    value: number;
+    deviations: number[];
+  }> = [];
+
+  let anchor = "";
+  let cumulativeVolume = 0;
+  let cumulativePriceVolume = 0;
+  let cumulativePriceSquaredVolume = 0;
+
+  candles.forEach((candle, candleIndex) => {
+    const volume = Number(candle.volume ?? 0);
+    if (!(volume > 0)) return;
+
+    const nextAnchor = vwapAnchorKey(
+      candle.time,
+      timeZone,
+      settings.anchorPeriod
+    );
+
+    if (nextAnchor !== anchor) {
+      anchor = nextAnchor;
+      cumulativeVolume = 0;
+      cumulativePriceVolume = 0;
+      cumulativePriceSquaredVolume = 0;
+    }
+
+    const price = vwapSourcePrice(candle, settings.source);
+    cumulativeVolume += volume;
+    cumulativePriceVolume += price * volume;
+    cumulativePriceSquaredVolume += price * price * volume;
+
+    if (!(cumulativeVolume > 0)) return;
+
+    const value = cumulativePriceVolume / cumulativeVolume;
+    const variance = Math.max(
+      0,
+      cumulativePriceSquaredVolume / cumulativeVolume - value * value
+    );
+    const stdev = Math.sqrt(variance);
+
+    raw.push({
+      candleIndex,
+      value,
+      deviations: enabledBands.map((band) =>
+        settings.bandsMode === "percentage"
+          ? value * (band.multiplier / 100)
+          : stdev * band.multiplier
+      )
+    });
+  });
+
+  const applyOffset = (
+    candleIndex: number
+  ): number | null => {
+    const targetIndex = candleIndex + Math.trunc(settings.offset || 0);
+    if (targetIndex < 0 || targetIndex >= candles.length) return null;
+    return candles[targetIndex].time;
+  };
+
+  const vwap: VwapPoint[] = [];
+  const bands = enabledBands.map((band) => ({
+    multiplier: band.multiplier,
+    upper: [] as VwapPoint[],
+    lower: [] as VwapPoint[]
+  }));
+
+  for (const point of raw) {
+    const time = applyOffset(point.candleIndex);
+    if (time === null) continue;
+
+    vwap.push({ time, value: point.value });
+
+    point.deviations.forEach((deviation, index) => {
+      bands[index].upper.push({
+        time,
+        value: point.value + deviation
+      });
+      bands[index].lower.push({
+        time,
+        value: point.value - deviation
+      });
+    });
+  }
+
+  return { vwap, bands };
+}
+
 function emptyProfile(): VolumeProfile {
   return {
     bins: [],
@@ -176,7 +372,9 @@ export function calculateVolumeProfile(
         low,
         high,
         midpoint: (low + high) / 2,
-        volume: 0
+        volume: 0,
+        buyVolume: 0,
+        sellVolume: 0
       };
     }
   );
@@ -199,9 +397,17 @@ export function calculateVolumeProfile(
     );
     const touchedBins = highIndex - lowIndex + 1;
     const volumePerBin = volume / touchedBins;
+    const range = candle.high - candle.low;
+    const buyShare =
+      range > 0
+        ? Math.min(1, Math.max(0, (candle.close - candle.low) / range))
+        : 0.5;
+    const sellShare = 1 - buyShare;
 
     for (let index = lowIndex; index <= highIndex; index += 1) {
       bins[index].volume += volumePerBin;
+      bins[index].buyVolume += volumePerBin * buyShare;
+      bins[index].sellVolume += volumePerBin * sellShare;
     }
   }
 

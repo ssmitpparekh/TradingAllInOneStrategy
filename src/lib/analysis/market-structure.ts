@@ -26,6 +26,7 @@ export type StructureEvent = {
 export type MarketStructureSnapshot = {
   trend: "bullish" | "bearish" | "neutral";
   latestEvent: StructureEvent | null;
+  events: StructureEvent[];
   recentEvents: StructureEvent[];
   activeSwingHigh: SwingPoint | null;
   activeSwingLow: SwingPoint | null;
@@ -53,11 +54,24 @@ export type LiquiditySweep = {
   sourceSwing: SwingPoint;
 };
 
+export type LiquidityLevel = {
+  side: "buy" | "sell";
+  importance: "minor" | "major";
+  level: number;
+  zoneLower: number;
+  zoneUpper: number;
+  sourceSwing: SwingPoint;
+  confirmedTime: number;
+  sweptTime: number | null;
+  status: "virgin" | "swept";
+};
+
 export type ImbalanceLiquiditySnapshot = {
   recentFvgs: FairValueGap[];
   activeFvgs: FairValueGap[];
   recentSweeps: LiquiditySweep[];
   latestSweep: LiquiditySweep | null;
+  liquidityLevels: LiquidityLevel[];
 };
 
 export type OrderBlock = {
@@ -107,8 +121,8 @@ export type FibonacciSetup = {
   atr14: number | null;
 };
 
-const RETRACEMENTS = [0.236, 0.382, 0.5, 0.618, 0.705, 0.786, 0.886];
-const EXTENSIONS = [0.618, 1, 1.272, 1.618, 2, 2.618];
+const RETRACEMENTS = [0, 0.236, 0.382, 0.5, 0.618, 0.705, 0.786, 0.886, 1];
+const EXTENSIONS = [0, 0.5, 1, 1.272, 1.618, 2, 2.618];
 
 function trueRange(
   candle: AnalysisCandle,
@@ -282,8 +296,7 @@ export function buildMarketStructure(
 ): MarketStructureSnapshot {
   const confirmationBars = Math.max(2, options?.confirmationBars ?? 3);
   const maxEvents = Math.max(1, options?.maxEvents ?? 12);
-  const recentCandles =
-    candles.length > 1200 ? candles.slice(-1200) : candles;
+  const recentCandles = candles;
 
   const swings = detectSwings(recentCandles, {
     rightBars: confirmationBars
@@ -361,7 +374,8 @@ export function buildMarketStructure(
 
   return {
     trend,
-    latestEvent: recentEvents[recentEvents.length - 1] ?? null,
+    latestEvent: events[events.length - 1] ?? null,
+    events,
     recentEvents,
     activeSwingHigh,
     activeSwingLow
@@ -378,10 +392,12 @@ export function detectFairValueGaps(
 ): FairValueGap[] {
   if (candles.length < 3) return [];
 
-  const maxRecent = Math.max(1, options?.maxRecent ?? 20);
+  const maxRecent =
+    options?.maxRecent === undefined
+      ? Number.POSITIVE_INFINITY
+      : Math.max(1, options.maxRecent);
   const minAtrFraction = Math.max(0, options?.minAtrFraction ?? 0.05);
-  const recentCandles =
-    candles.length > 1200 ? candles.slice(-1200) : candles;
+  const recentCandles = candles;
   const atr = calculateAtr(recentCandles) ?? 0;
   const latestClose = recentCandles[recentCandles.length - 1].close;
   const minimumGap = Math.max(
@@ -471,7 +487,250 @@ export function detectFairValueGaps(
     gaps.push(gap);
   }
 
-  return gaps.slice(-maxRecent);
+  return Number.isFinite(maxRecent)
+    ? gaps.slice(-maxRecent)
+    : gaps;
+}
+
+export function detectLiquidityLevels(
+  candles: AnalysisCandle[]
+): LiquidityLevel[] {
+  if (candles.length < 20) return [];
+
+  const latestClose = candles[candles.length - 1].close;
+  const globalAtr = calculateAtr(candles) ?? 0;
+
+  const definitions = [
+    {
+      importance: "major" as const,
+      leftBars: 6,
+      rightBars: 6,
+      zoneAtrFraction: 0.12,
+      prominenceLookback: 30
+    },
+    {
+      importance: "minor" as const,
+      leftBars: 2,
+      rightBars: 2,
+      zoneAtrFraction: 0.06,
+      prominenceLookback: 10
+    }
+  ];
+
+  type Candidate = LiquidityLevel & {
+    confirmationIndex: number;
+    prominence: number;
+    distanceFromPrice: number;
+  };
+
+  const rawPivots = (
+    leftBars: number,
+    rightBars: number
+  ): SwingPoint[] => {
+    const points: SwingPoint[] = [];
+
+    for (
+      let index = leftBars;
+      index < candles.length - rightBars;
+      index += 1
+    ) {
+      if (isPivotHigh(candles, index, leftBars, rightBars)) {
+        points.push({
+          index,
+          time: candles[index].time,
+          price: candles[index].high,
+          type: "high",
+          confirmed: true
+        });
+      }
+
+      if (isPivotLow(candles, index, leftBars, rightBars)) {
+        points.push({
+          index,
+          time: candles[index].time,
+          price: candles[index].low,
+          type: "low",
+          confirmed: true
+        });
+      }
+    }
+
+    return points;
+  };
+
+  const buildCandidates = (
+    definition: (typeof definitions)[number],
+    side: "buy" | "sell"
+  ): Candidate[] => {
+    const pivots = rawPivots(
+      definition.leftBars,
+      definition.rightBars
+    ).filter((swing) =>
+      side === "buy" ? swing.type === "high" : swing.type === "low"
+    );
+
+    return pivots.flatMap((swing) => {
+      const confirmationIndex = Math.min(
+        candles.length - 1,
+        swing.index + definition.rightBars
+      );
+
+      const localStart = Math.max(
+        0,
+        swing.index - definition.prominenceLookback
+      );
+      const localEnd = Math.min(
+        candles.length,
+        swing.index + definition.prominenceLookback + 1
+      );
+      const localCandles = candles.slice(localStart, localEnd);
+      const localAtr = calculateAtr(localCandles) ?? globalAtr;
+
+      const zoneHalfWidth = Math.max(
+        swing.price * 0.00005,
+        localAtr * definition.zoneAtrFraction
+      );
+      const zoneLower = swing.price - zoneHalfWidth;
+      const zoneUpper = swing.price + zoneHalfWidth;
+
+      const correctlyPositioned =
+        side === "buy"
+          ? swing.price > latestClose
+          : swing.price < latestClose;
+
+      if (!correctlyPositioned) return [];
+
+      let swept = false;
+
+      for (
+        let index = confirmationIndex + 1;
+        index < candles.length;
+        index += 1
+      ) {
+        const candle = candles[index];
+
+        // Keep the pool virgin until price actually trades beyond the
+        // source swing. A retest at exactly the same exchange tick is not
+        // treated as a sweep.
+        const tradedThrough =
+          side === "buy"
+            ? candle.high > swing.price
+            : candle.low < swing.price;
+
+        if (tradedThrough) {
+          swept = true;
+          break;
+        }
+      }
+
+      if (swept) return [];
+
+      const localHigh = Math.max(
+        ...localCandles.map((candle) => candle.high)
+      );
+      const localLow = Math.min(
+        ...localCandles.map((candle) => candle.low)
+      );
+      const rawProminence =
+        side === "buy"
+          ? swing.price - localLow
+          : localHigh - swing.price;
+      const prominence =
+        localAtr > 0 ? rawProminence / localAtr : rawProminence;
+      const distanceFromPrice =
+        globalAtr > 0
+          ? Math.abs(swing.price - latestClose) / globalAtr
+          : Math.abs(swing.price - latestClose);
+
+      return [{
+        side,
+        importance: definition.importance,
+        level: swing.price,
+        zoneLower,
+        zoneUpper,
+        sourceSwing: swing,
+        confirmedTime: candles[confirmationIndex].time,
+        sweptTime: null,
+        status: "virgin" as const,
+        confirmationIndex,
+        prominence,
+        distanceFromPrice
+      }];
+    });
+  };
+
+  const overlaps = (a: LiquidityLevel, b: LiquidityLevel) =>
+    Math.max(a.zoneLower, b.zoneLower) <=
+    Math.min(a.zoneUpper, b.zoneUpper);
+
+  const toLevel = (candidate: Candidate): LiquidityLevel => ({
+    side: candidate.side,
+    importance: candidate.importance,
+    level: candidate.level,
+    zoneLower: candidate.zoneLower,
+    zoneUpper: candidate.zoneUpper,
+    sourceSwing: candidate.sourceSwing,
+    confirmedTime: candidate.confirmedTime,
+    sweptTime: null,
+    status: "virgin"
+  });
+
+  const selected: LiquidityLevel[] = [];
+
+  for (const side of ["buy", "sell"] as const) {
+    const majors = buildCandidates(definitions[0], side)
+      .sort(
+        (a, b) =>
+          a.sourceSwing.time - b.sourceSwing.time ||
+          b.prominence - a.prominence
+      );
+
+    // Preserve every distinct major virgin pool.
+    for (const candidate of majors) {
+      if (
+        selected.some(
+          (existing) =>
+            existing.side === side &&
+            (existing.sourceSwing.time === candidate.sourceSwing.time ||
+              overlaps(existing, candidate))
+        )
+      ) {
+        continue;
+      }
+
+      selected.push(toLevel(candidate));
+    }
+
+    const minors = buildCandidates(definitions[1], side)
+      .sort(
+        (a, b) =>
+          a.sourceSwing.time - b.sourceSwing.time ||
+          b.prominence - a.prominence
+      );
+
+    // Keep every distinct minor pool that is not already represented by
+    // a major pool or another overlapping minor pool.
+    for (const candidate of minors) {
+      if (
+        selected.some(
+          (existing) =>
+            existing.side === side &&
+            (existing.sourceSwing.time === candidate.sourceSwing.time ||
+              overlaps(existing, candidate))
+        )
+      ) {
+        continue;
+      }
+
+      selected.push(toLevel(candidate));
+    }
+  }
+
+  return selected.sort(
+    (a, b) =>
+      a.sourceSwing.time - b.sourceSwing.time ||
+      a.level - b.level
+  );
 }
 
 export function detectLiquiditySweeps(
@@ -570,6 +829,7 @@ export function buildImbalanceLiquiditySnapshot(
 ): ImbalanceLiquiditySnapshot {
   const recentFvgs = detectFairValueGaps(candles);
   const recentSweeps = detectLiquiditySweeps(candles);
+  const liquidityLevels = detectLiquidityLevels(candles);
 
   return {
     recentFvgs,
@@ -577,7 +837,8 @@ export function buildImbalanceLiquiditySnapshot(
       .filter((gap) => gap.status !== "filled")
       .slice(-6),
     recentSweeps,
-    latestSweep: recentSweeps[recentSweeps.length - 1] ?? null
+    latestSweep: recentSweeps[recentSweeps.length - 1] ?? null,
+    liquidityLevels
   };
 }
 
@@ -679,19 +940,16 @@ export function detectOrderBlocks(
         future.high >= block.lower &&
         future.low <= block.upper;
 
-      if (intersects && block.firstTouchTime === null) {
-        block.status = "touched";
+      if (intersects) {
         block.firstTouchTime = future.time;
-      }
 
-      const invalidated =
-        block.direction === "bullish"
-          ? future.close < block.lower
-          : future.close > block.upper;
+        const invalidated =
+          block.direction === "bullish"
+            ? future.close < block.lower
+            : future.close > block.upper;
 
-      if (invalidated) {
-        block.status = "invalidated";
-        block.invalidatedTime = future.time;
+        block.status = invalidated ? "invalidated" : "touched";
+        block.invalidatedTime = invalidated ? future.time : null;
         break;
       }
     }
@@ -713,7 +971,7 @@ export function buildOrderBlockSnapshot(
   return {
     recentBlocks,
     activeBlocks: recentBlocks
-      .filter((block) => block.status !== "invalidated")
+      .filter((block) => block.status === "active")
       .slice(-6)
   };
 }
@@ -747,11 +1005,22 @@ export function buildFibonacciSetup(
   candles: AnalysisCandle[]
 ): FibonacciSetup {
   const recentCandles =
-    candles.length > 1200 ? candles.slice(-1200) : candles;
+    candles.length > 1600 ? candles.slice(-1600) : candles;
 
-  const swings = detectSwings(recentCandles);
-  const recentSwings = swings.slice(-8);
   const atr14 = calculateAtr(recentCandles);
+  const majorSwings = detectSwings(recentCandles, {
+    leftBars: 6,
+    rightBars: 6,
+    atrMultiplier: 1
+  });
+  const fallbackSwings = detectSwings(recentCandles, {
+    leftBars: 3,
+    rightBars: 3,
+    atrMultiplier: 0.75
+  });
+  const swings =
+    majorSwings.length >= 2 ? majorSwings : fallbackSwings;
+  const recentSwings = swings.slice(-10);
 
   if (swings.length < 2) {
     return {
