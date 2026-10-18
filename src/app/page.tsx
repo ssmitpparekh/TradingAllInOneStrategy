@@ -476,7 +476,7 @@ export default function Home() {
   const [emaInput, setEmaInput] = useState("");
   const [emaEditorOpen, setEmaEditorOpen] = useState(false);
   const [showSessionBreaks, setShowSessionBreaks] = useState(false);
-  const [showOrderFlow, setShowOrderFlow] = useState(false);
+  const [showOrderFlow, setShowOrderFlow] = useState(true);
   const [showAdvancedAnalysis, setShowAdvancedAnalysis] = useState(false);
   const [viewReady, setViewReady] = useState(false);
   const [orderFlowBuckets, setOrderFlowBuckets] = useState<OrderFlowBucket[]>([]);
@@ -1397,7 +1397,7 @@ export default function Home() {
     setEmaInput("");
     setEmaEditorOpen(false);
     setShowSessionBreaks(false);
-    setShowOrderFlow(false);
+    setShowOrderFlow(true);
     setShowAdvancedAnalysis(false);
     setFitNonce((value) => value + 1);
     setMessage("Chart reset to the clean default view.");
@@ -2916,7 +2916,14 @@ export default function Home() {
                       }
                       disabled={feature.disabled}
                       key={feature.label}
-                      onClick={feature.toggle}
+                      onClick={(event) => {
+                        feature.toggle();
+                        (
+                          event.currentTarget.closest(
+                            "details"
+                          ) as HTMLDetailsElement | null
+                        )?.removeAttribute("open");
+                      }}
                     >
                       <span>{feature.label}</span>
                       <strong>{feature.active ? "ON" : "OFF"}</strong>
@@ -3070,16 +3077,32 @@ export default function Home() {
                           ))}
                         </div>
 
-                        <button
-                          type="button"
-                          className="featureOffButton"
-                          onClick={() => {
-                            setShowVwap(false);
-                            setVwapEditorOpen(false);
-                          }}
-                        >
-                          Turn VWAP off
-                        </button>
+                        <div className="featureEditorActions">
+                          <button
+                            type="button"
+                            className="featureOffButton"
+                            onClick={() => {
+                              setShowVwap(false);
+                              setVwapEditorOpen(false);
+                            }}
+                          >
+                            Turn VWAP off
+                          </button>
+                          <button
+                            type="button"
+                            className="featureDoneButton"
+                            onClick={(event) => {
+                              setVwapEditorOpen(false);
+                              (
+                                event.currentTarget.closest(
+                                  "details"
+                                ) as HTMLDetailsElement | null
+                              )?.removeAttribute("open");
+                            }}
+                          >
+                            Done
+                          </button>
+                        </div>
                       </div>
                     ) : null}
                   </div>
@@ -3175,15 +3198,33 @@ export default function Home() {
                           )}
                         </div>
 
-                        {emaPeriods.length ? (
+                        <div className="featureEditorActions">
+                          {emaPeriods.length ? (
+                            <button
+                              type="button"
+                              className="emaClearButton"
+                              onClick={() => setEmaPeriods([])}
+                            >
+                              Clear all
+                            </button>
+                          ) : (
+                            <span />
+                          )}
                           <button
                             type="button"
-                            className="emaClearButton"
-                            onClick={() => setEmaPeriods([])}
+                            className="featureDoneButton"
+                            onClick={(event) => {
+                              setEmaEditorOpen(false);
+                              (
+                                event.currentTarget.closest(
+                                  "details"
+                                ) as HTMLDetailsElement | null
+                              )?.removeAttribute("open");
+                            }}
                           >
-                            Clear all
+                            Done
                           </button>
-                        ) : null}
+                        </div>
                       </div>
                     ) : null}
                   </div>
