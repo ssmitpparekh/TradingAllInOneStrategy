@@ -10,6 +10,7 @@
     "collector:orderflow": "node scripts/order-flow-collector.mjs",
     "backfill:market": "node scripts/backfill-market-data.mjs",
     "backfill:oanda": "node scripts/backfill-oanda.mjs",
+    "backtest:smart-flow": "node scripts/backtest-smart-flow.mjs",
     "db:setup": "node scripts/apply-neon-schema.mjs",
     "db:smoke": "node scripts/neon-smoke.mjs"
   },
