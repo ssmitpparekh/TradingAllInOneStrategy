@@ -148,7 +148,117 @@ function sessionKey(timestamp: number, market: string) {
 }
 
 function isIntradayResolution(resolution: string) {
-  return !["1D", "1W", "1M"].includes(resolution);
+  return !["1D", "1W", "1M", "D", "W", "M"].includes(resolution);
+}
+
+function resolutionSeconds(resolution: string) {
+  const numeric = Number(resolution);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return Math.round(numeric * 60);
+  }
+
+  const map: Record<string, number> = {
+    "1H": 60 * 60,
+    "2H": 2 * 60 * 60,
+    "3H": 3 * 60 * 60,
+    "4H": 4 * 60 * 60,
+    "1D": 24 * 60 * 60,
+    D: 24 * 60 * 60,
+    "1W": 7 * 24 * 60 * 60,
+    W: 7 * 24 * 60 * 60,
+    "1M": 30 * 24 * 60 * 60,
+    M: 30 * 24 * 60 * 60
+  };
+
+  return map[resolution] ?? 60;
+}
+
+function indianMarketMinute(timestamp: number) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(new Date(timestamp * 1000));
+
+  const weekday =
+    parts.find((part) => part.type === "weekday")?.value ?? "";
+  const hour = Number(
+    parts.find((part) => part.type === "hour")?.value ?? 0
+  );
+  const minute = Number(
+    parts.find((part) => part.type === "minute")?.value ?? 0
+  );
+
+  return {
+    weekday,
+    minuteOfDay: hour * 60 + minute
+  };
+}
+
+function futureAxisTimes(
+  lastTime: number,
+  market: string,
+  resolution: string,
+  count = 80
+) {
+  const step = resolutionSeconds(resolution);
+  const output: number[] = [];
+
+  if (!isIntradayResolution(resolution)) {
+    for (let index = 1; index <= count; index += 1) {
+      output.push(lastTime + step * index);
+    }
+    return output;
+  }
+
+  let candidate = lastTime;
+
+  while (output.length < count) {
+    candidate += step;
+
+    if (market === "KRAKEN") {
+      output.push(candidate);
+      continue;
+    }
+
+    const local = indianMarketMinute(candidate);
+    const weekdayOkay =
+      local.weekday !== "Sat" && local.weekday !== "Sun";
+    const sessionOkay =
+      local.minuteOfDay >= 9 * 60 + 15 &&
+      local.minuteOfDay <= 15 * 60 + 30;
+
+    if (weekdayOkay && sessionOkay) {
+      output.push(candidate);
+    }
+  }
+
+  return output;
+}
+
+function formatAxisTick(
+  timestamp: number,
+  market: string,
+  resolution: string
+) {
+  const timeZone = market === "KRAKEN" ? "UTC" : "Asia/Kolkata";
+
+  if (isIntradayResolution(resolution)) {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }).format(new Date(timestamp * 1000));
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    day: "2-digit",
+    month: "short"
+  }).format(new Date(timestamp * 1000));
 }
 
 function toEpoch(time: Time): number | null {
@@ -210,6 +320,8 @@ export default function MarketChart({
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const vwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const futureAxisSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const overlayRafRef = useRef<number | null>(null);
   const vwapBandSeriesRefs = useRef<
     Map<string, ISeriesApi<"Line">>
   >(new Map());
@@ -444,8 +556,8 @@ export default function MarketChart({
         }
       },
       grid: {
-        vertLines: { color: isLight ? "#e5e7eb" : "#15202e" },
-        horzLines: { color: isLight ? "#e5e7eb" : "#15202e" }
+        vertLines: { color: "transparent" },
+        horzLines: { color: "transparent" }
       },
       rightPriceScale: {
         borderColor: isLight ? "#cbd5e1" : "#263143",
@@ -465,13 +577,7 @@ export default function MarketChart({
         shiftVisibleRangeOnNewBar: true,
         tickMarkFormatter: (time: Time) => {
           const epoch = toEpoch(time);
-          if (!epoch) return "";
-          const date = new Date(epoch * 1000);
-          return new Intl.DateTimeFormat("en-IN", {
-            timeZone: "Asia/Kolkata",
-            day: "2-digit",
-            month: "short"
-          }).format(date);
+          return epoch ? formatAxisTick(epoch, market, resolution) : "";
         }
       },
       crosshair: {
@@ -522,9 +628,19 @@ export default function MarketChart({
       title: "VWAP"
     });
 
+    const futureAxisSeries = chart.addSeries(LineSeries, {
+      lineVisible: false,
+      pointMarkersVisible: false,
+      crosshairMarkerVisible: false,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      priceScaleId: "future-axis"
+    });
+
     chartRef.current = chart;
     seriesRef.current = series;
     vwapSeriesRef.current = vwapSeries;
+    futureAxisSeriesRef.current = futureAxisSeries;
 
     chart.subscribeCrosshairMove((param) => {
       const item = param.seriesData.get(series);
@@ -548,14 +664,35 @@ export default function MarketChart({
       });
     });
 
+    const scheduleOverlayRedraw = () => {
+      if (overlayRafRef.current !== null) return;
+      overlayRafRef.current = window.requestAnimationFrame(() => {
+        overlayRafRef.current = null;
+        setDrawingRevision((value) => value + 1);
+      });
+    };
+
     const observer = new ResizeObserver(() => {
       chart.applyOptions({
         width: host.clientWidth,
         height: chartHeightForHost(host)
       });
-      setDrawingRevision((value) => value + 1);
+      scheduleOverlayRedraw();
     });
     observer.observe(host);
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(scheduleOverlayRedraw);
+    chart.timeScale().subscribeSizeChange(scheduleOverlayRedraw);
+    host.addEventListener("pointermove", scheduleOverlayRedraw, {
+      passive: true
+    });
+    host.addEventListener("pointerup", scheduleOverlayRedraw, {
+      passive: true
+    });
+    host.addEventListener("touchmove", scheduleOverlayRedraw, {
+      passive: true
+    });
+    window.addEventListener("resize", scheduleOverlayRedraw);
 
     const onVerticalWheel = (event: WheelEvent) => {
       const priceScale = chart.priceScale("right");
@@ -589,7 +726,7 @@ export default function MarketChart({
         from: anchor - (1 - yRatio) * nextSpan,
         to: anchor + yRatio * nextSpan
       });
-      setDrawingRevision((value) => value + 1);
+      scheduleOverlayRedraw();
     };
 
     host.addEventListener("wheel", onVerticalWheel, {
@@ -599,11 +736,22 @@ export default function MarketChart({
 
     return () => {
       host.removeEventListener("wheel", onVerticalWheel, true);
+      host.removeEventListener("pointermove", scheduleOverlayRedraw);
+      host.removeEventListener("pointerup", scheduleOverlayRedraw);
+      host.removeEventListener("touchmove", scheduleOverlayRedraw);
+      window.removeEventListener("resize", scheduleOverlayRedraw);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(scheduleOverlayRedraw);
+      chart.timeScale().unsubscribeSizeChange(scheduleOverlayRedraw);
+      if (overlayRafRef.current !== null) {
+        window.cancelAnimationFrame(overlayRafRef.current);
+        overlayRafRef.current = null;
+      }
       observer.disconnect();
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
       vwapSeriesRef.current = null;
+      futureAxisSeriesRef.current = null;
       vwapBandSeriesRefs.current.clear();
       emaSeriesRefs.current.clear();
     };
@@ -625,8 +773,8 @@ export default function MarketChart({
         attributionLogo: true
       },
       grid: {
-        vertLines: { color: isLight ? "#e5e7eb" : "#15202e" },
-        horzLines: { color: isLight ? "#e5e7eb" : "#15202e" }
+        vertLines: { color: "transparent" },
+        horzLines: { color: "transparent" }
       },
       rightPriceScale: {
         borderColor: isLight ? "#cbd5e1" : "#263143"
@@ -649,6 +797,42 @@ export default function MarketChart({
       }
     });
   }, [theme]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    const timeZone = market === "KRAKEN" ? "UTC" : "Asia/Kolkata";
+
+    chart.applyOptions({
+      localization: {
+        locale: "en-IN",
+        timeFormatter: (time: Time) => {
+          const epoch = toEpoch(time);
+          if (!epoch) return "";
+          return new Intl.DateTimeFormat("en-GB", {
+            timeZone,
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false
+          }).format(new Date(epoch * 1000));
+        }
+      }
+    });
+
+    chart.timeScale().applyOptions({
+      timeVisible: true,
+      secondsVisible: false,
+      ignoreWhitespaceIndices: false,
+      tickMarkFormatter: (time: Time) => {
+        const epoch = toEpoch(time);
+        return epoch ? formatAxisTick(epoch, market, resolution) : "";
+      }
+    });
+  }, [market, resolution]);
 
   useEffect(() => {
     if (!seriesRef.current) return;
@@ -695,6 +879,25 @@ export default function MarketChart({
       to: lastTime as Time
     });
   }, [candles, rangeKey]);
+
+  useEffect(() => {
+    const futureSeries = futureAxisSeriesRef.current;
+    if (!futureSeries) return;
+
+    const lastTime =
+      liveCandle?.time ?? candles[candles.length - 1]?.time ?? null;
+
+    if (lastTime === null) {
+      futureSeries.setData([]);
+      return;
+    }
+
+    futureSeries.setData(
+      futureAxisTimes(lastTime, market, resolution).map((time) => ({
+        time: time as Time
+      }))
+    );
+  }, [candles, liveCandle, market, resolution]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -793,21 +996,7 @@ export default function MarketChart({
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateMarkers);
       window.removeEventListener("resize", updateMarkers);
     };
-  }, [tradeMarkers, candles, liveCandle]);
-
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart) return;
-
-    const redraw = () => {
-      setDrawingRevision((value) => value + 1);
-    };
-
-    chart.timeScale().subscribeVisibleLogicalRangeChange(redraw);
-    return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(redraw);
-    };
-  }, []);
+  }, [tradeMarkers, candles, liveCandle, drawingRevision]);
 
   useEffect(() => {
     if (!liveCandle || !seriesRef.current) return;
