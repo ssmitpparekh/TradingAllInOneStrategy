@@ -529,6 +529,8 @@ export default function Home() {
   const [connected, setConnected] = useState<boolean | null>(null);
   const [oandaConnected, setOandaConnected] = useState(false);
   const [oandaStatusLabel, setOandaStatusLabel] = useState("OANDA CHECKING");
+  const [krakenConnected, setKrakenConnected] = useState(false);
+  const [krakenStatusLabel, setKrakenStatusLabel] = useState("KRAKEN CHECKING");
   const [selected, setSelected] = useState<Instrument>(DEFAULT_INSTRUMENT);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [candles, setCandles] = useState<ChartCandle[]>([]);
@@ -1399,8 +1401,8 @@ export default function Home() {
       setConnected(isConnected);
       setMessage(
         isConnected
-          ? "FYERS connected. Market-data access is ready."
-          : "FYERS is not connected yet."
+          ? "FYERS connected. Market-data access is verified."
+          : data.reason || "FYERS is not connected yet."
       );
     } catch {
       setConnected(false);
@@ -1426,6 +1428,27 @@ export default function Home() {
     } catch {
       setOandaConnected(false);
       setOandaStatusLabel("OANDA STATUS ERROR");
+    }
+  }
+
+  async function refreshKrakenStatus() {
+    try {
+      const response = await fetch("/api/kraken/status", {
+        cache: "no-store"
+      });
+      const data = await response.json();
+      const isConnected = Boolean(data.connected);
+      setKrakenConnected(isConnected);
+      setKrakenStatusLabel(
+        isConnected
+          ? data.status === "online"
+            ? "KRAKEN READY"
+            : `KRAKEN ${String(data.status || "READY").toUpperCase()}`
+          : "KRAKEN OFFLINE"
+      );
+    } catch {
+      setKrakenConnected(false);
+      setKrakenStatusLabel("KRAKEN STATUS ERROR");
     }
   }
 
@@ -1513,6 +1536,16 @@ export default function Home() {
       if (requestId === historyRequestId.current) {
         setHistoryError(detail);
         setMessage(detail);
+
+        if (
+          market !== "KRAKEN" &&
+          market !== "OANDA" &&
+          /authenticate|access token|not connected|expired|invalid token/i.test(
+            detail
+          )
+        ) {
+          setConnected(false);
+        }
       }
     } finally {
       if (requestId === historyRequestId.current && !signal?.aborted) {
@@ -2172,12 +2205,21 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    void refreshStatus();
-    void refreshOandaStatus();
+    const refreshProviders = () => {
+      void refreshStatus();
+      void refreshOandaStatus();
+      void refreshKrakenStatus();
+    };
+
+    refreshProviders();
+    const providerTimer = window.setInterval(refreshProviders, 60_000);
 
     const onFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener("fullscreenchange", onFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+    return () => {
+      window.clearInterval(providerTimer);
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -3014,6 +3056,16 @@ export default function Home() {
             >
               <span className="dot" />
               {oandaStatusLabel}
+            </div>
+            <div
+              className={
+                krakenConnected
+                  ? "connectionPill online"
+                  : "connectionPill"
+              }
+            >
+              <span className="dot" />
+              {krakenStatusLabel}
             </div>
             <div
               className={
