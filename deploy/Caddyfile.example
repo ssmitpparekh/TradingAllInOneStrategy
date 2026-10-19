@@ -1,0 +1,10 @@
+# Replace this with the hostname you point at the server.
+your-hostname.example.com {
+  encode zstd gzip
+  reverse_proxy 127.0.0.1:8080
+
+  header {
+    X-Content-Type-Options nosniff
+    Referrer-Policy strict-origin-when-cross-origin
+  }
+}
