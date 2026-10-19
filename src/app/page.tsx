@@ -280,6 +280,17 @@ const LIVE_GLOBAL_SHORTCUTS: Instrument[] = [
     expiry: null,
     strike: null,
     optionType: null
+  },
+  {
+    symbol: "XAU_USD",
+    name: "Gold / USD",
+    market: "OANDA",
+    segment: "CFD",
+    type: "COMMODITY",
+    underlying: "XAU",
+    expiry: null,
+    strike: null,
+    optionType: null
   }
 ];
 
@@ -445,6 +456,7 @@ function mergeLiveCandle(
 export default function Home() {
   const [connected, setConnected] = useState<boolean | null>(null);
   const [oandaConnected, setOandaConnected] = useState(false);
+  const [oandaStatusLabel, setOandaStatusLabel] = useState("OANDA CHECKING");
   const [selected, setSelected] = useState<Instrument>(DEFAULT_INSTRUMENT);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [candles, setCandles] = useState<ChartCandle[]>([]);
@@ -1330,9 +1342,18 @@ export default function Home() {
         cache: "no-store"
       });
       const data = await response.json();
-      setOandaConnected(Boolean(data.connected));
+      const isConnected = Boolean(data.connected);
+      setOandaConnected(isConnected);
+      setOandaStatusLabel(
+        isConnected
+          ? "OANDA CONNECTED"
+          : data.configured === false
+            ? "OANDA NOT CONFIGURED"
+            : "OANDA AUTH ERROR"
+      );
     } catch {
       setOandaConnected(false);
+      setOandaStatusLabel("OANDA STATUS ERROR");
     }
   }
 
@@ -2856,7 +2877,7 @@ export default function Home() {
               }
             >
               <span className="dot" />
-              {oandaConnected ? "OANDA CONNECTED" : "OANDA OFFLINE"}
+              {oandaStatusLabel}
             </div>
             <div
               className={
@@ -2880,7 +2901,7 @@ export default function Home() {
                     : "LIVE SOCKET"
                   : selectedIsKraken
                     ? "KRAKEN WAITING"
-                    : "SOCKET WAITING"}
+                    : "FYERS SOCKET WAITING"}
             </div>
           </div>
         </div>
@@ -2939,15 +2960,23 @@ export default function Home() {
               <button
                 key={instrument.symbol}
                 className={
-                  selected.market === "KRAKEN" &&
+                  selected.market === instrument.market &&
                   selected.symbol === instrument.symbol
                     ? "liveShortcut active"
                     : "liveShortcut"
                 }
                 onClick={() => void selectInstrument(instrument)}
               >
-                <span className="liveDot" />
-                {instrument.symbol}
+                <span
+                  className={
+                    instrument.market === "OANDA" && !oandaConnected
+                      ? "liveDot offline"
+                      : "liveDot"
+                  }
+                />
+                {instrument.market === "OANDA" && instrument.symbol === "XAU_USD"
+                  ? "GOLD"
+                  : instrument.symbol}
               </button>
             ))}
           </div>
