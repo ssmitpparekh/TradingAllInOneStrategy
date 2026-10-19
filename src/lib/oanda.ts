@@ -27,6 +27,14 @@ export function oandaBaseUrl() {
     : "https://api-fxtrade.oanda.com";
 }
 
+export function oandaStreamBaseUrl() {
+  const configured = env("OANDA_STREAM_BASE_URL");
+  if (configured) return configured.replace(/\/$/, "");
+  return env("OANDA_ENVIRONMENT").toLowerCase() === "practice"
+    ? "https://stream-fxpractice.oanda.com"
+    : "https://stream-fxtrade.oanda.com";
+}
+
 function oandaToken() {
   const token = env("OANDA_API_TOKEN");
   if (!token) {
@@ -121,6 +129,55 @@ export async function getOandaInstruments(): Promise<OandaInstrument[]> {
     .filter((item: OandaInstrument | null): item is OandaInstrument =>
       Boolean(item)
     );
+}
+
+export async function openOandaPricingStream(
+  symbol: string,
+  signal?: AbortSignal
+) {
+  const accountId = await getOandaAccountId();
+  const query = new URLSearchParams({
+    instruments: symbol,
+    snapshot: "true"
+  });
+
+  const response = await fetch(
+    `${oandaStreamBaseUrl()}/v3/accounts/${encodeURIComponent(accountId)}/pricing/stream?${query.toString()}`,
+    {
+      headers: {
+        Accept: "application/octet-stream",
+        "Accept-Datetime-Format": "UNIX",
+        Authorization: `Bearer ${oandaToken()}`
+      },
+      cache: "no-store",
+      signal
+    }
+  );
+
+  if (!response.ok) {
+    const raw = await response.text().catch(() => "");
+    let detail = raw;
+
+    try {
+      const parsed = JSON.parse(raw);
+      detail =
+        parsed?.errorMessage ||
+        parsed?.errorCode ||
+        raw;
+    } catch {
+      // Keep raw upstream detail when it is not JSON.
+    }
+
+    throw new Error(
+      detail || `OANDA streaming HTTP ${response.status}`
+    );
+  }
+
+  if (!response.body) {
+    throw new Error("OANDA pricing stream returned no response body.");
+  }
+
+  return response;
 }
 
 export async function getOandaQuote(symbol: string) {
