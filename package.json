@@ -12,7 +12,8 @@
     "backfill:oanda": "node scripts/backfill-oanda.mjs",
     "backtest:smart-flow": "node scripts/backtest-smart-flow.mjs",
     "db:setup": "node scripts/apply-neon-schema.mjs",
-    "db:smoke": "node scripts/neon-smoke.mjs"
+    "db:smoke": "node scripts/neon-smoke.mjs",
+    "sync:history": "node scripts/continuous-history-sync.mjs"
   },
   "dependencies": {
     "@neon/config": "^1.9.2",
