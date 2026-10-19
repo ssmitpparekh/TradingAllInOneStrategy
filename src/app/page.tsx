@@ -2889,6 +2889,7 @@ export default function Home() {
                     ? "connectionPill online"
                     : "connectionPill"
               }
+              title={streamMessage}
             >
               <span className="dot" />
               {selectedIsOanda
@@ -2954,7 +2955,7 @@ export default function Home() {
         </div>
 
         <div className="liveNowRow">
-          <span className="toolbarLabel">LIVE NOW · 24/7 GLOBAL TEST</span>
+          <span className="toolbarLabel">LIVE NOW · GLOBAL MARKETS</span>
           <div className="filterRow">
             {LIVE_GLOBAL_SHORTCUTS.map((instrument) => (
               <button
