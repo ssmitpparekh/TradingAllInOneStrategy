@@ -453,6 +453,78 @@ function mergeLiveCandle(
   return base;
 }
 
+function liveBucketStart(time: number, resolution: Resolution) {
+  if (/^\d+$/.test(resolution)) {
+    const seconds = Number(resolution) * 60;
+    return Math.floor(time / seconds) * seconds;
+  }
+
+  if (resolution === "1D") {
+    const date = new Date(time * 1000);
+    return Math.floor(
+      Date.UTC(
+        date.getUTCFullYear(),
+        date.getUTCMonth(),
+        date.getUTCDate()
+      ) / 1000
+    );
+  }
+
+  if (resolution === "1W") {
+    const date = new Date(time * 1000);
+    const day = (date.getUTCDay() + 6) % 7;
+    return Math.floor(
+      Date.UTC(
+        date.getUTCFullYear(),
+        date.getUTCMonth(),
+        date.getUTCDate() - day
+      ) / 1000
+    );
+  }
+
+  const date = new Date(time * 1000);
+  return Math.floor(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1) / 1000
+  );
+}
+
+function nextOandaLiveCandle(
+  current: ChartCandle | null,
+  historical: ChartCandle[],
+  time: number,
+  price: number,
+  resolution: Resolution
+): ChartCandle {
+  const bucket = liveBucketStart(time, resolution);
+  const lastHistorical = historical[historical.length - 1] ?? null;
+
+  const seed =
+    current?.time === bucket
+      ? current
+      : lastHistorical?.time === bucket
+        ? lastHistorical
+        : null;
+
+  if (!seed) {
+    return {
+      time: bucket,
+      open: price,
+      high: price,
+      low: price,
+      close: price,
+      volume: 0
+    };
+  }
+
+  return {
+    ...seed,
+    high: Math.max(seed.high, price),
+    low: Math.min(seed.low, price),
+    close: price,
+    volume: seed.volume ?? 0
+  };
+}
+
 export default function Home() {
   const [connected, setConnected] = useState<boolean | null>(null);
   const [oandaConnected, setOandaConnected] = useState(false);
@@ -1472,6 +1544,13 @@ export default function Home() {
     ) {
       setResolution("15");
     }
+
+    if (
+      instrument.market === "OANDA" &&
+      !OANDA_RESOLUTIONS.has(resolution)
+    ) {
+      setResolution("15");
+    }
   }
 
   function addEmaPeriods(raw = emaInput) {
@@ -2275,13 +2354,9 @@ export default function Home() {
     orderFlowNeedsPartialRef.current = true;
     orderFlowPartialBucketRef.current = null;
 
-    if (selectedIsOanda) {
+    if (selectedIsOanda && !oandaConnected) {
       setStreamConnected(false);
-      setStreamMessage(
-        oandaConnected
-          ? `OANDA pricing: ${selected.symbol}`
-          : "OANDA is not connected."
-      );
+      setStreamMessage("OANDA is not connected.");
       return;
     }
 
@@ -2299,7 +2374,9 @@ export default function Home() {
 
     const endpoint = selectedIsKraken
       ? `/api/kraken/stream?symbol=${encodeURIComponent(selected.symbol)}&resolution=${encodeURIComponent(resolution)}`
-      : `/api/fyers/stream?symbol=${encodeURIComponent(selected.symbol)}`;
+      : selectedIsOanda
+        ? `/api/oanda/stream?symbol=${encodeURIComponent(selected.symbol)}`
+        : `/api/fyers/stream?symbol=${encodeURIComponent(selected.symbol)}`;
 
     const source = new EventSource(endpoint);
 
@@ -2307,13 +2384,17 @@ export default function Home() {
       try {
         const payload = JSON.parse(event.data);
         setStreamConnected(Boolean(payload.connected));
+        const provider = selectedIsKraken
+          ? "Kraken"
+          : selectedIsOanda
+            ? "OANDA"
+            : "FYERS";
         setStreamMessage(
           payload.connected
             ? `Live: ${selected.symbol}`
             : payload.opening
-              ? `Opening ${selectedIsKraken ? "Kraken" : "FYERS"} stream…`
-              : payload.error ||
-                `${selectedIsKraken ? "Kraken" : "FYERS"} stream disconnected`
+              ? `Opening ${provider} stream…`
+              : payload.error || `${provider} stream disconnected`
         );
       } catch {
         setStreamConnected(false);
@@ -2362,6 +2443,53 @@ export default function Home() {
         }
       } catch {
         // Keep last good quote.
+      }
+    };
+
+    const onOandaPrice = (event: MessageEvent<string>) => {
+      try {
+        const tick = JSON.parse(event.data) as {
+          symbol?: string;
+          time?: number;
+          bid?: number;
+          ask?: number;
+          mid?: number;
+        };
+
+        if (tick.symbol && tick.symbol !== selected.symbol) return;
+
+        const price = Number(tick.mid ?? 0);
+        const time = Number(tick.time ?? Math.floor(Date.now() / 1000));
+        if (!(price > 0) || !Number.isFinite(time)) return;
+
+        setQuote((current) => ({
+          symbol: selected.symbol,
+          lp: price,
+          ch: current?.ch ?? 0,
+          chp: current?.chp ?? 0,
+          open: current?.open || price,
+          high: Math.max(current?.high || price, price),
+          low:
+            current?.low && current.low > 0
+              ? Math.min(current.low, price)
+              : price,
+          previousClose: current?.previousClose || price,
+          volume: current?.volume ?? 0,
+          bid: Number(tick.bid ?? current?.bid ?? 0),
+          ask: Number(tick.ask ?? current?.ask ?? 0)
+        }));
+
+        setLiveCandle((current) =>
+          nextOandaLiveCandle(
+            current,
+            candles,
+            time,
+            price,
+            resolution
+          )
+        );
+      } catch {
+        // Keep the last good OANDA price.
       }
     };
 
@@ -2542,6 +2670,8 @@ export default function Home() {
       source.addEventListener("ticker", onKrakenTicker as EventListener);
       source.addEventListener("candle", onKrakenCandle as EventListener);
       source.addEventListener("trade", onKrakenTrade as EventListener);
+    } else if (selectedIsOanda) {
+      source.addEventListener("price", onOandaPrice as EventListener);
     } else {
       source.addEventListener("tick", onFyersTick as EventListener);
     }
@@ -2552,7 +2682,13 @@ export default function Home() {
       }
       setStreamConnected(false);
       setStreamMessage(
-        `${selectedIsKraken ? "Kraken" : "FYERS"} live stream reconnecting…`
+        `${
+          selectedIsKraken
+            ? "Kraken"
+            : selectedIsOanda
+              ? "OANDA"
+              : "FYERS"
+        } live stream reconnecting…`
       );
     };
 
@@ -2881,27 +3017,23 @@ export default function Home() {
             </div>
             <div
               className={
-                selectedIsOanda
-                  ? oandaConnected
-                    ? "connectionPill online"
-                    : "connectionPill"
-                  : streamConnected
-                    ? "connectionPill online"
-                    : "connectionPill"
+                streamConnected
+                  ? "connectionPill online"
+                  : "connectionPill"
               }
               title={streamMessage}
             >
               <span className="dot" />
-              {selectedIsOanda
-                ? oandaConnected
-                  ? "OANDA PRICING"
-                  : "OANDA WAITING"
-                : streamConnected
-                  ? selectedIsKraken
-                    ? "KRAKEN LIVE"
-                    : "LIVE SOCKET"
-                  : selectedIsKraken
-                    ? "KRAKEN WAITING"
+              {streamConnected
+                ? selectedIsKraken
+                  ? "KRAKEN LIVE"
+                  : selectedIsOanda
+                    ? "OANDA LIVE"
+                    : "FYERS SOCKET LIVE"
+                : selectedIsKraken
+                  ? "KRAKEN WAITING"
+                  : selectedIsOanda
+                    ? "OANDA STREAM WAITING"
                     : "FYERS SOCKET WAITING"}
             </div>
           </div>
