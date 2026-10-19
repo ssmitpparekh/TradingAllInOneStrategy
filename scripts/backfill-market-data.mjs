@@ -4,14 +4,14 @@ const baseUrl =
 
 const delayMs = Math.max(
   100,
-  Number(process.env.MARKET_BACKFILL_DELAY_MS ?? 650)
+  Number(process.env.MARKET_BACKFILL_DELAY_MS ?? 1600)
 );
 
 const sleep = (ms) =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 const profiles = [
-  { resolution: "1D", range: "1Y" },
+  { resolution: "1D", range: "MAX" },
   { resolution: "240", range: "6M" },
   { resolution: "60", range: "3M" },
   { resolution: "15", range: "1M" },
