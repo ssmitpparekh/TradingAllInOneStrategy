@@ -706,6 +706,11 @@ h2 {
   box-shadow: 0 0 10px rgba(116, 227, 155, 0.55);
 }
 
+.liveDot.offline {
+  background: #7b8798;
+  box-shadow: none;
+}
+
 .timeframe:disabled {
   cursor: not-allowed;
   opacity: 0.32;
