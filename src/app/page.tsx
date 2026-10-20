@@ -2434,42 +2434,60 @@ export default function Home() {
       Math.floor(Date.now() / 60_000) * 60;
     const to = currentMinute - 1;
 
-    void fetch(
-      "/api/order-flow/history?symbol=" +
-        encodeURIComponent(selected.symbol) +
-        "&market=KRAKEN&resolution=" +
-        encodeURIComponent(resolution) +
-        "&from=" +
-        encodeURIComponent(String(firstTime)) +
-        "&to=" +
-        encodeURIComponent(String(to)),
-      { cache: "no-store" }
-    )
-      .then((response) => response.json())
-      .then((data) => {
-        if (
-          cancelled ||
-          !data?.ok ||
-          !data.available ||
-          !Array.isArray(data.buckets)
-        ) {
-          return;
+    let recoveryTimer: number | null = null;
+
+    const loadOrderFlowPass = async (pass = 0) => {
+      try {
+        const response = await fetch(
+          "/api/order-flow/history?symbol=" +
+            encodeURIComponent(selected.symbol) +
+            "&market=KRAKEN&resolution=" +
+            encodeURIComponent(resolution) +
+            "&from=" +
+            encodeURIComponent(String(firstTime)) +
+            "&to=" +
+            encodeURIComponent(String(to)),
+          { cache: "no-store" }
+        );
+        const data = await response.json();
+
+        if (cancelled || !data?.ok) return;
+
+        if (data.available && Array.isArray(data.buckets)) {
+          setOrderFlowBuckets((current) =>
+            mergeOrderFlowHistory(
+              localBuckets,
+              data.buckets as OrderFlowBucket[],
+              current
+            )
+          );
         }
 
-        setOrderFlowBuckets((current) =>
-          mergeOrderFlowHistory(
-            localBuckets,
-            data.buckets as OrderFlowBucket[],
-            current
-          )
-        );
-      })
-      .catch(() => {
-        // Local exact history remains available.
-      });
+        // Each server pass intentionally limits Kraken recovery work so the
+        // chart becomes usable quickly. Continue older missing chunks in the
+        // background instead of blocking first paint after a long shutdown.
+        if (
+          !cancelled &&
+          Number(data?.recovery?.written ?? 0) > 0 &&
+          pass < 5
+        ) {
+          recoveryTimer = window.setTimeout(() => {
+            void loadOrderFlowPass(pass + 1);
+          }, 250);
+        }
+      } catch {
+        // Normal provider volume remains visible while exact recovery is
+        // unavailable; exact buy/sell data is never fabricated.
+      }
+    };
+
+    void loadOrderFlowPass();
 
     return () => {
       cancelled = true;
+      if (recoveryTimer !== null) {
+        window.clearTimeout(recoveryTimer);
+      }
     };
   }, [
     viewReady,
