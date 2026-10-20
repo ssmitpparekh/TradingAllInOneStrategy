@@ -557,6 +557,25 @@ export default function MarketChart({
     return map;
   }, [orderFlowBuckets]);
 
+  const exactOrderFlowTimes = useMemo(() => {
+    const times = new Set<number>();
+
+    for (const bucket of orderFlowBuckets) {
+      const coverage =
+        bucket.coverage ?? (bucket.partial ? "partial" : "full");
+      const closed = bucket.closed ?? !bucket.partial;
+
+      if (
+        bucket.quality === "exact" &&
+        (coverage === "full" || !closed)
+      ) {
+        times.add(bucket.time);
+      }
+    }
+
+    return times;
+  }, [orderFlowBuckets]);
+
   const latest = useMemo(
     () => liveCandle ?? (candles.length ? candles[candles.length - 1] : null),
     [candles, liveCandle]
@@ -724,12 +743,21 @@ export default function MarketChart({
         return;
       }
 
+      const volumeItem = param.seriesData.get(volumeSeries);
+      const fallbackVolume =
+        volumeItem && "value" in volumeItem
+          ? Number(volumeItem.value)
+          : undefined;
+
       setHovered({
         time: epoch,
         open: Number(item.open),
         high: Number(item.high),
         low: Number(item.low),
-        close: Number(item.close)
+        close: Number(item.close),
+        ...(Number.isFinite(fallbackVolume)
+          ? { volume: fallbackVolume }
+          : {})
       });
     });
 
@@ -980,14 +1008,7 @@ export default function MarketChart({
     const volumeSeries = volumeSeriesRef.current;
     if (!volumeSeries) return;
 
-    const exactKrakenFlowVisible =
-      market === "KRAKEN" &&
-      showOrderFlow &&
-      orderFlowBuckets.length > 0;
-
-    volumeSeries.applyOptions({
-      visible: !exactKrakenFlowVisible
-    });
+    volumeSeries.applyOptions({ visible: true });
 
     const source =
       liveCandle &&
@@ -1003,7 +1024,11 @@ export default function MarketChart({
         .filter(
           (candle) =>
             Number.isFinite(Number(candle.volume)) &&
-            Number(candle.volume) >= 0
+            Number(candle.volume) >= 0 &&
+            !(
+              showOrderFlow &&
+              exactOrderFlowTimes.has(candle.time)
+            )
         )
         .map((candle) => ({
           time: candle.time as Time,
@@ -1017,9 +1042,8 @@ export default function MarketChart({
   }, [
     candles,
     liveCandle,
-    market,
     showOrderFlow,
-    orderFlowBuckets.length
+    exactOrderFlowTimes
   ]);
 
   useEffect(() => {
@@ -2201,6 +2225,18 @@ export default function MarketChart({
   });
 
   const readout = hovered ?? latest;
+  const readoutHasExactOrderFlow =
+    readout !== null &&
+    readout !== undefined &&
+    showOrderFlow &&
+    exactOrderFlowTimes.has(readout.time);
+  const readoutFallbackVolume =
+    readout !== null &&
+    readout !== undefined &&
+    !readoutHasExactOrderFlow &&
+    Number.isFinite(Number(readout.volume))
+      ? Number(readout.volume)
+      : null;
 
   return (
     <div
@@ -2218,6 +2254,21 @@ export default function MarketChart({
           <span>H <strong>{readout.high.toLocaleString("en-IN")}</strong></span>
           <span>L <strong>{readout.low.toLocaleString("en-IN")}</strong></span>
           <span>C <strong>{readout.close.toLocaleString("en-IN")}</strong></span>
+          {readoutFallbackVolume !== null ? (
+            <>
+              <span>
+                V{" "}
+                <strong>
+                  {readoutFallbackVolume.toLocaleString("en-IN", {
+                    maximumFractionDigits: 6
+                  })}
+                </strong>
+              </span>
+              <span>
+                Couldn&apos;t fetch exact buy/sell volume data for this candle.
+              </span>
+            </>
+          ) : null}
         </div>
       ) : null}
       <div className="chartToolRail" aria-label="Chart tools">
