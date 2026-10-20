@@ -3,6 +3,7 @@ import pg from "pg";
 import { getHistory } from "../src/lib/fyers";
 import { readFyersSession } from "../src/lib/fyers-session";
 import { getOandaCandles } from "../src/lib/oanda";
+import { readKrakenCompactCandles } from "../src/lib/server/kraken-compact";
 import {
   BACKTEST_INSTRUMENTS
 } from "../src/lib/strategy/catalog";
@@ -281,6 +282,16 @@ async function loadSeries(
       : cutoff - defaultTail
   );
 
+  let compactKraken: Candle[] = [];
+  if (provider === "KRAKEN") {
+    compactKraken = await readKrakenCompactCandles({
+      symbol,
+      resolution,
+      from: 0,
+      to: cutoff - 1
+    });
+  }
+
   let fresh: Candle[] = [];
   try {
     fresh = await fetchProviderTail({
@@ -296,7 +307,7 @@ async function loadSeries(
     );
   }
 
-  return mergeCandles(cached, fresh).filter(
+  return mergeCandles(cached, compactKraken, fresh).filter(
     (candle) => candle.time < cutoff
   );
 }
@@ -422,9 +433,12 @@ try {
     const first = firstValues.length ? Math.min(...firstValues) : null;
     const last = lastValues.length ? Math.max(...lastValues) : null;
 
+    const indiaFastConfirmation =
+      instrument.market === "NSE" || instrument.market === "BSE";
+
     if (
-      m1.length < 300 ||
-      m5.length < 200 ||
+      (indiaFastConfirmation &&
+        (m1.length < 300 || m5.length < 200)) ||
       m15.length < 200 ||
       h1.length < 100 ||
       h4.length < 60
@@ -460,23 +474,27 @@ try {
         evaluationTime - 31 * 86400,
         evaluationTime - 15 * 60
       );
-      const context5m = windowRows(
-        m5,
-        evaluationTime - 5 * 86400,
-        evaluationTime - 5 * 60
-      );
-      const context1m = windowRows(
-        m1,
-        evaluationTime - 5 * 86400,
-        evaluationTime - 60
-      );
+      const context5m = indiaFastConfirmation
+        ? windowRows(
+            m5,
+            evaluationTime - 5 * 86400,
+            evaluationTime - 5 * 60
+          )
+        : context15m;
+      const context1m = indiaFastConfirmation
+        ? windowRows(
+            m1,
+            evaluationTime - 5 * 86400,
+            evaluationTime - 60
+          )
+        : context15m;
 
       if (
         context4h.length < 30 ||
         context1h.length < 30 ||
         context15m.length < 30 ||
-        context5m.length < 30 ||
-        context1m.length < 30
+        (indiaFastConfirmation &&
+          (context5m.length < 30 || context1m.length < 30))
       ) {
         continue;
       }
@@ -495,6 +513,7 @@ try {
         context15m,
         context5m,
         context1m,
+        evaluationTime,
         derivatives: null
       });
 
