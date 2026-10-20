@@ -25,19 +25,6 @@ module.exports = {
       restart_delay: 3000,
       max_restarts: 50,
       time: true
-    },
-    {
-      name: "allinoneview-history-sync",
-      script: "npm",
-      args: "run sync:history",
-      cwd: __dirname,
-      env: {
-        NODE_ENV: "production"
-      },
-      autorestart: true,
-      restart_delay: 10000,
-      max_restarts: 50,
-      time: true
     }
   ]
 };
