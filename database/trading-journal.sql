@@ -69,3 +69,32 @@ create index if not exists platform_signal_journal_symbol_time_idx
 
 create index if not exists platform_signal_journal_status_idx
   on public.platform_signal_journal (status, signal_time desc);
+
+
+-- Live platform signals are intentionally separated from historical backtests.
+-- Only signals genuinely issued while the live engine is running belong here.
+alter table public.platform_signal_journal
+  add column if not exists origin text not null default 'LIVE';
+
+alter table public.platform_signal_journal
+  add column if not exists strategy_version text not null default 'development';
+
+alter table public.platform_signal_journal
+  add column if not exists locked_at timestamptz not null default now();
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'platform_signal_journal_origin_live_only'
+  ) then
+    alter table public.platform_signal_journal
+      add constraint platform_signal_journal_origin_live_only
+      check (origin = 'LIVE');
+  end if;
+end;
+$$;
+
+create index if not exists platform_signal_journal_strategy_time_idx
+  on public.platform_signal_journal (strategy_version, signal_time desc);
