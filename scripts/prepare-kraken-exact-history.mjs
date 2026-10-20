@@ -17,10 +17,6 @@ import { Readable } from "node:stream";
 import readline from "node:readline";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import pg from "pg";
-
-const { Pool } = pg;
-
 const LIVE_AT = "2026-10-20T00:52:25-08:00";
 const LIVE_EPOCH = Math.floor(Date.parse(LIVE_AT) / 1000);
 const RECOVERY_FROM = Math.floor(
@@ -67,13 +63,6 @@ function loadLocalEnv() {
       .replace(/^["']|["']$/g, "");
     if (!(key in process.env)) process.env[key] = value;
   }
-}
-
-function strictSslUrl(value) {
-  return value.replace(
-    /([?&])sslmode=require(?=&|$)/,
-    "$1sslmode=verify-full"
-  );
 }
 
 function normalizeName(value) {
@@ -447,7 +436,7 @@ async function writeCompactCandles(spec, state) {
   }
 }
 
-async function persistOrderFlow(pool, spec, state) {
+async function writeCompactOrderFlow(spec, state) {
   const rows = [];
   const firstMinute = minuteBucket(RECOVERY_FROM);
   const lastMinute = minuteBucket(LIVE_EPOCH);
@@ -458,127 +447,26 @@ async function persistOrderFlow(pool, spec, state) {
     minute += 60
   ) {
     const row = state.minutes.get(minute);
-    rows.push({
-      time: minute,
-      buyVolume: row?.buyVolume ?? 0,
-      sellVolume: row?.sellVolume ?? 0,
-      trades: row?.trades ?? 0,
-      buyTrades: row?.buyTrades ?? 0,
-      sellTrades: row?.sellTrades ?? 0
-    });
-  }
-
-  const chunkSize = 400;
-
-  for (let offset = 0; offset < rows.length; offset += chunkSize) {
-    if (offset === 0 || offset % 20000 === 0) {
-      const dbSize = await pool.query(
-        "select pg_database_size(current_database())::bigint as bytes"
-      );
-      const bytes = Number(dbSize.rows[0]?.bytes ?? 0);
-      const softLimit = Number(
-        process.env.NEON_STORAGE_SOFT_LIMIT_BYTES ??
-          900 * 1024 * 1024
-      );
-
-      if (bytes >= softLimit) {
-        throw new Error(
-          "Neon storage safety stop while compacting Kraken order flow: " +
-            bytes +
-            " >= " +
-            softLimit
-        );
-      }
-    }
-
-    const chunk = rows.slice(offset, offset + chunkSize);
-    const values = [];
-    const tuples = chunk.map((row, index) => {
-      const start = index * 11;
-      values.push(
-        "KRAKEN",
-        "KRAKEN",
-        spec.symbol,
-        row.time,
-        row.buyVolume,
-        row.sellVolume,
-        row.trades,
-        row.buyTrades,
-        row.sellTrades,
-        "exact",
-        "Kraken official archive/REST compact recovery"
-      );
-      return (
-        "($" +
-        (start + 1) +
-        ",$" +
-        (start + 2) +
-        ",$" +
-        (start + 3) +
-        ",$" +
-        (start + 4) +
-        ",$" +
-        (start + 5) +
-        ",$" +
-        (start + 6) +
-        ",$" +
-        (start + 7) +
-        ",$" +
-        (start + 8) +
-        ",$" +
-        (start + 9) +
-        ",$" +
-        (start + 10) +
-        ",$" +
-        (start + 11) +
-        ",now())"
-      );
-    });
-
-    await pool.query(
-      `insert into public.market_order_flow_1m (
-         provider, market, symbol, bucket_time,
-         buy_volume, sell_volume, trades, buy_trades, sell_trades,
-         quality, source, refreshed_at
-       )
-       values ${tuples.join(",")}
-       on conflict (provider, market, symbol, bucket_time)
-       do update set
-         buy_volume=excluded.buy_volume,
-         sell_volume=excluded.sell_volume,
-         trades=excluded.trades,
-         buy_trades=excluded.buy_trades,
-         sell_trades=excluded.sell_trades,
-         quality=excluded.quality,
-         source=excluded.source,
-         refreshed_at=now()`,
-      values
+    rows.push(
+      [
+        minute,
+        row?.buyVolume ?? 0,
+        row?.sellVolume ?? 0,
+        row?.trades ?? 0,
+        row?.buyTrades ?? 0,
+        row?.sellTrades ?? 0
+      ].join(",")
     );
-
-    if (offset % 20000 === 0) {
-      process.stdout.write(
-        spec.symbol +
-          ": compact order-flow " +
-          Math.min(offset + chunk.length, rows.length) +
-          "/" +
-          rows.length +
-          "\n"
-      );
-    }
   }
+
+  await writeFile(
+    path.join(COMPACT_ROOT, spec.key + "-orderflow-1m.csv"),
+    rows.join("\n") + "\n",
+    "utf8"
+  );
 }
 
 loadLocalEnv();
-
-const databaseUrl = strictSslUrl(
-  process.env.DATABASE_URL?.trim() ||
-    process.env.DATABASE_URL_UNPOOLED?.trim() ||
-    ""
-);
-
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is required.");
-}
 
 await mkdir(DATA_ROOT, { recursive: true });
 await mkdir(COMPACT_ROOT, { recursive: true });
@@ -595,31 +483,20 @@ for (const spec of SYMBOLS) {
   await recoverCurrentQuarter(spec, states.get(spec.symbol));
 }
 
-const pool = new Pool({
-  connectionString: databaseUrl,
-  max: 2,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000
-});
-
-try {
-  for (const spec of SYMBOLS) {
-    const state = states.get(spec.symbol);
-    await writeCompactCandles(spec, state);
-    await persistOrderFlow(pool, spec, state);
-    process.stdout.write(
-      spec.symbol +
-        ": compact history ready from " +
-        new Date(RECOVERY_FROM * 1000).toISOString() +
-        " through " +
-        new Date(LIVE_EPOCH * 1000).toISOString() +
-        ".\n"
-    );
-  }
-} finally {
-  await pool.end();
+for (const spec of SYMBOLS) {
+  const state = states.get(spec.symbol);
+  await writeCompactCandles(spec, state);
+  await writeCompactOrderFlow(spec, state);
+  process.stdout.write(
+    spec.symbol +
+      ": compact candles + exact order flow ready from " +
+      new Date(RECOVERY_FROM * 1000).toISOString() +
+      " through " +
+      new Date(LIVE_EPOCH * 1000).toISOString() +
+      ".\n"
+  );
 }
 
 process.stdout.write(
-  "\nKraken compact exact history is ready. Raw trades were not stored.\n"
+  "\nKraken compact exact history is ready locally. Raw trades were not stored and Neon bulk storage was not increased.\n"
 );
