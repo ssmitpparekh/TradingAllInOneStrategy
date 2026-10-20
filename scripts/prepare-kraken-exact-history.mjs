@@ -471,22 +471,24 @@ async function persistOrderFlow(pool, spec, state) {
   const chunkSize = 400;
 
   for (let offset = 0; offset < rows.length; offset += chunkSize) {
-    const dbSize = await pool.query(
-      "select pg_database_size(current_database())::bigint as bytes"
-    );
-    const bytes = Number(dbSize.rows[0]?.bytes ?? 0);
-    const softLimit = Number(
-      process.env.NEON_STORAGE_SOFT_LIMIT_BYTES ??
-        900 * 1024 * 1024
-    );
-
-    if (bytes >= softLimit) {
-      throw new Error(
-        "Neon storage safety stop while compacting Kraken order flow: " +
-          bytes +
-          " >= " +
-          softLimit
+    if (offset === 0 || offset % 20000 === 0) {
+      const dbSize = await pool.query(
+        "select pg_database_size(current_database())::bigint as bytes"
       );
+      const bytes = Number(dbSize.rows[0]?.bytes ?? 0);
+      const softLimit = Number(
+        process.env.NEON_STORAGE_SOFT_LIMIT_BYTES ??
+          900 * 1024 * 1024
+      );
+
+      if (bytes >= softLimit) {
+        throw new Error(
+          "Neon storage safety stop while compacting Kraken order flow: " +
+            bytes +
+            " >= " +
+            softLimit
+        );
+      }
     }
 
     const chunk = rows.slice(offset, offset + chunkSize);
