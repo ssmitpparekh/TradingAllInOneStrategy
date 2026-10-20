@@ -763,6 +763,33 @@ try {
       const first = firstValues.length ? Math.min(...firstValues) : null;
       const last = lastValues.length ? Math.max(...lastValues) : null;
 
+      const seriesStarts = [
+        m1[0]?.time,
+        m5[0]?.time,
+        m15[0]?.time,
+        h1[0]?.time,
+        h4[0]?.time
+      ].filter((value): value is number => Number.isFinite(value));
+      const seriesEnds = [
+        m1.at(-1)?.time,
+        m5.at(-1)?.time,
+        m15.at(-1)?.time,
+        h1.at(-1)?.time,
+        h4.at(-1)?.time
+      ].filter((value): value is number => Number.isFinite(value));
+      const commonEvidenceFrom = seriesStarts.length
+        ? Math.max(...seriesStarts)
+        : null;
+      const commonEvidenceTo = seriesEnds.length
+        ? Math.min(...seriesEnds)
+        : null;
+      const commonEvidenceDays =
+        commonEvidenceFrom !== null &&
+        commonEvidenceTo !== null &&
+        commonEvidenceTo >= commonEvidenceFrom
+          ? (commonEvidenceTo - commonEvidenceFrom) / 86400
+          : 0;
+
       process.stdout.write(
         "Data coverage: " +
           "1m=" + counts["1m"] +
@@ -770,8 +797,15 @@ try {
           ", 15m=" + counts["15m"] +
           ", 1h=" + counts["1h"] +
           ", 4h=" + counts["4h"] +
-          "\nFrom " + fmtEpoch(first) +
+          "\nOverall source span: " + fmtEpoch(first) +
           " to " + fmtEpoch(last) +
+          "\nCommon evidence span: " +
+          fmtEpoch(commonEvidenceFrom) +
+          " to " +
+          fmtEpoch(commonEvidenceTo) +
+          " (" +
+          commonEvidenceDays.toFixed(1) +
+          " days)" +
           "\nContinuity: " +
           "1m gaps=" + continuity["1m"].suspiciousGaps +
           ", 5m gaps=" + continuity["5m"].suspiciousGaps +
@@ -818,7 +852,10 @@ try {
           counts,
           continuity,
           from: first,
-          to: last
+          to: last,
+          commonEvidenceFrom,
+          commonEvidenceTo,
+          commonEvidenceDays
         };
         process.stdout.write("Skipped: insufficient multi-timeframe history.\n");
         continue;
@@ -838,6 +875,18 @@ try {
       for (const candle of m15) {
         const evaluationTime = candle.time + 15 * 60;
         if (evaluationTime >= cutoff) break;
+        if (
+          commonEvidenceFrom !== null &&
+          evaluationTime < commonEvidenceFrom
+        ) {
+          continue;
+        }
+        if (
+          commonEvidenceTo !== null &&
+          evaluationTime > commonEvidenceTo + 15 * 60
+        ) {
+          break;
+        }
   
         const context4h = windowRows(
           h4,
@@ -1072,6 +1121,13 @@ try {
         continuity,
         from: first,
         to: last,
+        commonEvidenceFrom,
+        commonEvidenceTo,
+        commonEvidenceDays,
+        evidenceScope:
+          commonEvidenceFrom !== first
+            ? "PARTIAL_COMMON_SPAN"
+            : "FULL_COMMON_SPAN",
         acceptedTrades: accepted.length
       };
   
