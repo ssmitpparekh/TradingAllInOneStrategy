@@ -22,11 +22,27 @@ async function cycle() {
     `[${new Date().toISOString()}] starting exact-history sync cycle\n`
   );
 
+  const guardBeforeMarket = await run("npm", ["run", "db:guard"]);
+  if (guardBeforeMarket !== 0) {
+    process.stderr.write(
+      `[${new Date().toISOString()}] history sync skipped by Neon storage safety guard.\n`
+    );
+    return;
+  }
+
   const marketCode = await run("npm", ["run", "backfill:market"]);
   if (marketCode !== 0) {
     process.stderr.write(
       `[${new Date().toISOString()}] FYERS/Kraken history sync finished with errors; continuing to OANDA.\n`
     );
+  }
+
+  const guardBeforeOanda = await run("npm", ["run", "db:guard"]);
+  if (guardBeforeOanda !== 0) {
+    process.stderr.write(
+      `[${new Date().toISOString()}] OANDA history sync skipped by Neon storage safety guard.\n`
+    );
+    return;
   }
 
   const oandaCode = await run("npm", ["run", "backfill:oanda"]);
