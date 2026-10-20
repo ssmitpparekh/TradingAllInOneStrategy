@@ -15,6 +15,7 @@
     "db:setup": "node scripts/apply-neon-schema.mjs",
     "db:smoke": "node scripts/neon-smoke.mjs",
     "db:storage": "node scripts/database-storage-report.mjs",
+    "db:optimize:candles": "node scripts/optimize-market-candle-storage.mjs",
     "sync:history": "node scripts/continuous-history-sync.mjs"
   },
   "dependencies": {
