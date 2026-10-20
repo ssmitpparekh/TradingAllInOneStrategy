@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPostgresPool } from "@/lib/server/postgres";
 import type { JournalTrade, JournalTarget } from "@/lib/analysis/trade-journal";
+import { PLATFORM_RELEASE } from "@/lib/strategy/release";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -192,6 +193,21 @@ async function upsertSignal(trade: JournalTrade) {
   // the same freshness window the live UI uses. Historical/offline replays can
   // update nothing here and therefore can never contaminate live performance.
   if (!existing.rowCount) {
+    const officialLiveEpoch = Math.floor(
+      new Date(PLATFORM_RELEASE.liveAt).getTime() / 1000
+    );
+
+    if (trade.signalTime < officialLiveEpoch) {
+      return {
+        saved: null,
+        rejected: {
+          id: trade.id,
+          reason:
+            "Not inserted: signal predates the official ALLINONEVIEW live boundary."
+        }
+      };
+    }
+
     const now = Math.floor(Date.now() / 1000);
     const age = now - trade.signalTime;
     const maxAge =
@@ -272,8 +288,11 @@ export async function GET(request: NextRequest) {
     const market =
       request.nextUrl.searchParams.get("market")?.trim().toUpperCase() ?? "";
 
-    const conditions: string[] = [];
-    const values: unknown[] = [];
+    const officialLiveEpoch = Math.floor(
+      new Date(PLATFORM_RELEASE.liveAt).getTime() / 1000
+    );
+    const conditions: string[] = ["signal_time >= $1"];
+    const values: unknown[] = [officialLiveEpoch];
 
     if (market) {
       values.push(market);
