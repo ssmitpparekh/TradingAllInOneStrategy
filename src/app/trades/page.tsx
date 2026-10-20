@@ -6,7 +6,6 @@ import {
   type JournalTrade
 } from "@/lib/analysis/trade-journal";
 
-const PLATFORM_JOURNAL_KEY = "allinoneview:trade-journal:v1";
 const THEME_KEY = "allinoneview:theme:v1";
 
 type ManualTrade = {
@@ -280,13 +279,26 @@ export default function TradesPage() {
       // Keep current theme.
     }
 
-    try {
-      const raw = window.localStorage.getItem(PLATFORM_JOURNAL_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
-      setPlatformTrades(Array.isArray(parsed) ? parsed : []);
-    } catch {
-      setPlatformTrades([]);
-    }
+    void fetch("/api/signals/trades", { cache: "no-store" })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok || !data?.ok) {
+          throw new Error(
+            data?.error || "Unable to load live platform trades."
+          );
+        }
+        setPlatformTrades(
+          Array.isArray(data.trades) ? data.trades : []
+        );
+      })
+      .catch((error) => {
+        setPlatformTrades([]);
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : "Unable to load live platform trades."
+        );
+      });
 
     void loadManualTrades();
   }, []);
@@ -516,6 +528,9 @@ export default function TradesPage() {
           <button className="button" type="button" onClick={openNew}>
             + New trade
           </button>
+          <a className="button secondary" href="/backtests">
+            Strategy backtests
+          </a>
           <a className="tradeHistoryLink" href="/">
             ← Back to chart
           </a>
