@@ -273,7 +273,8 @@ async function loadSeries(
   market: string,
   symbol: string,
   resolution: string,
-  cutoff: number
+  cutoff: number,
+  forceFrom?: number
 ): Promise<Candle[]> {
   const result = await withRetry(
     "Neon candles " + provider + " " + symbol + " " + resolution,
@@ -315,9 +316,11 @@ async function loadSeries(
   const refreshFrom = Math.max(
     0,
     provider === "OANDA"
-      ? firstCached !== null
-        ? firstCached
-        : cutoff - defaultTail
+      ? forceFrom !== undefined
+        ? forceFrom
+        : firstCached !== null
+          ? firstCached
+          : cutoff - defaultTail
       : lastCached !== null
         ? lastCached + step
         : cutoff - defaultTail
@@ -614,13 +617,79 @@ try {
       process.stdout.write("\nBacktesting " + instrument.key + "…\n");
 
       try {
-      const [m1, m5, m15, h1, h4] = await Promise.all([
-        loadSeries(instrument.provider, instrument.market, instrument.symbol, "1", cutoff),
-        loadSeries(instrument.provider, instrument.market, instrument.symbol, "5", cutoff),
-        loadSeries(instrument.provider, instrument.market, instrument.symbol, "15", cutoff),
-        loadSeries(instrument.provider, instrument.market, instrument.symbol, "60", cutoff),
-        loadSeries(instrument.provider, instrument.market, instrument.symbol, "240", cutoff)
-      ]);
+      let m1: Candle[];
+      let m5: Candle[];
+      let m15: Candle[];
+      let h1: Candle[];
+      let h4: Candle[];
+
+      if (instrument.provider === "OANDA") {
+        // Establish one common historical start from the deepest strategy
+        // timeframe, then rebuild every required timeframe across that same
+        // interval. This prevents live-analysis cache horizons (5D/1M/3M/6M)
+        // from leaking into the backtest and truncating lower timeframes.
+        h4 = await loadSeries(
+          instrument.provider,
+          instrument.market,
+          instrument.symbol,
+          "240",
+          cutoff
+        );
+
+        const commonFrom =
+          h4[0]?.time ?? cutoff - 186 * 24 * 60 * 60;
+
+        process.stdout.write(
+          "OANDA shared backtest span: " +
+            fmtEpoch(commonFrom) +
+            " to " +
+            fmtEpoch(cutoff) +
+            "\n"
+        );
+
+        [m1, m5, m15, h1] = await Promise.all([
+          loadSeries(
+            instrument.provider,
+            instrument.market,
+            instrument.symbol,
+            "1",
+            cutoff,
+            commonFrom
+          ),
+          loadSeries(
+            instrument.provider,
+            instrument.market,
+            instrument.symbol,
+            "5",
+            cutoff,
+            commonFrom
+          ),
+          loadSeries(
+            instrument.provider,
+            instrument.market,
+            instrument.symbol,
+            "15",
+            cutoff,
+            commonFrom
+          ),
+          loadSeries(
+            instrument.provider,
+            instrument.market,
+            instrument.symbol,
+            "60",
+            cutoff,
+            commonFrom
+          )
+        ]);
+      } else {
+        [m1, m5, m15, h1, h4] = await Promise.all([
+          loadSeries(instrument.provider, instrument.market, instrument.symbol, "1", cutoff),
+          loadSeries(instrument.provider, instrument.market, instrument.symbol, "5", cutoff),
+          loadSeries(instrument.provider, instrument.market, instrument.symbol, "15", cutoff),
+          loadSeries(instrument.provider, instrument.market, instrument.symbol, "60", cutoff),
+          loadSeries(instrument.provider, instrument.market, instrument.symbol, "240", cutoff)
+        ]);
+      }
   
       const counts = {
         "1m": m1.length,
