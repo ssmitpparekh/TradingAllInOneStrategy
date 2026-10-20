@@ -17,7 +17,9 @@
     "db:storage": "node scripts/database-storage-report.mjs",
     "db:guard": "node scripts/neon-storage-guard.mjs",
     "db:optimize:candles": "node scripts/optimize-market-candle-storage.mjs",
-    "sync:history": "node scripts/continuous-history-sync.mjs"
+    "sync:history": "node scripts/continuous-history-sync.mjs",
+    "strategy:go-live": "node scripts/lock-platform-live.mjs",
+    "backtest:platform": "tsx scripts/run-platform-backtests.ts"
   },
   "dependencies": {
     "@neon/config": "^1.9.2",
@@ -34,6 +36,7 @@
     "@types/pg": "^8.23.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "tsx": "^4.20.6"
   }
 }
