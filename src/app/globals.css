@@ -9272,3 +9272,120 @@ html[data-theme="light"] .dataSourcePendingGrid > div {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Strategy backtest evidence */
+.backtestPage {
+  width: min(1500px, calc(100% - 32px));
+  margin: 24px auto 64px;
+  display: grid;
+  gap: 16px;
+}
+.backtestHero,
+.backtestTableHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+.backtestHero h1,
+.backtestTableHeader h2 {
+  margin: 4px 0 8px;
+}
+.backtestHero p,
+.backtestPolicy p {
+  max-width: 900px;
+}
+.backtestPolicy {
+  display: grid;
+  gap: 6px;
+}
+.backtestWarning {
+  color: #f5b942;
+}
+.backtestFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.backtestFilters button {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 8px 13px;
+  cursor: pointer;
+}
+.backtestFilters button.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.backtestStats {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+.backtestStats .card {
+  display: grid;
+  gap: 6px;
+}
+.backtestStats span,
+.backtestBreakdownGrid span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.backtestStats strong {
+  font-size: 22px;
+}
+.backtestBreakdown {
+  display: grid;
+  gap: 14px;
+}
+.backtestBreakdownGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.backtestBreakdownGrid > div {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  display: grid;
+  gap: 4px;
+}
+.backtestTableWrap {
+  overflow: auto;
+  max-height: 680px;
+}
+.backtestTable {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 920px;
+}
+.backtestTable th,
+.backtestTable td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+.backtestTable th {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: .04em;
+}
+.backtestEmpty {
+  text-align: center;
+  padding: 42px 24px;
+}
+@media (max-width: 980px) {
+  .backtestStats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .backtestBreakdownGrid {
+    grid-template-columns: 1fr;
+  }
+  .backtestHero {
+    flex-direction: column;
+  }
+}
