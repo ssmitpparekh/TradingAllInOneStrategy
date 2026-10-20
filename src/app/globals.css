@@ -2814,6 +2814,106 @@ button {
 }
 
 
+/* Permanent platform strategy position history */
+.tradePositionLayer {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.tradePositionZone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.tradePositionReward,
+.tradePositionRisk,
+.tradePositionEntry,
+.tradePositionTarget {
+  position: absolute;
+  right: 0;
+  left: 0;
+  display: block;
+}
+
+.tradePositionReward {
+  border: 1px solid rgba(42, 184, 154, 0.55);
+  background: rgba(42, 184, 154, 0.18);
+}
+
+.tradePositionRisk {
+  border: 1px solid rgba(239, 83, 80, 0.52);
+  background: rgba(239, 83, 80, 0.16);
+}
+
+.tradePositionZone.closed .tradePositionReward,
+.tradePositionZone.closed .tradePositionRisk {
+  opacity: 0.72;
+}
+
+.tradePositionEntry {
+  height: 1px;
+  background: rgba(226, 232, 240, 0.78);
+}
+
+.tradePositionTarget {
+  height: 1px;
+  border-top: 1px dashed rgba(42, 184, 154, 0.6);
+}
+
+.tradePositionTarget b {
+  position: absolute;
+  top: -8px;
+  right: 3px;
+  color: rgba(116, 227, 155, 0.9);
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.tradePositionBadge {
+  position: absolute;
+  z-index: 2;
+  left: 3px;
+  max-width: calc(100% - 6px);
+  overflow: hidden;
+  padding: 3px 5px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  background: rgba(8, 13, 20, 0.9);
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform: translateY(-50%);
+}
+
+.tradePositionZone.long {
+  color: #74e39b;
+}
+
+.tradePositionZone.short {
+  color: #ff8587;
+}
+
+html[data-theme="light"] .tradePositionBadge {
+  background: rgba(255, 255, 255, 0.94);
+}
+
+html[data-theme="light"] .tradePositionReward {
+  background: rgba(42, 184, 154, 0.12);
+}
+
+html[data-theme="light"] .tradePositionRisk {
+  background: rgba(239, 83, 80, 0.11);
+}
+
 /* Permanent strategy trade markers */
 .tradeMarkerLayer {
   position: absolute;
@@ -7016,6 +7116,7 @@ html[data-theme="light"] .technicalIndicatorRows > div {
 
 /* Hard barrier: analytical overlays stop before the right price scale. */
 .sessionBreakLayer,
+.tradePositionLayer,
 .tradeMarkerLayer,
 .structureHistoryLayer,
 .liquidityLevelLayer,
