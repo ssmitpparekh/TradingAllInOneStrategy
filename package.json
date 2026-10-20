@@ -19,7 +19,8 @@
     "db:optimize:candles": "node scripts/optimize-market-candle-storage.mjs",
     "sync:history": "node scripts/continuous-history-sync.mjs",
     "strategy:go-live": "node scripts/lock-platform-live.mjs",
-    "backtest:platform": "tsx scripts/run-platform-backtests.ts"
+    "backtest:platform": "tsx scripts/run-platform-backtests.ts",
+    "kraken:prepare-exact": "node scripts/prepare-kraken-exact-history.mjs"
   },
   "dependencies": {
     "@neon/config": "^1.9.2",
