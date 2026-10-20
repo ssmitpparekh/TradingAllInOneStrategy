@@ -6,6 +6,7 @@ import {
   readMarketCandles,
   type StoredMarketCandle
 } from "@/lib/server/candle-store";
+import { readKrakenCompactCandles } from "@/lib/server/kraken-compact";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -378,6 +379,20 @@ export async function GET(request: NextRequest) {
     legacyCached = [];
   }
 
+  let compactKraken: StoredMarketCandle[] = [];
+  if (provider === "KRAKEN") {
+    try {
+      compactKraken = await readKrakenCompactCandles({
+        symbol,
+        resolution,
+        from,
+        to
+      });
+    } catch {
+      compactKraken = [];
+    }
+  }
+
   let upstream: StoredMarketCandle[] = [];
   let upstreamError: string | null = null;
 
@@ -408,21 +423,23 @@ export async function GET(request: NextRequest) {
   let usedLegacyFallback = false;
   let candles: StoredMarketCandle[] = [];
 
-  if (upstream.length) {
+  if (provider === "KRAKEN") {
+    usedLegacyFallback = legacyCached.length > 0;
+    // Priority on overlap: legacy cache < compact exact trade recovery <
+    // current Kraken OHLC. This closes the June-to-current gap without
+    // reintroducing permanent candle writes to Neon.
+    candles = dedupeAndSort([
+      ...legacyCached,
+      ...compactKraken,
+      ...upstream
+    ]);
+  } else if (upstream.length) {
     if (provider === "FYERS" && upstreamFrom > from) {
       const older = legacyCached.filter(
         (candle) => candle.time < upstreamFrom
       );
       usedLegacyFallback = older.length > 0;
       candles = dedupeAndSort([...older, ...upstream]);
-    } else if (provider === "KRAKEN" && legacyCached.length) {
-      // Kraken's standard OHLC endpoint is a recent-history endpoint. Keep the
-      // already-cached older tail read-only until the official archive path is
-      // wired in, while always preferring fresh Kraken rows on overlap.
-      usedLegacyFallback = legacyCached.some(
-        (candle) => candle.time < (upstream[0]?.time ?? Number.MAX_SAFE_INTEGER)
-      );
-      candles = dedupeAndSort([...legacyCached, ...upstream]);
     } else {
       candles = dedupeAndSort(upstream);
     }
@@ -465,7 +482,9 @@ export async function GET(request: NextRequest) {
     );
   } else {
     notes.push(
-      "Recent Kraken OHLC is requested directly; older Kraken history temporarily uses the existing read-only cache until the official archive path is connected."
+      compactKraken.length
+        ? "Kraken history is stitched from the existing read-only deep cache, compact exact trade-derived recovery, and current Kraken OHLC/live data."
+        : "Recent Kraken OHLC is requested directly. Run npm run kraken:prepare-exact once to bridge the June-to-current intraday archive gap and exact trade-side history."
     );
   }
 
