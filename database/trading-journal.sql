@@ -34,3 +34,38 @@ create index if not exists manual_trade_journal_symbol_idx
 
 create index if not exists manual_trade_journal_market_idx
   on public.manual_trade_journal (market, trade_time desc);
+
+
+-- Immutable platform-generated strategy suggestions. These are the shared,
+-- public performance record rendered back onto charts for every user.
+create table if not exists public.platform_signal_journal (
+  id text primary key,
+  signal_time bigint not null,
+  market text not null,
+  symbol text not null,
+  name text not null default '',
+  setup_type text not null check (setup_type in ('PRIMARY','REACTION')),
+  move_class text not null check (move_class in ('TACTICAL','MAJOR')),
+  direction text not null check (direction in ('long','short')),
+  confirmation_timeframe text not null,
+  entry double precision not null,
+  initial_stop double precision not null,
+  current_stop double precision not null,
+  targets jsonb not null default '[]'::jsonb,
+  trigger text not null default '',
+  score double precision not null default 0,
+  status text not null default 'OPEN' check (status in ('OPEN','CLOSED')),
+  outcome text not null default 'OPEN',
+  highest_target_hit integer not null default 0,
+  result_r double precision,
+  closed_time bigint,
+  ambiguity_reason text,
+  created_at bigint not null,
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists platform_signal_journal_symbol_time_idx
+  on public.platform_signal_journal (market, symbol, signal_time desc);
+
+create index if not exists platform_signal_journal_status_idx
+  on public.platform_signal_journal (status, signal_time desc);
