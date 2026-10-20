@@ -70,6 +70,11 @@ export type TradeChartMarker = {
   id: string;
   time: number;
   price: number;
+  entry?: number;
+  stop?: number;
+  targets?: number[];
+  endTime?: number | null;
+  resultR?: number | null;
   direction: "long" | "short";
   status: "OPEN" | "CLOSED";
   outcome?: string;
@@ -507,6 +512,25 @@ export default function MarketChart({
   >([]);
   const [tradeMarkerPositions, setTradeMarkerPositions] = useState<
     Array<TradeChartMarker & { x: number; y: number }>
+  >([]);
+  const [tradePositionZones, setTradePositionZones] = useState<
+    Array<{
+      id: string;
+      left: number;
+      width: number;
+      entryY: number;
+      rewardTop: number;
+      rewardHeight: number;
+      riskTop: number;
+      riskHeight: number;
+      targetLines: Array<{ label: string; top: number }>;
+      direction: "long" | "short";
+      status: "OPEN" | "CLOSED";
+      outcome?: string;
+      resultR: number | null;
+      setupType?: "PRIMARY" | "REACTION";
+      moveClass?: "TACTICAL" | "MAJOR";
+    }>
   >([]);
   const [drawingTool, setDrawingTool] = useState<DrawingTool>("cursor");
   const [drawings, setDrawings] = useState<ChartDrawing[]>([]);
@@ -1121,12 +1145,19 @@ export default function MarketChart({
 
     if (!chart || !host || !series || tradeMarkers.length === 0) {
       setTradeMarkerPositions([]);
+      setTradePositionZones([]);
       return;
     }
 
     const updateMarkers = () => {
       const width = host.clientWidth;
       const height = host.clientHeight;
+      const latestTime =
+        liveCandle?.time ?? candles[candles.length - 1]?.time ?? null;
+      const latestX =
+        latestTime === null
+          ? null
+          : chart.timeScale().timeToCoordinate(latestTime as Time);
 
       setTradeMarkerPositions(
         tradeMarkers.flatMap((marker) => {
@@ -1153,10 +1184,104 @@ export default function MarketChart({
           ];
         })
       );
+
+      setTradePositionZones(
+        tradeMarkers.flatMap((marker) => {
+          const entry = Number(marker.entry ?? marker.price);
+          const stop = Number(marker.stop ?? 0);
+          const targets = (marker.targets ?? []).filter((value) =>
+            Number.isFinite(Number(value))
+          );
+          const finalTarget = Number(targets.at(-1) ?? 0);
+
+          if (!(entry > 0) || !(stop > 0) || !(finalTarget > 0)) {
+            return [];
+          }
+
+          const startX = chart.timeScale().timeToCoordinate(
+            marker.time as Time
+          );
+          const requestedEndTime =
+            marker.status === "CLOSED" && marker.endTime
+              ? marker.endTime
+              : latestTime;
+          const requestedEndX =
+            requestedEndTime === null
+              ? null
+              : chart.timeScale().timeToCoordinate(
+                  requestedEndTime as Time
+                );
+
+          const entryY = series.priceToCoordinate(entry);
+          const stopY = series.priceToCoordinate(stop);
+          const targetY = series.priceToCoordinate(finalTarget);
+
+          if (
+            startX === null ||
+            entryY === null ||
+            stopY === null ||
+            targetY === null
+          ) {
+            return [];
+          }
+
+          const rawLeft = Number(startX);
+          const rawRight =
+            requestedEndX !== null
+              ? Number(requestedEndX)
+              : latestX !== null
+                ? Number(latestX)
+                : width - plotRightInset;
+
+          const left = Math.max(0, Math.min(rawLeft, rawRight));
+          const right = Math.min(
+            width - plotRightInset,
+            Math.max(rawLeft, rawRight)
+          );
+
+          if (right - left < 4) return [];
+
+          const entryPx = Number(entryY);
+          const stopPx = Number(stopY);
+          const targetPx = Number(targetY);
+
+          return [{
+            id: marker.id,
+            left,
+            width: Math.max(4, right - left),
+            entryY: entryPx,
+            rewardTop: Math.min(entryPx, targetPx),
+            rewardHeight: Math.max(2, Math.abs(entryPx - targetPx)),
+            riskTop: Math.min(entryPx, stopPx),
+            riskHeight: Math.max(2, Math.abs(entryPx - stopPx)),
+            targetLines: targets.flatMap((target, index) => {
+              const y = series.priceToCoordinate(Number(target));
+              return y === null
+                ? []
+                : [{
+                    label: `T${index + 1}`,
+                    top: Number(y)
+                  }];
+            }),
+            direction: marker.direction,
+            status: marker.status,
+            outcome: marker.outcome,
+            resultR: marker.resultR ?? null,
+            setupType: marker.setupType,
+            moveClass: marker.moveClass
+          }];
+        })
+      );
     };
 
     updateMarkers();
-  }, [tradeMarkers, candles, liveCandle, drawingRevision]);
+  }, [
+    tradeMarkers,
+    candles,
+    liveCandle,
+    drawingRevision,
+    plotRightInset
+  ]);
 
   useEffect(() => {
     if (!liveCandle || !seriesRef.current) return;
@@ -2639,6 +2764,68 @@ export default function MarketChart({
               <span className="structureHistoryLine" />
               <span className="structureHistoryLabel">
                 {event.type} {event.direction === "bullish" ? "↑" : "↓"}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {tradePositionZones.length ? (
+        <div className="tradePositionLayer" aria-hidden="true">
+          {tradePositionZones.map((zone) => (
+            <div
+              className={
+                "tradePositionZone " +
+                zone.direction +
+                " " +
+                zone.status.toLowerCase()
+              }
+              key={zone.id}
+              style={{
+                left: zone.left,
+                width: zone.width
+              }}
+            >
+              <span
+                className="tradePositionReward"
+                style={{
+                  top: zone.rewardTop,
+                  height: zone.rewardHeight
+                }}
+              />
+              <span
+                className="tradePositionRisk"
+                style={{
+                  top: zone.riskTop,
+                  height: zone.riskHeight
+                }}
+              />
+              <span
+                className="tradePositionEntry"
+                style={{ top: zone.entryY }}
+              />
+              {zone.targetLines.map((target) => (
+                <span
+                  className="tradePositionTarget"
+                  key={target.label}
+                  style={{ top: target.top }}
+                >
+                  <b>{target.label}</b>
+                </span>
+              ))}
+              <span
+                className="tradePositionBadge"
+                style={{ top: zone.entryY }}
+              >
+                {zone.direction === "long" ? "LONG" : "SHORT"}
+                {" · "}
+                {zone.setupType ?? "PRIMARY"}
+                {zone.status === "CLOSED"
+                  ? " · " +
+                    (zone.outcome ?? "CLOSED") +
+                    (zone.resultR !== null
+                      ? ` · ${zone.resultR >= 0 ? "+" : ""}${zone.resultR.toFixed(2)}R`
+                      : "")
+                  : " · OPEN"}
               </span>
             </div>
           ))}
