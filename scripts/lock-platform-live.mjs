@@ -31,6 +31,7 @@ if (process.env.CONFIRM_PLATFORM_GO_LIVE !== "YES") {
 }
 
 const strategyVersion = "AIOV-1.0.0";
+const OFFICIAL_LIVE_AT = "2026-10-20T00:52:25-08:00";
 const raw =
   process.env.DATABASE_URL_UNPOOLED?.trim() ||
   process.env.DATABASE_URL?.trim() ||
@@ -60,16 +61,23 @@ try {
     `insert into public.platform_strategy_releases (
        strategy_version, status, live_at, git_commit, ui_commit, notes
      )
-     values ($1, 'LIVE', now(), $2, $2, $3)
+     values ($1, 'LIVE', $4::timestamptz, $2, $2, $3)
      returning strategy_version, live_at, git_commit`,
     [
       strategyVersion,
       gitCommit,
-      "Official ALLINONEVIEW live boundary. All earlier strategy evidence belongs to backtesting; all later platform calls must be genuinely live."
+      "Official ALLINONEVIEW live boundary. All earlier strategy evidence belongs to backtesting; all later platform calls must be genuinely live.",
+      OFFICIAL_LIVE_AT
     ]
   );
 
   const row = result.rows[0];
+
+  await client.query(
+    "delete from public.platform_signal_journal where signal_time < extract(epoch from $1::timestamptz)::bigint",
+    [OFFICIAL_LIVE_AT]
+  );
+
   process.stdout.write(
     "\nALLINONEVIEW LIVE BOUNDARY LOCKED\n" +
       "Strategy: " + row.strategy_version +
