@@ -22,6 +22,7 @@ import {
   evaluatePlatformStrategy,
   PLATFORM_STRATEGY_VERSION
 } from "@/lib/analysis/platform-strategy";
+import { isIndianOpeningWindow } from "@/lib/analysis/opening-confirmation";
 import {
   makeTradeId,
   reconcileTradeWithCandles,
@@ -591,6 +592,7 @@ export default function Home() {
   const [context5m, setContext5m] = useState<ChartCandle[]>([]);
   const [context1m, setContext1m] = useState<ChartCandle[]>([]);
   const [contextPrice, setContextPrice] = useState<number | null>(null);
+  const [offlineReplayNotice, setOfflineReplayNotice] = useState("");
   const [tradeJournal, setTradeJournal] = useState<JournalTrade[]>([]);
   const [journalReady, setJournalReady] = useState(false);
   const [loadingContext, setLoadingContext] = useState(false);
@@ -614,6 +616,7 @@ export default function Home() {
   const orderFlowNeedsPartialRef = useRef(true);
   const orderFlowPartialBucketRef = useRef<number | null>(null);
   const orderFlowHistoryIdentityRef = useRef("");
+  const offlineReplayIdentityRef = useRef("");
 
   const selectedIsKraken = selected.market === "KRAKEN";
   const selectedIsOanda = selected.market === "OANDA";
@@ -1520,6 +1523,273 @@ export default function Home() {
       })
     );
   }, [viewReady, selected, resolution, range]);
+
+  useEffect(() => {
+    if (
+      !viewReady ||
+      !primaryAnalysisSymbol ||
+      context4h.length < 30 ||
+      context1h.length < 30 ||
+      context15m.length < 30 ||
+      closedContext5m.length < 30 ||
+      closedContext1m.length < 30
+    ) {
+      return;
+    }
+
+    const latestProcessed =
+      closedContext1m.at(-1)?.time ??
+      closedContext5m.at(-1)?.time ??
+      context15m.at(-1)?.time ??
+      null;
+
+    if (latestProcessed === null) return;
+
+    const identity =
+      selected.market +
+      "|" +
+      primaryAnalysisSymbol +
+      "|" +
+      latestProcessed;
+
+    if (offlineReplayIdentityRef.current === identity) return;
+    offlineReplayIdentityRef.current = identity;
+
+    let cancelled = false;
+
+    const postCheckpoint = async (epoch: number) => {
+      await fetch("/api/strategy/checkpoint", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          strategyVersion: PLATFORM_STRATEGY_VERSION,
+          market: selected.market,
+          symbol: primaryAnalysisSymbol,
+          lastProcessedEpoch: epoch
+        })
+      }).catch(() => {
+        // Recovery remains non-authoritative if checkpoint persistence is down.
+      });
+    };
+
+    const replay = async () => {
+      try {
+        const params = new URLSearchParams({
+          strategyVersion: PLATFORM_STRATEGY_VERSION,
+          market: selected.market,
+          symbol: primaryAnalysisSymbol
+        });
+        const response = await fetch(
+          "/api/strategy/checkpoint?" + params.toString(),
+          { cache: "no-store" }
+        );
+        const data = await response.json();
+
+        if (cancelled) return;
+
+        const prior = Number(
+          data?.checkpoint?.lastProcessedEpoch ?? 0
+        );
+
+        if (!(prior > 0)) {
+          await postCheckpoint(latestProcessed);
+          return;
+        }
+
+        if (latestProcessed <= prior) return;
+
+        const gapSeconds = latestProcessed - prior;
+        const maxReplaySeconds = 5 * 24 * 60 * 60;
+
+        if (gapSeconds > maxReplaySeconds) {
+          setOfflineReplayNotice(
+            "Offline gap exceeded the exact 1m replay window. Nothing was added to live Trades; older missed setups remain excluded."
+          );
+          await postCheckpoint(latestProcessed);
+          return;
+        }
+
+        const evaluationTimes = new Set<number>();
+
+        for (const candle of context15m) {
+          const closeTime = candle.time + 15 * 60;
+          if (closeTime > prior && closeTime <= latestProcessed + 60) {
+            evaluationTimes.add(closeTime);
+          }
+        }
+
+        if (selected.market === "NSE" || selected.market === "BSE") {
+          for (const candle of closedContext5m) {
+            const closeTime = candle.time + 5 * 60;
+            if (
+              closeTime > prior &&
+              closeTime <= latestProcessed + 60 &&
+              isIndianOpeningWindow(candle.time)
+            ) {
+              evaluationTimes.add(closeTime);
+            }
+          }
+
+          for (const candle of closedContext1m) {
+            const closeTime = candle.time + 60;
+            if (
+              closeTime > prior &&
+              closeTime <= latestProcessed + 60 &&
+              isIndianOpeningWindow(candle.time)
+            ) {
+              evaluationTimes.add(closeTime);
+            }
+          }
+        }
+
+        const recovered = new Set<string>();
+
+        const closedThrough = (
+          rows: ChartCandle[],
+          seconds: number,
+          evaluationTime: number,
+          lookbackSeconds: number
+        ) =>
+          rows.filter(
+            (candle) =>
+              candle.time + seconds <= evaluationTime &&
+              candle.time >= evaluationTime - lookbackSeconds
+          );
+
+        for (const evaluationTime of [...evaluationTimes].sort(
+          (a, b) => a - b
+        )) {
+          if (cancelled) return;
+
+          const replay4h = closedThrough(
+            context4h,
+            4 * 60 * 60,
+            evaluationTime,
+            186 * 24 * 60 * 60
+          );
+          const replay1h = closedThrough(
+            context1h,
+            60 * 60,
+            evaluationTime,
+            93 * 24 * 60 * 60
+          );
+          const replay15m = closedThrough(
+            context15m,
+            15 * 60,
+            evaluationTime,
+            31 * 24 * 60 * 60
+          );
+          const replay5m = closedThrough(
+            context5m,
+            5 * 60,
+            evaluationTime,
+            5 * 24 * 60 * 60
+          );
+          const replay1m = closedThrough(
+            context1m,
+            60,
+            evaluationTime,
+            5 * 24 * 60 * 60
+          );
+
+          if (
+            replay4h.length < 30 ||
+            replay1h.length < 30 ||
+            replay15m.length < 30 ||
+            replay5m.length < 30 ||
+            replay1m.length < 30
+          ) {
+            continue;
+          }
+
+          const price =
+            replay1m.at(-1)?.close ??
+            replay15m.at(-1)?.close ??
+            0;
+          if (!(price > 0)) continue;
+
+          // Offline replay checks only historical technical inputs that can be
+          // reconstructed exactly from provider candles. It deliberately does
+          // not invent historical news/derivative veto snapshots.
+          const evaluated = evaluatePlatformStrategy({
+            market: selected.market,
+            price,
+            reactionPrice: price,
+            context4h: replay4h,
+            context1h: replay1h,
+            context15m: replay15m,
+            context5m: replay5m,
+            context1m: replay1m,
+            derivatives: null
+          });
+
+          const primary = evaluated.simpleTradePlan;
+          if (
+            primary.state === "READY" &&
+            primary.signalTime !== null
+          ) {
+            recovered.add(
+              "PRIMARY|" +
+                primary.trend +
+                "|" +
+                primary.signalTime
+            );
+          }
+
+          const reaction = evaluated.reactionTradePlan;
+          if (
+            reaction.state === "READY" &&
+            reaction.direction !== null &&
+            reaction.signalTime !== null
+          ) {
+            recovered.add(
+              "REACTION|" +
+                reaction.direction +
+                "|" +
+                reaction.signalTime
+            );
+          }
+        }
+
+        if (!cancelled) {
+          setOfflineReplayNotice(
+            recovered.size > 0
+              ? "Offline replay found " +
+                  recovered.size +
+                  " technical setup" +
+                  (recovered.size === 1 ? "" : "s") +
+                  " while the app was off. They are not counted as live trades."
+              : "Offline replay checked the missed window; no technical setup was promoted into live Trades."
+          );
+        }
+
+        await postCheckpoint(latestProcessed);
+      } catch {
+        if (!cancelled) {
+          setOfflineReplayNotice(
+            "Offline replay could not be verified. Nothing was added to live Trades."
+          );
+        }
+      }
+    };
+
+    void replay();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    viewReady,
+    selected.market,
+    primaryAnalysisSymbol,
+    context4h,
+    context1h,
+    context15m,
+    context5m,
+    context1m,
+    closedContext5m,
+    closedContext1m
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3687,6 +3957,12 @@ export default function Home() {
           theme={resolvedTheme}
           instrumentKey={selected.market + ":" + selected.symbol}
         />
+
+        {offlineReplayNotice ? (
+          <div className="offlineReplayNotice">
+            {offlineReplayNotice}
+          </div>
+        ) : null}
 
         {quote ? (
           <div className="ohlcStrip">
