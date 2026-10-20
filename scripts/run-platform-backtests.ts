@@ -184,7 +184,10 @@ async function fetchProviderTail(input: {
   if (input.from >= input.to) return [];
 
   if (input.provider === "KRAKEN") {
-    return fetchKrakenRecent(input.symbol, input.resolution);
+    return withRetry(
+      "Kraken " + input.symbol + " " + input.resolution,
+      () => fetchKrakenRecent(input.symbol, input.resolution)
+    );
   }
 
   if (input.provider === "FYERS") {
@@ -204,12 +207,23 @@ async function fetchProviderTail(input: {
     ) {
       const to = Math.min(input.to, from + chunkSeconds);
       output.push(
-        ...(await getHistory(session.accessToken, {
-          symbol: input.symbol,
-          resolution: input.resolution,
-          from,
-          to
-        }))
+        ...(await withRetry(
+          "FYERS " +
+            input.symbol +
+            " " +
+            input.resolution +
+            " " +
+            from +
+            "-" +
+            to,
+          () =>
+            getHistory(session.accessToken, {
+              symbol: input.symbol,
+              resolution: input.resolution,
+              from,
+              to
+            })
+        ))
       );
     }
 
@@ -228,12 +242,23 @@ async function fetchProviderTail(input: {
     ) {
       const to = Math.min(input.to, from + chunkSeconds);
       output.push(
-        ...(await getOandaCandles({
-          symbol: input.symbol,
-          resolution: input.resolution,
-          from,
-          to
-        }))
+        ...(await withRetry(
+          "OANDA " +
+            input.symbol +
+            " " +
+            input.resolution +
+            " " +
+            from +
+            "-" +
+            to,
+          () =>
+            getOandaCandles({
+              symbol: input.symbol,
+              resolution: input.resolution,
+              from,
+              to
+            })
+        ))
       );
     }
 
@@ -250,13 +275,17 @@ async function loadSeries(
   resolution: string,
   cutoff: number
 ): Promise<Candle[]> {
-  const result = await pool.query(
-    `select candle_time, open, high, low, close, volume
-     from public.market_candles
-     where provider=$1 and market=$2 and symbol=$3 and resolution=$4
-       and candle_time < $5
-     order by candle_time asc`,
-    [provider, market, symbol, resolution, cutoff]
+  const result = await withRetry(
+    "Neon candles " + provider + " " + symbol + " " + resolution,
+    () =>
+      pool.query(
+        `select candle_time, open, high, low, close, volume
+         from public.market_candles
+         where provider=$1 and market=$2 and symbol=$3 and resolution=$4
+           and candle_time < $5
+         order by candle_time asc`,
+        [provider, market, symbol, resolution, cutoff]
+      )
   );
 
   const cached: Candle[] = result.rows.map((row) => ({
@@ -326,7 +355,9 @@ async function insertTrades(
   version: string
 ) {
   for (const trade of trades) {
-    await pool.query(
+    await withRetry(
+      "Neon backtest trade " + trade.id,
+      () => pool.query(
       `insert into public.strategy_backtest_trades (
          run_id, trade_id, strategy_version, instrument_key,
          provider, market, symbol, setup_type, move_class, direction,
@@ -363,6 +394,7 @@ async function insertTrades(
         trade.closedTime,
         trade.ambiguityReason ?? null
       ]
+      )
     );
   }
 }
@@ -386,7 +418,68 @@ function fmtEpoch(value: number | null) {
     : new Date(value * 1000).toISOString();
 }
 
+function transientMessage(error: unknown) {
+  return error instanceof Error
+    ? error.message
+    : String(error);
+}
+
+function isTransientError(error: unknown) {
+  const message = transientMessage(error);
+  return /ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED|socket hang up|fetch failed|network|connection terminated|connection reset|57P01|57P02|57P03/i.test(
+    message
+  );
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withRetry<T>(
+  label: string,
+  work: () => Promise<T>,
+  attempts = 5
+): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await work();
+    } catch (error) {
+      lastError = error;
+
+      if (!isTransientError(error) || attempt === attempts) {
+        throw error;
+      }
+
+      const delay = Math.min(
+        20_000,
+        1_500 * 2 ** (attempt - 1)
+      );
+
+      process.stderr.write(
+        label +
+          ": transient failure (" +
+          transientMessage(error) +
+          "), retry " +
+          attempt +
+          "/" +
+          attempts +
+          " after " +
+          delay +
+          "ms.\n"
+      );
+
+      await sleep(delay);
+    }
+  }
+
+  throw lastError;
+}
+
 async function main() {
+  let runId = "";
+
 try {
     const releaseResult = await pool.query(
       `select strategy_version, live_at
@@ -405,7 +498,7 @@ try {
     const release = releaseResult.rows[0];
     const version = String(release.strategy_version);
     const cutoff = Math.floor(new Date(release.live_at).getTime() / 1000);
-    const runId = version + ":" + Date.now();
+    runId = version + ":" + Date.now();
   
     await pool.query(
       `insert into public.strategy_backtest_runs (
@@ -438,7 +531,8 @@ try {
 
     for (const instrument of instruments) {
       process.stdout.write("\nBacktesting " + instrument.key + "…\n");
-  
+
+      try {
       const [m1, m5, m15, h1, h4] = await Promise.all([
         loadSeries(instrument.provider, instrument.market, instrument.symbol, "1", cutoff),
         loadSeries(instrument.provider, instrument.market, instrument.symbol, "5", cutoff),
@@ -753,13 +847,33 @@ try {
       process.stdout.write(
         "Accepted " + accepted.length + " historical signals.\n"
       );
+      } catch (error) {
+        const message = transientMessage(error);
+
+        coverage[instrument.key] = {
+          status: isTransientError(error)
+            ? "FAILED_TRANSIENT"
+            : "FAILED",
+          error: message
+        };
+
+        process.stderr.write(
+          instrument.key +
+            " backtest failed but suite will continue: " +
+            message +
+            "\n"
+        );
+      }
     }
   
-    await pool.query(
+    await withRetry(
+      "Neon finalize backtest run",
+      () => pool.query(
       `update public.strategy_backtest_runs
        set status='COMPLETED', coverage=$2::jsonb, completed_at=now()
        where id=$1`,
       [runId, JSON.stringify(coverage)]
+      )
     );
   
     process.stdout.write(
@@ -775,6 +889,23 @@ try {
         (error instanceof Error ? error.message : String(error)) +
         "\n"
     );
+
+    try {
+      await pool.query(
+        `update public.strategy_backtest_runs
+         set status='FAILED', completed_at=now(),
+             notes = notes || $2
+         where id=$1 and status='RUNNING'`,
+        [
+          typeof runId === "string" ? runId : "",
+          "\nRunner failure: " +
+            (error instanceof Error ? error.message : String(error))
+        ]
+      );
+    } catch {
+      // Do not mask the original runner failure.
+    }
+
     throw error;
   } finally {
     await pool.end();
