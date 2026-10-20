@@ -14,18 +14,14 @@ import {
   type VwapSettings
 } from "@/lib/analysis/volume";
 import { buildDailyTraditionalPivots } from "@/lib/analysis/pivots";
-import { buildReversalEngine } from "@/lib/analysis/confluence";
-import { buildSimpleTradePlan } from "@/lib/analysis/trade-plan";
-import { buildReactionTradePlan } from "@/lib/analysis/reaction-trade";
 import {
   buildNewsGate,
   type NewsImpactEvent
 } from "@/lib/news/impact";
 import {
-  buildOpeningConfirmation,
-  indianSessionOpenEpoch,
-  isIndianOpeningWindow
-} from "@/lib/analysis/opening-confirmation";
+  evaluatePlatformStrategy,
+  PLATFORM_STRATEGY_VERSION
+} from "@/lib/analysis/platform-strategy";
 import {
   makeTradeId,
   reconcileTradeWithCandles,
@@ -766,70 +762,6 @@ export default function Home() {
     return context5m.filter((candle) => candle.time + 5 * 60 <= now);
   }, [context5m]);
 
-  const fastLatestTime =
-    closedContext1m[closedContext1m.length - 1]?.time ??
-    closedContext5m[closedContext5m.length - 1]?.time ??
-    null;
-  const openingSessionStart = useMemo(() => {
-    if (
-      fastLatestTime === null ||
-      (selected.market !== "NSE" && selected.market !== "BSE") ||
-      !isIndianOpeningWindow(fastLatestTime)
-    ) {
-      return null;
-    }
-
-    return indianSessionOpenEpoch(fastLatestTime);
-  }, [fastLatestTime, selected.market]);
-
-  const planContext4h = useMemo(() => {
-    if (openingSessionStart === null) return context4h;
-    const prior = context4h.filter(
-      (candle) => candle.time < openingSessionStart
-    );
-    return prior.length >= 30 ? prior : context4h;
-  }, [context4h, openingSessionStart]);
-
-  const planContext1h = useMemo(() => {
-    if (openingSessionStart === null) return context1h;
-    const prior = context1h.filter(
-      (candle) => candle.time < openingSessionStart
-    );
-    return prior.length >= 30 ? prior : context1h;
-  }, [context1h, openingSessionStart]);
-
-  const htfTechnical = useMemo(
-    () => buildTechnicalContext(planContext4h),
-    [planContext4h]
-  );
-  const htfFib = useMemo(
-    () => buildFibonacciSetup(planContext4h),
-    [planContext4h]
-  );
-  const htfStructure = useMemo(
-    () => buildMarketStructure(planContext4h),
-    [planContext4h]
-  );
-  const refineFib = useMemo(
-    () => buildFibonacciSetup(planContext1h),
-    [planContext1h]
-  );
-  const refineImbalance = useMemo(
-    () => buildImbalanceLiquiditySnapshot(planContext1h),
-    [planContext1h]
-  );
-  const refineOrderBlocks = useMemo(
-    () => buildOrderBlockSnapshot(planContext1h),
-    [planContext1h]
-  );
-  const refineVolume = useMemo(
-    () =>
-      buildVolumeAnalytics(planContext1h, {
-        timeZone: selectedIsKraken ? "UTC" : "Asia/Kolkata",
-        anchorTime: htfFib.anchorA?.time ?? null
-      }),
-    [planContext1h, selectedIsKraken, htfFib.anchorA?.time]
-  );
   const liveContext15m = useMemo(() => {
     const canUseSelectedLive =
       resolution === "15" &&
@@ -847,48 +779,24 @@ export default function Home() {
     selected.symbol
   ]);
 
-  const confirmation15m = useMemo(
-    () => buildMarketStructure(liveContext15m),
-    [liveContext15m]
-  );
-  const structure5m = useMemo(
-    () => buildMarketStructure(closedContext5m, { confirmationBars: 2 }),
-    [closedContext5m]
-  );
-  const structure1m = useMemo(
-    () => buildMarketStructure(closedContext1m, { confirmationBars: 2 }),
-    [closedContext1m]
-  );
-  const imbalance5m = useMemo(
-    () => buildImbalanceLiquiditySnapshot(closedContext5m),
-    [closedContext5m]
-  );
-  const imbalance1m = useMemo(
-    () => buildImbalanceLiquiditySnapshot(closedContext1m),
-    [closedContext1m]
-  );
-  const orderBlocks5m = useMemo(
-    () => buildOrderBlockSnapshot(closedContext5m),
-    [closedContext5m]
-  );
-  const reversalEngine = useMemo(
+  const strategyEvaluation = useMemo(
     () =>
-      buildReversalEngine({
+      evaluatePlatformStrategy({
+        market: selected.market,
         price:
           contextPrice ??
           context1h[context1h.length - 1]?.close ??
           quote?.lp ??
           0,
-        htfAtr: htfFib.atr14,
-        refineAtr: refineFib.atr14,
-        htfReady: planContext4h.length >= 30,
-        confirmation15mReady: context15m.length >= 30,
-        fibonacci: htfFib,
-        structure: htfStructure,
-        imbalance: refineImbalance,
-        orderBlocks: refineOrderBlocks,
-        volume: refineVolume,
-        confirmation15m,
+        reactionPrice:
+          primaryAnalysisSymbol === selected.symbol
+            ? quote?.lp ?? contextPrice ?? 0
+            : contextPrice ?? 0,
+        context4h,
+        context1h,
+        context15m: liveContext15m,
+        context5m: closedContext5m,
+        context1m: closedContext1m,
         derivatives: derivatives
           ? {
               available: derivatives.available,
@@ -911,118 +819,25 @@ export default function Home() {
           : null
       }),
     [
+      selected.market,
+      selected.symbol,
+      primaryAnalysisSymbol,
       contextPrice,
       context1h,
-      planContext4h,
-      context15m,
+      context4h,
+      liveContext15m,
+      closedContext5m,
+      closedContext1m,
       quote?.lp,
-      htfFib,
-      refineFib.atr14,
-      htfStructure,
-      refineImbalance,
-      refineOrderBlocks,
-      refineVolume,
-      confirmation15m,
       derivatives
     ]
   );
 
-  const openingConfirmation = useMemo(
-    () =>
-      buildOpeningConfirmation({
-        market: selected.market,
-        latestTime: fastLatestTime,
-        direction: reversalEngine.selected.direction,
-        structure1m,
-        structure5m,
-        imbalance1m,
-        imbalance5m,
-        orderBlocks5m
-      }),
-    [
-      selected.market,
-      fastLatestTime,
-      reversalEngine.selected.direction,
-      structure1m,
-      structure5m,
-      imbalance1m,
-      imbalance5m,
-      orderBlocks5m
-    ]
-  );
-
-  const simpleTradePlan = useMemo(
-    () =>
-      buildSimpleTradePlan({
-        price:
-          contextPrice ??
-          context1h[context1h.length - 1]?.close ??
-          quote?.lp ??
-          0,
-        latestTime:
-          fastLatestTime ??
-          context1h[context1h.length - 1]?.time ??
-          null,
-        htfTechnical,
-        htfStructure,
-        fibonacci: htfFib,
-        imbalance: refineImbalance,
-        orderBlocks: refineOrderBlocks,
-        reversal: reversalEngine.selected,
-        refineAtr: refineFib.atr14,
-        openingConfirmation,
-        confirmation15m
-      }),
-    [
-      contextPrice,
-      context1h,
-      fastLatestTime,
-      quote?.lp,
-      htfTechnical,
-      htfStructure,
-      htfFib,
-      refineImbalance,
-      refineOrderBlocks,
-      reversalEngine.selected,
-      refineFib.atr14,
-      openingConfirmation,
-      confirmation15m
-    ]
-  );
-
-  const reactionImbalance15m = useMemo(
-    () => buildImbalanceLiquiditySnapshot(liveContext15m),
-    [liveContext15m]
-  );
-  const reactionFib15m = useMemo(
-    () => buildFibonacciSetup(liveContext15m),
-    [liveContext15m]
-  );
-  const reactionTradePlan = useMemo(
-    () =>
-      buildReactionTradePlan({
-        price:
-          primaryAnalysisSymbol === selected.symbol
-            ? quote?.lp ?? contextPrice ?? 0
-            : contextPrice ?? 0,
-        candles15m: liveContext15m,
-        imbalance15m: reactionImbalance15m,
-        structure15m: confirmation15m,
-        primaryPlan: simpleTradePlan,
-        atr15m: reactionFib15m.atr14
-      }),
-    [
-      primaryAnalysisSymbol,
-      selected.symbol,
-      quote?.lp,
-      contextPrice,
-      liveContext15m,
-      reactionImbalance15m,
-      confirmation15m,
-      simpleTradePlan,
-      reactionFib15m.atr14
-    ]
-  );
+  const {
+    reversalEngine,
+    simpleTradePlan,
+    reactionTradePlan
+  } = strategyEvaluation;
 
   const newsGate = useMemo(
     () =>
@@ -1843,7 +1658,9 @@ export default function Home() {
         resultR: null,
         closedTime: null,
         ambiguityReason: null,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        origin: "LIVE",
+        strategyVersion: PLATFORM_STRATEGY_VERSION
       };
 
       return [...current, record];
@@ -1918,7 +1735,9 @@ export default function Home() {
         resultR: null,
         closedTime: null,
         ambiguityReason: null,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        origin: "LIVE",
+        strategyVersion: PLATFORM_STRATEGY_VERSION
       };
 
       return [...current, record];
