@@ -8,6 +8,7 @@ import {
   mkdir,
   readdir,
   readFile,
+  rename,
   rm,
   stat,
   writeFile
@@ -47,6 +48,9 @@ const SYMBOLS = [
 
 const DATA_ROOT = path.join(process.cwd(), ".data", "kraken-recovery");
 const COMPACT_ROOT = path.join(process.cwd(), ".data", "kraken-compact");
+const ARCHIVE_MARKER = path.join(DATA_ROOT, "archive-through-2026Q3.json");
+const KRAKEN_REQUEST_SPACING_MS = 1100;
+const KRAKEN_CHECKPOINT_EVERY_PAGES = 100;
 
 function loadLocalEnv() {
   if (!existsSync(".env.local")) return;
@@ -273,45 +277,291 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function compactCandlePath(spec) {
+  return path.join(COMPACT_ROOT, spec.key + "-1.csv");
+}
+
+function compactOrderFlowPath(spec) {
+  return path.join(COMPACT_ROOT, spec.key + "-orderflow-1m.csv");
+}
+
+function symbolCheckpointPath(spec) {
+  return path.join(DATA_ROOT, "checkpoint-" + spec.key + ".json");
+}
+
+async function readJson(filename, fallback) {
+  try {
+    return JSON.parse(await readFile(filename, "utf8"));
+  } catch {
+    return fallback;
+  }
+}
+
+async function writeJsonAtomic(filename, value) {
+  const temp = filename + ".tmp";
+  await writeFile(temp, JSON.stringify(value, null, 2) + "\n", "utf8");
+  await rename(temp, filename);
+}
+
+async function loadCompactState(spec, state) {
+  const candles = await readFile(compactCandlePath(spec), "utf8")
+    .catch(() => "");
+
+  for (const line of candles.split(/\r?\n/)) {
+    if (!line) continue;
+    const parts = line.split(",");
+    if (parts.length < 6) continue;
+
+    const time = Number(parts[0]);
+    const open = Number(parts[1]);
+    const high = Number(parts[2]);
+    const low = Number(parts[3]);
+    const close = Number(parts[4]);
+    const volume = Number(parts[5]);
+    const trades = Number(parts[6] ?? 0);
+
+    if (
+      !Number.isFinite(time) ||
+      !Number.isFinite(open) ||
+      !Number.isFinite(high) ||
+      !Number.isFinite(low) ||
+      !Number.isFinite(close)
+    ) {
+      continue;
+    }
+
+    state.minutes.set(time, {
+      time,
+      open,
+      high,
+      low,
+      close,
+      volume: Number.isFinite(volume) ? volume : 0,
+      trades: Number.isFinite(trades) ? trades : 0,
+      buyVolume: 0,
+      sellVolume: 0,
+      buyTrades: 0,
+      sellTrades: 0
+    });
+  }
+
+  const flow = await readFile(compactOrderFlowPath(spec), "utf8")
+    .catch(() => "");
+
+  for (const line of flow.split(/\r?\n/)) {
+    if (!line) continue;
+    const parts = line.split(",");
+    if (parts.length < 6) continue;
+
+    const time = Number(parts[0]);
+    if (!Number.isFinite(time)) continue;
+
+    const existing = state.minutes.get(time) ?? {
+      time,
+      open: NaN,
+      high: NaN,
+      low: NaN,
+      close: NaN,
+      volume: 0,
+      trades: 0,
+      buyVolume: 0,
+      sellVolume: 0,
+      buyTrades: 0,
+      sellTrades: 0
+    };
+
+    existing.buyVolume = Number(parts[1]) || 0;
+    existing.sellVolume = Number(parts[2]) || 0;
+    existing.trades = Number(parts[3]) || existing.trades || 0;
+    existing.buyTrades = Number(parts[4]) || 0;
+    existing.sellTrades = Number(parts[5]) || 0;
+
+    state.minutes.set(time, existing);
+  }
+
+  const times = [...state.minutes.keys()];
+  state.firstTrade = times.length ? Math.min(...times) : null;
+  state.lastTrade = times.length ? Math.max(...times) : null;
+}
+
+async function writeMinuteSnapshot(spec, state) {
+  const minuteRows = [...state.minutes.values()]
+    .sort((a, b) => a.time - b.time);
+
+  const candleText = minuteRows
+    .filter(
+      (row) =>
+        row.trades > 0 &&
+        Number.isFinite(row.open) &&
+        Number.isFinite(row.high) &&
+        Number.isFinite(row.low) &&
+        Number.isFinite(row.close)
+    )
+    .map((row) =>
+      [
+        row.time,
+        row.open,
+        row.high,
+        row.low,
+        row.close,
+        row.volume,
+        row.trades
+      ].join(",")
+    )
+    .join("\n");
+
+  const flowText = minuteRows
+    .map((row) =>
+      [
+        row.time,
+        row.buyVolume ?? 0,
+        row.sellVolume ?? 0,
+        row.trades ?? 0,
+        row.buyTrades ?? 0,
+        row.sellTrades ?? 0
+      ].join(",")
+    )
+    .join("\n");
+
+  await Promise.all([
+    writeFile(
+      compactCandlePath(spec),
+      candleText + (candleText ? "\n" : ""),
+      "utf8"
+    ),
+    writeFile(
+      compactOrderFlowPath(spec),
+      flowText + (flowText ? "\n" : ""),
+      "utf8"
+    )
+  ]);
+}
+
+async function saveRecoveryCheckpoint(spec, state, checkpoint) {
+  await writeMinuteSnapshot(spec, state);
+  await writeJsonAtomic(symbolCheckpointPath(spec), checkpoint);
+}
+
+function isKrakenThrottle(response, message) {
+  return (
+    response.status === 429 ||
+    /too many requests|rate limit|throttl/i.test(message)
+  );
+}
+
 async function recoverCurrentQuarter(spec, state) {
-  let cursor = String(BigInt(Q4_FROM) * 1_000_000_000n);
-  let pages = 0;
-  let latestTime = 0;
+  const checkpoint = await readJson(symbolCheckpointPath(spec), {
+    cursor: String(BigInt(Q4_FROM) * 1_000_000_000n),
+    latestTime: 0,
+    pages: 0,
+    complete: false
+  });
+
+  if (checkpoint.complete) {
+    process.stdout.write(
+      spec.symbol + ": Q4 REST recovery already complete; skipping.\n"
+    );
+    return;
+  }
+
+  let cursor =
+    typeof checkpoint.cursor === "string" && checkpoint.cursor
+      ? checkpoint.cursor
+      : String(BigInt(Q4_FROM) * 1_000_000_000n);
+  let pages = Number(checkpoint.pages ?? 0);
+  let latestTime = Number(checkpoint.latestTime ?? 0);
   let retries = 0;
 
   process.stdout.write(
-    "Recovering " + spec.symbol + " from Kraken REST through official live cutoff…\n"
+    "Recovering " +
+      spec.symbol +
+      " from Kraken REST through official live cutoff" +
+      (pages > 0
+        ? " (resuming at page " + pages + ")"
+        : "") +
+      "…\n"
   );
 
   while (latestTime < LIVE_EPOCH) {
+    const requestStarted = Date.now();
+
     const url = new URL("https://api.kraken.com/0/public/Trades");
     url.searchParams.set("pair", spec.symbol);
     url.searchParams.set("assetVersion", "1");
     url.searchParams.set("since", cursor);
     url.searchParams.set("count", "1000");
 
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": "ALLINONEVIEW-Kraken-Compact-Recovery/1.0"
-      },
-      cache: "no-store"
-    });
+    let response;
+    let body;
 
-    const body = await response.json().catch(() => ({}));
+    try {
+      response = await fetch(url, {
+        headers: {
+          "User-Agent": "ALLINONEVIEW-Kraken-Compact-Recovery/1.1"
+        },
+        cache: "no-store"
+      });
+      body = await response.json().catch(() => ({}));
+    } catch (error) {
+      retries += 1;
+      const delay = Math.min(60_000, 5_000 * 2 ** Math.min(retries - 1, 4));
+      process.stderr.write(
+        spec.symbol +
+          ": temporary Kraken network error; checkpointing and retrying after backoff. " +
+          (error instanceof Error ? error.message : String(error)) +
+          "\n"
+      );
+      await saveRecoveryCheckpoint(spec, state, {
+        cursor,
+        latestTime,
+        pages,
+        complete: false
+      });
+      await sleep(delay);
+      continue;
+    }
+
     const errors = Array.isArray(body?.error) ? body.error : [];
+    const message =
+      errors.join(", ") ||
+      (!response.ok ? "HTTP " + response.status : "");
 
     if (!response.ok || errors.length) {
-      const message =
-        errors.join(", ") || "HTTP " + response.status;
-      if (/rate limit/i.test(message) && retries < 8) {
+      if (isKrakenThrottle(response, message)) {
         retries += 1;
-        await sleep(1000 * retries);
+        const delay = Math.min(
+          60_000,
+          5_000 * 2 ** Math.min(retries - 1, 4)
+        );
+
+        process.stderr.write(
+          spec.symbol +
+            ": Kraken throttled this pair (" +
+            message +
+            "). Progress saved; backing off before retry.\n"
+        );
+
+        await saveRecoveryCheckpoint(spec, state, {
+          cursor,
+          latestTime,
+          pages,
+          complete: false
+        });
+        await sleep(delay);
         continue;
       }
+
+      await saveRecoveryCheckpoint(spec, state, {
+        cursor,
+        latestTime,
+        pages,
+        complete: false
+      });
       throw new Error(spec.symbol + ": " + message);
     }
 
     retries = 0;
+
     const result = body?.result ?? {};
     const pairKey = Object.keys(result).find((key) => key !== "last");
     const rows =
@@ -321,13 +571,22 @@ async function recoverCurrentQuarter(spec, state) {
         ? null
         : String(result.last);
 
-    if (!rows.length || !next || next === cursor) break;
+    if (!rows.length || !next || next === cursor) {
+      await saveRecoveryCheckpoint(spec, state, {
+        cursor,
+        latestTime,
+        pages,
+        complete: latestTime >= LIVE_EPOCH
+      });
+      break;
+    }
 
     for (const item of rows) {
       if (!Array.isArray(item) || item.length < 4) continue;
 
       const time = Number(item[2]);
       if (!Number.isFinite(time)) continue;
+
       latestTime = Math.max(latestTime, time);
 
       if (time < Q4_FROM || time > LIVE_EPOCH) continue;
@@ -340,30 +599,58 @@ async function recoverCurrentQuarter(spec, state) {
           : item[3] === "s"
             ? "sell"
             : null;
+
       if (side) acceptTrade(state, time, price, qty, side);
     }
 
     cursor = next;
     pages += 1;
 
-    if (pages % 100 === 0) {
+    if (
+      pages % KRAKEN_CHECKPOINT_EVERY_PAGES === 0 ||
+      latestTime >= LIVE_EPOCH
+    ) {
+      await saveRecoveryCheckpoint(spec, state, {
+        cursor,
+        latestTime,
+        pages,
+        complete: latestTime >= LIVE_EPOCH
+      });
+
       process.stdout.write(
         spec.symbol +
           ": " +
           pages +
           " pages, reached " +
-          new Date(latestTime * 1000).toISOString() +
-          "\n"
+          (latestTime > 0
+            ? new Date(latestTime * 1000).toISOString()
+            : "unknown time") +
+          " — checkpoint saved.\n"
       );
     }
 
     if (latestTime >= LIVE_EPOCH) break;
-    await sleep(160);
+
+    const elapsed = Date.now() - requestStarted;
+    if (elapsed < KRAKEN_REQUEST_SPACING_MS) {
+      await sleep(KRAKEN_REQUEST_SPACING_MS - elapsed);
+    }
   }
+
+  const complete = latestTime >= LIVE_EPOCH;
+
+  await saveRecoveryCheckpoint(spec, state, {
+    cursor,
+    latestTime,
+    pages,
+    complete
+  });
 
   process.stdout.write(
     spec.symbol +
-      ": REST recovery complete after " +
+      ": REST recovery " +
+      (complete ? "complete" : "paused before cutoff") +
+      " after " +
       pages +
       " pages.\n"
   );
@@ -475,13 +762,51 @@ const states = new Map(
   SYMBOLS.map((spec) => [spec.symbol, makeState()])
 );
 
-for (const quarter of QUARTERS) {
-  await prepareQuarter(quarter, states);
+const archiveMarker = await readJson(ARCHIVE_MARKER, null);
+const archiveReady =
+  archiveMarker?.through === "2026Q3" &&
+  SYMBOLS.every(
+    (spec) =>
+      existsSync(compactCandlePath(spec)) &&
+      existsSync(compactOrderFlowPath(spec))
+  );
+
+if (archiveReady) {
+  process.stdout.write(
+    "Q2/Q3 compact Kraken archive checkpoint found; skipping archive reprocessing.\n"
+  );
+
+  await Promise.all(
+    SYMBOLS.map((spec) =>
+      loadCompactState(spec, states.get(spec.symbol))
+    )
+  );
+} else {
+  for (const quarter of QUARTERS) {
+    await prepareQuarter(quarter, states);
+  }
+
+  for (const spec of SYMBOLS) {
+    const state = states.get(spec.symbol);
+    await writeMinuteSnapshot(spec, state);
+  }
+
+  await writeJsonAtomic(ARCHIVE_MARKER, {
+    through: "2026Q3",
+    createdAt: new Date().toISOString(),
+    recoveryFrom: new Date(RECOVERY_FROM * 1000).toISOString()
+  });
+
+  process.stdout.write(
+    "Q2/Q3 compact archive checkpoint saved. Future retries will not reprocess those archives.\n"
+  );
 }
 
-for (const spec of SYMBOLS) {
-  await recoverCurrentQuarter(spec, states.get(spec.symbol));
-}
+await Promise.all(
+  SYMBOLS.map((spec) =>
+    recoverCurrentQuarter(spec, states.get(spec.symbol))
+  )
+);
 
 for (const spec of SYMBOLS) {
   const state = states.get(spec.symbol);
