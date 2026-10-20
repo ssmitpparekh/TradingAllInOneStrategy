@@ -53,8 +53,7 @@ export async function readStoredOrderFlow(input: {
        and symbol = $3
        and bucket_time >= $4
        and bucket_time <= $5
-     order by bucket_time asc
-     limit 100000`,
+     order by bucket_time asc`,
     [
       input.provider,
       input.market,
