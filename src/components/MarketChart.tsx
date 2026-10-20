@@ -1152,6 +1152,34 @@ export default function MarketChart({
     const updateMarkers = () => {
       const width = host.clientWidth;
       const height = host.clientHeight;
+      const chartTimes = [
+        ...candles.map((candle) => candle.time),
+        ...(liveCandle ? [liveCandle.time] : [])
+      ].sort((a, b) => a - b);
+
+      const nearestChartTime = (timestamp: number) => {
+        if (!chartTimes.length) return timestamp;
+
+        let low = 0;
+        let high = chartTimes.length - 1;
+
+        while (low < high) {
+          const mid = Math.floor((low + high) / 2);
+          if (chartTimes[mid] < timestamp) {
+            low = mid + 1;
+          } else {
+            high = mid;
+          }
+        }
+
+        const after = chartTimes[low];
+        const before = low > 0 ? chartTimes[low - 1] : after;
+
+        return Math.abs(after - timestamp) < Math.abs(timestamp - before)
+          ? after
+          : before;
+      };
+
       const latestTime =
         liveCandle?.time ?? candles[candles.length - 1]?.time ?? null;
       const latestX =
@@ -1161,7 +1189,8 @@ export default function MarketChart({
 
       setTradeMarkerPositions(
         tradeMarkers.flatMap((marker) => {
-          const x = chart.timeScale().timeToCoordinate(marker.time as Time);
+          const displayTime = nearestChartTime(marker.time);
+          const x = chart.timeScale().timeToCoordinate(displayTime as Time);
           const y = series.priceToCoordinate(marker.price);
 
           if (
@@ -1198,8 +1227,9 @@ export default function MarketChart({
             return [];
           }
 
+          const startDisplayTime = nearestChartTime(marker.time);
           const startX = chart.timeScale().timeToCoordinate(
-            marker.time as Time
+            startDisplayTime as Time
           );
           const requestedEndTime =
             marker.status === "CLOSED" && marker.endTime
