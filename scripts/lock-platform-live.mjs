@@ -24,7 +24,10 @@ function strictSslUrl(value) {
 
 loadLocalEnv();
 
-if (process.env.CONFIRM_PLATFORM_GO_LIVE !== "YES") {
+if (
+  process.env.CONFIRM_PLATFORM_GO_LIVE !== "YES" &&
+  !process.argv.includes("--confirm")
+) {
   throw new Error(
     "Refusing to lock the live boundary. Run only when strategy + UI are final with CONFIRM_PLATFORM_GO_LIVE=YES."
   );
