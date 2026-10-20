@@ -3,9 +3,7 @@ import { getHistory, type FyersCandle } from "@/lib/fyers";
 import { readFyersSession } from "@/lib/fyers-session";
 import { getOandaCandles } from "@/lib/oanda";
 import {
-  getMarketCandleCoverage,
   readMarketCandles,
-  upsertMarketCandles,
   type StoredMarketCandle
 } from "@/lib/server/candle-store";
 
@@ -13,6 +11,43 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DAY = 24 * 60 * 60;
+const HISTORY_MEMORY_TTL_MS = 60_000;
+const HISTORY_MEMORY_MAX_ENTRIES = 96;
+
+type MemoryHistoryEntry = {
+  expiresAt: number;
+  candles: StoredMarketCandle[];
+  from: number;
+  to: number;
+  note: string;
+};
+
+const historyMemoryCache = new Map<string, MemoryHistoryEntry>();
+
+function readMemoryHistory(key: string) {
+  const entry = historyMemoryCache.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    historyMemoryCache.delete(key);
+    return null;
+  }
+
+  // Refresh LRU order.
+  historyMemoryCache.delete(key);
+  historyMemoryCache.set(key, entry);
+  return entry;
+}
+
+function writeMemoryHistory(key: string, entry: MemoryHistoryEntry) {
+  historyMemoryCache.delete(key);
+  historyMemoryCache.set(key, entry);
+
+  while (historyMemoryCache.size > HISTORY_MEMORY_MAX_ENTRIES) {
+    const oldest = historyMemoryCache.keys().next().value;
+    if (!oldest) break;
+    historyMemoryCache.delete(oldest);
+  }
+}
 
 type RangeKey =
   | "1D"
@@ -295,21 +330,43 @@ export async function GET(request: NextRequest) {
       ? Math.max(from, to - fyersRefreshWindow(resolution))
       : from;
 
-  let cached: StoredMarketCandle[] = [];
-  let cacheAvailable = true;
-  let coverage:
-    | Awaited<ReturnType<typeof getMarketCandleCoverage>>
-    | null = null;
+  const memoryKey = [
+    provider,
+    market,
+    symbol,
+    resolution,
+    range
+  ].join("|");
+  const memoryHit = readMemoryHistory(memoryKey);
 
-  try {
-    coverage = await getMarketCandleCoverage({
+  if (memoryHit) {
+    return NextResponse.json({
+      ok: true,
       provider,
       market,
       symbol,
-      resolution
+      resolution,
+      range,
+      candles: memoryHit.candles,
+      from: memoryHit.from,
+      to: memoryHit.to,
+      cache: {
+        enabled: true,
+        kind: "memory",
+        candles: memoryHit.candles.length,
+        firstTime: memoryHit.candles[0]?.time ?? null,
+        lastTime: memoryHit.candles.at(-1)?.time ?? null
+      },
+      note: memoryHit.note
     });
+  }
 
-    cached = await readMarketCandles({
+  // Existing Neon candle rows are read-only during the provider-first migration.
+  // They are never refreshed or expanded here and can be removed after the
+  // provider-first path is verified.
+  let legacyCached: StoredMarketCandle[] = [];
+  try {
+    legacyCached = await readMarketCandles({
       provider,
       market,
       symbol,
@@ -318,80 +375,61 @@ export async function GET(request: NextRequest) {
       to
     });
   } catch {
-    cacheAvailable = false;
+    legacyCached = [];
   }
-
-  const step = resolutionSeconds(resolution);
-  const coverageStartsEarlyEnough =
-    coverage?.firstTime !== null &&
-    coverage?.firstTime !== undefined &&
-    coverage.firstTime <= from + Math.max(step * 2, DAY);
-  const cacheRecentlyRefreshed =
-    coverage?.lastRefresh !== null &&
-    coverage?.lastRefresh !== undefined &&
-    Date.now() - coverage.lastRefresh < 2 * 60 * 1000;
 
   let upstream: StoredMarketCandle[] = [];
   let upstreamError: string | null = null;
 
-  if (!coverageStartsEarlyEnough || !cacheRecentlyRefreshed) {
-    try {
-      upstream =
-        provider === "FYERS"
-          ? await fetchFyersHistory({
+  try {
+    upstream =
+      provider === "FYERS"
+        ? await fetchFyersHistory({
+            symbol,
+            resolution,
+            from: upstreamFrom,
+            to
+          })
+        : provider === "OANDA"
+          ? await fetchOandaHistory({
               symbol,
               resolution,
-              from: upstreamFrom,
+              from,
               to
             })
-          : provider === "OANDA"
-            ? await fetchOandaHistory({
-                symbol,
-                resolution,
-                from,
-                to
-              })
-            : await fetchKrakenRecent(symbol, resolution);
-
-      if (cacheAvailable && upstream.length) {
-        await upsertMarketCandles({
-          provider,
-          market,
-          symbol,
-          resolution,
-          source:
-            provider === "FYERS"
-              ? "FYERS Historical Data API"
-              : provider === "OANDA"
-                ? "OANDA v20 midpoint candles"
-                : "Kraken Spot OHLC REST",
-          quality:
-            provider === "OANDA"
-              ? "broker_mid_ohlc_tickcount"
-              : "exact_ohlcv",
-          candles: upstream
-        });
-
-        cached = await readMarketCandles({
-          provider,
-          market,
-          symbol,
-          resolution,
-          from,
-          to
-        });
-      }
-    } catch (error) {
-      upstreamError =
-        error instanceof Error
-          ? error.message
-          : "Unable to fetch upstream history.";
-    }
+          : await fetchKrakenRecent(symbol, resolution);
+  } catch (error) {
+    upstreamError =
+      error instanceof Error
+        ? error.message
+        : "Unable to fetch upstream history.";
   }
 
-  const candles = dedupeAndSort(
-    cacheAvailable ? cached : [...cached, ...upstream]
-  );
+  let usedLegacyFallback = false;
+  let candles: StoredMarketCandle[] = [];
+
+  if (upstream.length) {
+    if (provider === "FYERS" && upstreamFrom > from) {
+      const older = legacyCached.filter(
+        (candle) => candle.time < upstreamFrom
+      );
+      usedLegacyFallback = older.length > 0;
+      candles = dedupeAndSort([...older, ...upstream]);
+    } else if (provider === "KRAKEN" && legacyCached.length) {
+      // Kraken's standard OHLC endpoint is a recent-history endpoint. Keep the
+      // already-cached older tail read-only until the official archive path is
+      // wired in, while always preferring fresh Kraken rows on overlap.
+      usedLegacyFallback = legacyCached.some(
+        (candle) => candle.time < (upstream[0]?.time ?? Number.MAX_SAFE_INTEGER)
+      );
+      candles = dedupeAndSort([...legacyCached, ...upstream]);
+    } else {
+      candles = dedupeAndSort(upstream);
+    }
+  } else if (legacyCached.length) {
+    usedLegacyFallback = true;
+    candles = dedupeAndSort(legacyCached);
+  }
 
   if (!candles.length && upstreamError) {
     return NextResponse.json(
@@ -408,11 +446,13 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const notes: string[] = [];
+  const notes: string[] = [
+    "Provider-first candle mode is active. New candle history is not persisted to Neon."
+  ];
 
   if (provider === "FYERS") {
     notes.push(
-      "Historical candles are cached in Neon after provider retrieval."
+      "Candles are requested directly from the connected FYERS Historical Data API."
     );
     if (!isDailyLike(resolution) && (range === "5Y" || range === "MAX")) {
       notes.push(
@@ -421,11 +461,11 @@ export async function GET(request: NextRequest) {
     }
   } else if (provider === "OANDA") {
     notes.push(
-      "OANDA v20 midpoint candles are cached in Neon. OANDA candle volume is price/tick count rather than centralized exchange trade volume. Available instruments come from the connected OANDA account."
+      "OANDA v20 midpoint candles are requested directly. OANDA candle volume is price/tick count rather than centralized exchange trade volume. Available instruments come from the connected OANDA account."
     );
   } else {
     notes.push(
-      "Recent Kraken OHLC is cached in Neon; deep archive backfill is handled separately."
+      "Recent Kraken OHLC is requested directly; older Kraken history temporarily uses the existing read-only cache until the official archive path is connected."
     );
   }
 
@@ -435,11 +475,26 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  if (upstreamError && candles.length) {
+  if (usedLegacyFallback) {
     notes.push(
-      "Cached candles are available; the latest provider refresh could not be completed."
+      "Some older candles came from the existing read-only Neon safety cache; no new candle rows were written."
     );
   }
+
+  if (upstreamError && candles.length) {
+    notes.push(
+      "The provider refresh could not be completed, so existing read-only safety candles were used where available."
+    );
+  }
+
+  const note = notes.join(" ");
+  writeMemoryHistory(memoryKey, {
+    expiresAt: Date.now() + HISTORY_MEMORY_TTL_MS,
+    candles,
+    from,
+    to,
+    note
+  });
 
   return NextResponse.json({
     ok: true,
@@ -452,11 +507,12 @@ export async function GET(request: NextRequest) {
     from,
     to,
     cache: {
-      enabled: cacheAvailable,
+      enabled: true,
+      kind: "provider-memory",
       candles: candles.length,
       firstTime: candles[0]?.time ?? null,
       lastTime: candles.at(-1)?.time ?? null
     },
-    note: notes.join(" ")
+    note
   });
 }
