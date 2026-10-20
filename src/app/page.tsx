@@ -1208,6 +1208,11 @@ export default function Home() {
         id: trade.id,
         time: trade.signalTime,
         price: trade.entry,
+        entry: trade.entry,
+        stop: trade.initialStop,
+        targets: trade.targets.map((target) => target.price),
+        endTime: trade.closedTime,
+        resultR: trade.resultR,
         direction: trade.direction,
         status: trade.status,
         outcome: trade.outcome,
@@ -1702,27 +1707,74 @@ export default function Home() {
   }, [viewReady, selected, resolution, range]);
 
   useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem(TRADE_JOURNAL_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setTradeJournal(parsed as JournalTrade[]);
-        }
+    let cancelled = false;
+
+    const loadJournal = async () => {
+      let localTrades: JournalTrade[] = [];
+
+      try {
+        const saved = window.localStorage.getItem(TRADE_JOURNAL_KEY);
+        const parsed = saved ? JSON.parse(saved) : [];
+        localTrades = Array.isArray(parsed)
+          ? (parsed as JournalTrade[])
+          : [];
+      } catch {
+        localTrades = [];
       }
-    } catch {
-      // A corrupt local journal must not break the market terminal.
-    } finally {
+
+      let sharedTrades: JournalTrade[] = [];
+
+      try {
+        const response = await fetch("/api/signals/trades", {
+          cache: "no-store"
+        });
+        const data = await response.json();
+
+        if (response.ok && data?.ok && Array.isArray(data.trades)) {
+          sharedTrades = data.trades as JournalTrade[];
+        }
+      } catch {
+        // Local history remains available if the shared ledger is offline.
+      }
+
+      if (cancelled) return;
+
+      const merged = new Map<string, JournalTrade>();
+      for (const trade of localTrades) merged.set(trade.id, trade);
+      for (const trade of sharedTrades) merged.set(trade.id, trade);
+
+      setTradeJournal(
+        [...merged.values()].sort(
+          (a, b) => a.signalTime - b.signalTime
+        )
+      );
       setJournalReady(true);
-    }
+    };
+
+    void loadJournal();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
     if (!journalReady) return;
+
     window.localStorage.setItem(
       TRADE_JOURNAL_KEY,
       JSON.stringify(tradeJournal)
     );
+
+    if (!tradeJournal.length) return;
+
+    void fetch("/api/signals/trades", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trades: tradeJournal })
+    }).catch(() => {
+      // Local history remains intact if shared persistence is unavailable.
+    });
   }, [journalReady, tradeJournal]);
 
   useEffect(() => {
