@@ -30,8 +30,7 @@ if (process.env.CONFIRM_PLATFORM_GO_LIVE !== "YES") {
   );
 }
 
-const strategyVersion =
-  process.env.PLATFORM_STRATEGY_VERSION?.trim() || "AIOV-1.0.0";
+const strategyVersion = "AIOV-1.0.0";
 const raw =
   process.env.DATABASE_URL_UNPOOLED?.trim() ||
   process.env.DATABASE_URL?.trim() ||
@@ -80,4 +79,14 @@ try {
   );
 } finally {
   await client.end();
+}
+
+if (process.env.SKIP_AUTO_BACKTEST !== "YES") {
+  process.stdout.write(
+    "\nStarting the automatic pre-live strategy backtest suite…\n"
+  );
+  execSync("npm run backtest:platform", {
+    stdio: "inherit",
+    env: process.env
+  });
 }
