@@ -2667,15 +2667,23 @@ export default function Home() {
           ask: Number(tick.ask ?? current?.ask ?? 0)
         }));
 
-        setLiveCandle((current) =>
-          nextOandaLiveCandle(
+        setLiveCandle((current) => {
+          const next = nextOandaLiveCandle(
             current,
             candles,
             time,
             price,
             resolution
-          )
-        );
+          );
+
+          if (current && next.time > current.time) {
+            setCandles((history) =>
+              mergeLiveCandle(history, current)
+            );
+          }
+
+          return next;
+        });
       } catch {
         // Keep the last good OANDA price.
       }
@@ -2845,7 +2853,14 @@ export default function Home() {
           Number.isFinite(candle.low) &&
           Number.isFinite(candle.close)
         ) {
-          setLiveCandle(candle);
+          setLiveCandle((current) => {
+            if (current && candle.time > current.time) {
+              setCandles((history) =>
+                mergeLiveCandle(history, current)
+              );
+            }
+            return candle;
+          });
         }
       } catch {
         // Ignore malformed candle updates.
