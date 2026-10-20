@@ -379,9 +379,14 @@ async function loadCompactState(spec, state) {
     state.minutes.set(time, existing);
   }
 
-  const times = [...state.minutes.keys()];
-  state.firstTrade = times.length ? Math.min(...times) : null;
-  state.lastTrade = times.length ? Math.max(...times) : null;
+  let first = null;
+  let last = null;
+  for (const time of state.minutes.keys()) {
+    first = first === null ? time : Math.min(first, time);
+    last = last === null ? time : Math.max(last, time);
+  }
+  state.firstTrade = first;
+  state.lastTrade = last;
 }
 
 async function writeMinuteSnapshot(spec, state) {
