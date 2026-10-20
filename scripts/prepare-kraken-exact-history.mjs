@@ -1,4 +1,9 @@
-import { createReadStream, createWriteStream, existsSync } from "node:fs";
+import {
+  createReadStream,
+  createWriteStream,
+  existsSync,
+  readFileSync
+} from "node:fs";
 import {
   mkdir,
   readdir,
@@ -49,7 +54,7 @@ const COMPACT_ROOT = path.join(process.cwd(), ".data", "kraken-compact");
 
 function loadLocalEnv() {
   if (!existsSync(".env.local")) return;
-  const text = require("node:fs").readFileSync(".env.local", "utf8");
+  const text = readFileSync(".env.local", "utf8");
   for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
