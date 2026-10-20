@@ -234,6 +234,7 @@ const LAST_VIEW_KEY = "allinoneview:last-view:v1";
 const TRADE_JOURNAL_KEY = "allinoneview:trade-journal:v1";
 const THEME_KEY = "allinoneview:theme:v1";
 const ORDER_FLOW_LOCAL_KEY = "allinoneview:order-flow:v3";
+const ORDER_FLOW_CLIENT_MAX_BUCKETS = 200_000;
 
 const KRAKEN_RESOLUTIONS = new Set<Resolution>([
   "1", "5", "15", "30", "60", "240", "1D", "1W"
@@ -426,7 +427,7 @@ function mergeOrderFlowHistory(
 
   return [...byTime.values()]
     .sort((a, b) => a.time - b.time)
-    .slice(-10000);
+    .slice(-ORDER_FLOW_CLIENT_MAX_BUCKETS);
 }
 
 function mergeLiveCandle(
@@ -2514,7 +2515,7 @@ export default function Home() {
           (currentBucket === null ||
             bucket.time < currentBucket)
       )
-      .slice(-10000);
+      .slice(-ORDER_FLOW_CLIENT_MAX_BUCKETS);
 
     try {
       window.localStorage.setItem(
@@ -2824,7 +2825,7 @@ export default function Home() {
           }
 
           next.sort((a, b) => a.time - b.time);
-          return next.slice(-10000);
+          return next.slice(-ORDER_FLOW_CLIENT_MAX_BUCKETS);
         });
 
         if (
