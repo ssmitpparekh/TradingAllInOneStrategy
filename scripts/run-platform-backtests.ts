@@ -507,7 +507,7 @@ function transientMessage(error: unknown) {
 
 function isTransientError(error: unknown) {
   const message = transientMessage(error);
-  return /ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED|socket hang up|fetch failed|network|connection terminated|connection reset|57P01|57P02|57P03/i.test(
+  return /ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED|socket hang up|fetch failed|network|connection terminated|connection reset|too many requests|rate limit|HTTP 429|57P01|57P02|57P03/i.test(
     message
   );
 }
