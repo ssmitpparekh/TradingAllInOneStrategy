@@ -8,6 +8,7 @@ import {
   readStoredOrderFlow,
   upsertStoredOrderFlow
 } from "@/lib/server/order-flow-store";
+import { readKrakenCompactOrderFlow } from "@/lib/server/kraken-compact";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -83,6 +84,20 @@ function aggregate(
   }
 
   return [...grouped.values()].sort((a, b) => a.time - b.time);
+}
+
+function mergeMinuteBuckets(
+  ...groups: OrderFlowBucket[][]
+) {
+  const map = new Map<number, OrderFlowBucket>();
+
+  for (const group of groups) {
+    for (const bucket of group) {
+      map.set(bucket.time, bucket);
+    }
+  }
+
+  return [...map.values()].sort((a, b) => a.time - b.time);
 }
 
 function latestMissingWindow(
@@ -328,6 +343,20 @@ export async function GET(request: NextRequest) {
       to: safeTo
     });
 
+    const localCompact =
+      market === "KRAKEN"
+        ? await readKrakenCompactOrderFlow({
+            symbol,
+            from: safeFrom,
+            to: safeTo
+          })
+        : [];
+
+    let minuteBuckets = mergeMinuteBuckets(
+      localCompact,
+      stored.buckets
+    );
+
     let recovery:
       | {
           attempted: boolean;
@@ -342,7 +371,7 @@ export async function GET(request: NextRequest) {
 
     if (market === "KRAKEN") {
       const missing = latestMissingWindow(
-        stored.buckets,
+        minuteBuckets,
         safeFrom,
         safeTo
       );
@@ -379,12 +408,16 @@ export async function GET(request: NextRequest) {
             from: safeFrom,
             to: safeTo
           });
+          minuteBuckets = mergeMinuteBuckets(
+            localCompact,
+            stored.buckets
+          );
         }
       }
     }
 
     const buckets = aggregate(
-      stored.buckets,
+      minuteBuckets,
       resolution,
       safeTo
     );
@@ -402,7 +435,9 @@ export async function GET(request: NextRequest) {
             ? "Exact Kraken trade-side gaps were recovered on demand and compacted to 1-minute buckets."
             : null
           : stored.reason ??
-            "No exact trade-side order flow is available for this interval."
+            (localCompact.length
+              ? "Compact exact local Kraken history is loaded."
+              : "No exact trade-side order flow is available for this interval.")
     });
   } catch (error) {
     return NextResponse.json(
