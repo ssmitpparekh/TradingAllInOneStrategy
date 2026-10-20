@@ -24,6 +24,7 @@ export const PLATFORM_STRATEGY_VERSION = "AIOV-1.0.0";
 export type PlatformStrategyInput = {
   market: string;
   price: number;
+  reactionPrice?: number;
   context4h: ChartCandle[];
   context1h: ChartCandle[];
   context15m: ChartCandle[];
@@ -142,7 +143,7 @@ export function evaluatePlatformStrategy(
   const reactionFib15m =
     buildFibonacciSetup(input.context15m);
   const reactionTradePlan = buildReactionTradePlan({
-    price: input.price,
+    price: input.reactionPrice ?? input.price,
     candles15m: input.context15m,
     imbalance15m: reactionImbalance15m,
     structure15m: confirmation15m,
