@@ -1795,18 +1795,6 @@ export default function Home() {
     let cancelled = false;
 
     const loadJournal = async () => {
-      let localTrades: JournalTrade[] = [];
-
-      try {
-        const saved = window.localStorage.getItem(TRADE_JOURNAL_KEY);
-        const parsed = saved ? JSON.parse(saved) : [];
-        localTrades = Array.isArray(parsed)
-          ? (parsed as JournalTrade[])
-          : [];
-      } catch {
-        localTrades = [];
-      }
-
       let sharedTrades: JournalTrade[] = [];
 
       try {
@@ -1819,19 +1807,18 @@ export default function Home() {
           sharedTrades = data.trades as JournalTrade[];
         }
       } catch {
-        // Local history remains available if the shared ledger is offline.
+        sharedTrades = [];
       }
 
       if (cancelled) return;
 
-      const merged = new Map<string, JournalTrade>();
-      for (const trade of localTrades) merged.set(trade.id, trade);
-      for (const trade of sharedTrades) merged.set(trade.id, trade);
-
+      // The server LIVE ledger is authoritative. Browser storage is only a
+      // disposable cache written after this load; it is never merged back in,
+      // so a stale/refused/offline record cannot leak into charts or analytics.
       setTradeJournal(
-        [...merged.values()].sort(
-          (a, b) => a.signalTime - b.signalTime
-        )
+        sharedTrades
+          .slice()
+          .sort((a, b) => a.signalTime - b.signalTime)
       );
       setJournalReady(true);
     };
