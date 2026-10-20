@@ -46,32 +46,49 @@ try {
   await client.connect();
 
   const existing = await client.query(
-    "select strategy_version, live_at from public.platform_strategy_releases where status='LIVE' limit 1"
+    "select strategy_version, live_at, git_commit from public.platform_strategy_releases where status='LIVE' limit 1"
   );
+
+  let row;
+
   if (existing.rowCount) {
-    throw new Error(
-      "A platform strategy is already LIVE: " +
-        existing.rows[0].strategy_version +
-        " at " +
-        existing.rows[0].live_at
+    const existingRow = existing.rows[0];
+    const existingTime = new Date(existingRow.live_at).getTime();
+    const requestedTime = new Date(OFFICIAL_LIVE_AT).getTime();
+
+    if (
+      String(existingRow.strategy_version) !== strategyVersion ||
+      existingTime !== requestedTime
+    ) {
+      throw new Error(
+        "A different platform strategy release is already LIVE: " +
+          existingRow.strategy_version +
+          " at " +
+          existingRow.live_at
+      );
+    }
+
+    row = existingRow;
+    process.stdout.write(
+      "\nOfficial live boundary already locked; resuming the same release.\n"
     );
+  } else {
+    const result = await client.query(
+      `insert into public.platform_strategy_releases (
+         strategy_version, status, live_at, git_commit, ui_commit, notes
+       )
+       values ($1, 'LIVE', $4::timestamptz, $2, $2, $3)
+       returning strategy_version, live_at, git_commit`,
+      [
+        strategyVersion,
+        gitCommit,
+        "Official ALLINONEVIEW live boundary. All earlier strategy evidence belongs to backtesting; all later platform calls must be genuinely live.",
+        OFFICIAL_LIVE_AT
+      ]
+    );
+
+    row = result.rows[0];
   }
-
-  const result = await client.query(
-    `insert into public.platform_strategy_releases (
-       strategy_version, status, live_at, git_commit, ui_commit, notes
-     )
-     values ($1, 'LIVE', $4::timestamptz, $2, $2, $3)
-     returning strategy_version, live_at, git_commit`,
-    [
-      strategyVersion,
-      gitCommit,
-      "Official ALLINONEVIEW live boundary. All earlier strategy evidence belongs to backtesting; all later platform calls must be genuinely live.",
-      OFFICIAL_LIVE_AT
-    ]
-  );
-
-  const row = result.rows[0];
 
   await client.query(
     "delete from public.platform_signal_journal where signal_time < extract(epoch from $1::timestamptz)::bigint",
