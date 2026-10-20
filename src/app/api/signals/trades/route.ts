@@ -118,7 +118,15 @@ function normalizeTrade(value: unknown): JournalTrade {
     createdAt:
       Number.isFinite(Number(row.createdAt)) && Number(row.createdAt) > 0
         ? Math.floor(Number(row.createdAt))
-        : Date.now()
+        : Date.now(),
+    origin: "LIVE",
+    strategyVersion:
+      String(
+        row.strategyVersion ??
+          process.env.PLATFORM_STRATEGY_VERSION ??
+          "development"
+      ),
+    lockedAt: row.lockedAt == null ? null : String(row.lockedAt)
   };
 }
 
@@ -155,22 +163,63 @@ function mapRow(row: Record<string, unknown>): JournalTrade {
     closedTime: row.closed_time == null ? null : Number(row.closed_time),
     ambiguityReason:
       row.ambiguity_reason == null ? null : String(row.ambiguity_reason),
-    createdAt: Number(row.created_at)
+    createdAt: Number(row.created_at),
+    origin: "LIVE",
+    strategyVersion: String(row.strategy_version ?? "development"),
+    lockedAt: row.locked_at == null ? null : String(row.locked_at)
   };
+}
+
+function liveSignalMaxAgeSeconds(
+  timeframe: JournalTrade["confirmationTimeframe"]
+) {
+  return timeframe === "1m"
+    ? 3 * 60
+    : timeframe === "5m"
+      ? 12 * 60
+      : 35 * 60;
 }
 
 async function upsertSignal(trade: JournalTrade) {
   const pool = getPostgresPool();
+
+  const existing = await pool.query(
+    "select id from public.platform_signal_journal where id=$1 limit 1",
+    [trade.id]
+  );
+
+  // A new row is a genuine LIVE signal only if the server receives it inside
+  // the same freshness window the live UI uses. Historical/offline replays can
+  // update nothing here and therefore can never contaminate live performance.
+  if (!existing.rowCount) {
+    const now = Math.floor(Date.now() / 1000);
+    const age = now - trade.signalTime;
+    const maxAge =
+      liveSignalMaxAgeSeconds(trade.confirmationTimeframe);
+
+    if (age < -60 || age > maxAge) {
+      return {
+        saved: null,
+        rejected: {
+          id: trade.id,
+          reason:
+            "Not inserted: signal was not locked inside the live signal window."
+        }
+      };
+    }
+  }
+
   const result = await pool.query(
     `insert into public.platform_signal_journal (
        id, signal_time, market, symbol, name, setup_type, move_class,
        direction, confirmation_timeframe, entry, initial_stop, current_stop,
        targets, trigger, score, status, outcome, highest_target_hit, result_r,
-       closed_time, ambiguity_reason, created_at, updated_at
+       closed_time, ambiguity_reason, created_at, origin, strategy_version,
+       locked_at, updated_at
      )
      values (
        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15,$16,$17,
-       $18,$19,$20,$21,$22,now()
+       $18,$19,$20,$21,$22,'LIVE',$23,now(),now()
      )
      on conflict (id) do update set
        current_stop = excluded.current_stop,
@@ -204,11 +253,17 @@ async function upsertSignal(trade: JournalTrade) {
       trade.resultR,
       trade.closedTime,
       trade.ambiguityReason ?? null,
-      trade.createdAt
+      trade.createdAt,
+      trade.strategyVersion ??
+        process.env.PLATFORM_STRATEGY_VERSION ??
+        "development"
     ]
   );
 
-  return mapRow(result.rows[0]);
+  return {
+    saved: mapRow(result.rows[0]),
+    rejected: null
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -277,11 +332,19 @@ export async function POST(request: NextRequest) {
     const trades = incoming.map(normalizeTrade);
 
     const saved: JournalTrade[] = [];
+    const rejected: Array<{ id: string; reason: string }> = [];
+
     for (const trade of trades) {
-      saved.push(await upsertSignal(trade));
+      const result = await upsertSignal(trade);
+      if (result.saved) saved.push(result.saved);
+      if (result.rejected) rejected.push(result.rejected);
     }
 
-    return NextResponse.json({ ok: true, trades: saved });
+    return NextResponse.json({
+      ok: true,
+      trades: saved,
+      rejected
+    });
   } catch (error) {
     return NextResponse.json(
       {
