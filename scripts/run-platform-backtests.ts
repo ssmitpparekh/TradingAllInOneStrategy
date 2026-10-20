@@ -348,9 +348,31 @@ async function loadSeries(
     );
   }
 
-  return mergeCandles(cached, compactKraken, fresh).filter(
+  const merged = mergeCandles(cached, compactKraken, fresh).filter(
     (candle) => candle.time < cutoff
   );
+
+  if (requestedInstrument) {
+    process.stdout.write(
+      "Series " +
+        provider +
+        " " +
+        symbol +
+        " " +
+        resolution +
+        ": cached=" +
+        cached.length +
+        ", compact=" +
+        compactKraken.length +
+        ", providerFetched=" +
+        fresh.length +
+        ", merged=" +
+        merged.length +
+        "\n"
+    );
+  }
+
+  return merged;
 }
 
 async function insertTrades(
@@ -431,27 +453,49 @@ function continuitySummary(
   if (rows.length < 2) {
     return {
       suspiciousGaps: 0,
-      largestGapSeconds: 0
+      largestGapSeconds: 0,
+      largestGaps: [] as Array<{
+        from: number;
+        to: number;
+        seconds: number;
+      }>
     };
   }
 
   let suspiciousGaps = 0;
   let largestGapSeconds = 0;
+  const gaps: Array<{
+    from: number;
+    to: number;
+    seconds: number;
+  }> = [];
 
   for (let index = 1; index < rows.length; index += 1) {
-    const gap = rows[index].time - rows[index - 1].time;
+    const from = rows[index - 1].time;
+    const to = rows[index].time;
+    const gap = to - from;
     largestGapSeconds = Math.max(largestGapSeconds, gap);
 
-    // Ignore normal weekend/holiday closures (>36h). Flag missing chunks
-    // inside a trading week when more than two expected intervals disappear.
-    if (gap > step * 3 && gap < 36 * 60 * 60) {
-      suspiciousGaps += 1;
+    if (gap > step * 3) {
+      gaps.push({ from, to, seconds: gap });
+
+      // Count obvious intraday/weekday holes and also very large holes.
+      // Weekend closures usually land around 48-72h; the raw largest-gap
+      // list below is authoritative and lets us distinguish them manually.
+      if (gap < 36 * 60 * 60 || gap > 80 * 60 * 60) {
+        suspiciousGaps += 1;
+      }
     }
   }
 
+  const largestGaps = gaps
+    .sort((a, b) => b.seconds - a.seconds)
+    .slice(0, 5);
+
   return {
     suspiciousGaps,
-    largestGapSeconds
+    largestGapSeconds,
+    largestGaps
   };
 }
 
@@ -626,6 +670,28 @@ try {
           ", 15m gaps=" + continuity["15m"].suspiciousGaps +
           ", 1h gaps=" + continuity["1h"].suspiciousGaps +
           ", 4h gaps=" + continuity["4h"].suspiciousGaps +
+          "\nLargest raw gaps:\n" +
+          ([
+            ["1m", continuity["1m"]],
+            ["5m", continuity["5m"]],
+            ["15m", continuity["15m"]],
+            ["1h", continuity["1h"]],
+            ["4h", continuity["4h"]]
+          ] as const)
+            .map(([label, summary]) => {
+              const top = summary.largestGaps[0];
+              return top
+                ? "  " +
+                    label +
+                    ": " +
+                    Math.round(top.seconds / 3600) +
+                    "h from " +
+                    fmtEpoch(top.from) +
+                    " to " +
+                    fmtEpoch(top.to)
+                : "  " + label + ": none";
+            })
+            .join("\n") +
           "\n"
       );
   
