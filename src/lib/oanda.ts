@@ -248,7 +248,6 @@ export async function getOandaCandles(options: {
   from: number;
   to: number;
 }): Promise<OandaCandle[]> {
-  const accountId = await getOandaAccountId();
   const granularity = oandaGranularity(options.resolution);
   const query = new URLSearchParams({
     price: "M",
@@ -259,8 +258,10 @@ export async function getOandaCandles(options: {
     includeFirst: "true"
   });
 
+  // Historical candlesticks are instrument-scoped in OANDA v20.
+  // Do not use the account-scoped latest-candles/pricing routes here.
   const body = await oandaFetch(
-    `/v3/accounts/${encodeURIComponent(accountId)}/instruments/${encodeURIComponent(options.symbol)}/candles?${query.toString()}`
+    `/v3/instruments/${encodeURIComponent(options.symbol)}/candles?${query.toString()}`
   );
 
   const candles: Record<string, unknown>[] = Array.isArray(body?.candles)
