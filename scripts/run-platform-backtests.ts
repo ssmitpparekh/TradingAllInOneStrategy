@@ -1,5 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import pg from "pg";
+import { getHistory } from "../src/lib/fyers";
+import { readFyersSession } from "../src/lib/fyers-session";
+import { getOandaCandles } from "../src/lib/oanda";
 import {
   BACKTEST_INSTRUMENTS
 } from "../src/lib/strategy/catalog";
@@ -89,6 +92,149 @@ const pool = new Pool({
   connectionTimeoutMillis: 10_000
 });
 
+function resolutionSeconds(resolution: string) {
+  if (resolution === "1D") return 86400;
+  const minutes = Number(resolution);
+  return Number.isFinite(minutes) && minutes > 0
+    ? Math.floor(minutes * 60)
+    : 900;
+}
+
+function mergeCandles(...groups: Candle[][]) {
+  const byTime = new Map<number, Candle>();
+  for (const group of groups) {
+    for (const candle of group) {
+      if (
+        Number.isFinite(candle.time) &&
+        Number.isFinite(candle.open) &&
+        Number.isFinite(candle.high) &&
+        Number.isFinite(candle.low) &&
+        Number.isFinite(candle.close)
+      ) {
+        byTime.set(candle.time, candle);
+      }
+    }
+  }
+  return [...byTime.values()].sort((a, b) => a.time - b.time);
+}
+
+async function fetchKrakenRecent(
+  symbol: string,
+  resolution: string
+): Promise<Candle[]> {
+  const interval = Number(resolution);
+  if (![1, 5, 15, 30, 60, 240].includes(interval)) return [];
+
+  const url = new URL("https://api.kraken.com/0/public/OHLC");
+  url.searchParams.set("pair", symbol);
+  url.searchParams.set("interval", String(interval));
+  url.searchParams.set("assetVersion", "1");
+
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+      "User-Agent": "ALLINONEVIEW-Backtest-Freshness/1.0"
+    },
+    cache: "no-store"
+  });
+  const body = await response.json();
+
+  if (
+    !response.ok ||
+    (Array.isArray(body?.error) && body.error.length)
+  ) {
+    throw new Error(
+      Array.isArray(body?.error) && body.error.length
+        ? body.error.join(", ")
+        : `Kraken HTTP ${response.status}`
+    );
+  }
+
+  const result = body?.result ?? {};
+  const pairKey = Object.keys(result).find((key) => key !== "last");
+  const rows = pairKey ? result[pairKey] : [];
+
+  return Array.isArray(rows)
+    ? rows.map((row: unknown[]) => ({
+        time: Number(row[0]),
+        open: Number(row[1]),
+        high: Number(row[2]),
+        low: Number(row[3]),
+        close: Number(row[4]),
+        volume: Number(row[6] ?? 0)
+      }))
+    : [];
+}
+
+async function fetchProviderTail(input: {
+  provider: string;
+  symbol: string;
+  resolution: string;
+  from: number;
+  to: number;
+}): Promise<Candle[]> {
+  if (input.from >= input.to) return [];
+
+  if (input.provider === "KRAKEN") {
+    return fetchKrakenRecent(input.symbol, input.resolution);
+  }
+
+  if (input.provider === "FYERS") {
+    const session = await readFyersSession();
+    if (!session?.accessToken) {
+      throw new Error("FYERS is not connected for backtest freshness.");
+    }
+
+    const chunkSeconds =
+      input.resolution === "1D" ? 365 * 86400 : 99 * 86400;
+    const output: Candle[] = [];
+
+    for (
+      let from = input.from;
+      from <= input.to;
+      from += chunkSeconds + 1
+    ) {
+      const to = Math.min(input.to, from + chunkSeconds);
+      output.push(
+        ...(await getHistory(session.accessToken, {
+          symbol: input.symbol,
+          resolution: input.resolution,
+          from,
+          to
+        }))
+      );
+    }
+
+    return mergeCandles(output);
+  }
+
+  if (input.provider === "OANDA") {
+    const step = resolutionSeconds(input.resolution);
+    const chunkSeconds = Math.max(step, step * 4500);
+    const output: Candle[] = [];
+
+    for (
+      let from = input.from;
+      from <= input.to;
+      from += chunkSeconds + 1
+    ) {
+      const to = Math.min(input.to, from + chunkSeconds);
+      output.push(
+        ...(await getOandaCandles({
+          symbol: input.symbol,
+          resolution: input.resolution,
+          from,
+          to
+        }))
+      );
+    }
+
+    return mergeCandles(output);
+  }
+
+  return [];
+}
+
 async function loadSeries(
   provider: string,
   market: string,
@@ -105,7 +251,7 @@ async function loadSeries(
     [provider, market, symbol, resolution, cutoff]
   );
 
-  return result.rows.map((row) => ({
+  const cached: Candle[] = result.rows.map((row) => ({
     time: Number(row.candle_time),
     open: Number(row.open),
     high: Number(row.high),
@@ -113,6 +259,46 @@ async function loadSeries(
     close: Number(row.close),
     volume: Number(row.volume ?? 0)
   }));
+
+  // Continuous history sync is intentionally retired. At the official launch
+  // boundary, refresh only the missing tail from the provider in memory so the
+  // historical test reaches the immutable live cutoff without restarting the
+  // old candle-storage architecture.
+  const step = resolutionSeconds(resolution);
+  const lastCached = cached.at(-1)?.time ?? null;
+  const defaultTail =
+    provider === "FYERS"
+      ? resolution === "1D"
+        ? 5 * 365 * 86400
+        : 364 * 86400
+      : provider === "OANDA"
+        ? 366 * 86400
+        : 720 * step;
+  const refreshFrom = Math.max(
+    0,
+    lastCached !== null
+      ? lastCached + step
+      : cutoff - defaultTail
+  );
+
+  let fresh: Candle[] = [];
+  try {
+    fresh = await fetchProviderTail({
+      provider,
+      symbol,
+      resolution,
+      from: refreshFrom,
+      to: cutoff - 1
+    });
+  } catch (error) {
+    process.stderr.write(
+      `Freshness refresh failed for ${provider} ${symbol} ${resolution}: ${error instanceof Error ? error.message : String(error)}\n`
+    );
+  }
+
+  return mergeCandles(cached, fresh).filter(
+    (candle) => candle.time < cutoff
+  );
 }
 
 async function insertTrades(
