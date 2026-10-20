@@ -14,6 +14,7 @@ jobs:
           node-version: 24
       - run: npm install
       - run: npm run check:release-scripts
+      - run: npx esbuild scripts/run-platform-backtests.ts --platform=node --format=cjs --outfile=/tmp/backtest-runner.cjs
       - run: npm run typecheck
       - run: npm run build
       - name: Production smoke test
