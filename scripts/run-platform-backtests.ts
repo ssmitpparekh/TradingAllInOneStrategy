@@ -311,11 +311,16 @@ async function loadSeries(
       : provider === "OANDA"
         ? 366 * 86400
         : 720 * step;
+  const firstCached = cached[0]?.time ?? null;
   const refreshFrom = Math.max(
     0,
-    lastCached !== null
-      ? lastCached + step
-      : cutoff - defaultTail
+    provider === "OANDA"
+      ? firstCached !== null
+        ? firstCached
+        : cutoff - defaultTail
+      : lastCached !== null
+        ? lastCached + step
+        : cutoff - defaultTail
   );
 
   let compactKraken: Candle[] = [];
@@ -416,6 +421,38 @@ function fmtEpoch(value: number | null) {
   return value === null
     ? "n/a"
     : new Date(value * 1000).toISOString();
+}
+
+function continuitySummary(
+  rows: Candle[],
+  resolution: string
+) {
+  const step = resolutionSeconds(resolution);
+  if (rows.length < 2) {
+    return {
+      suspiciousGaps: 0,
+      largestGapSeconds: 0
+    };
+  }
+
+  let suspiciousGaps = 0;
+  let largestGapSeconds = 0;
+
+  for (let index = 1; index < rows.length; index += 1) {
+    const gap = rows[index].time - rows[index - 1].time;
+    largestGapSeconds = Math.max(largestGapSeconds, gap);
+
+    // Ignore normal weekend/holiday closures (>36h). Flag missing chunks
+    // inside a trading week when more than two expected intervals disappear.
+    if (gap > step * 3 && gap < 36 * 60 * 60) {
+      suspiciousGaps += 1;
+    }
+  }
+
+  return {
+    suspiciousGaps,
+    largestGapSeconds
+  };
 }
 
 function transientMessage(error: unknown) {
@@ -548,6 +585,14 @@ try {
         "1h": h1.length,
         "4h": h4.length
       };
+
+      const continuity = {
+        "1m": continuitySummary(m1, "1"),
+        "5m": continuitySummary(m5, "5"),
+        "15m": continuitySummary(m15, "15"),
+        "1h": continuitySummary(h1, "60"),
+        "4h": continuitySummary(h4, "240")
+      };
   
       const firstValues = [
         m1[0]?.time,
@@ -575,6 +620,12 @@ try {
           ", 4h=" + counts["4h"] +
           "\nFrom " + fmtEpoch(first) +
           " to " + fmtEpoch(last) +
+          "\nContinuity: " +
+          "1m gaps=" + continuity["1m"].suspiciousGaps +
+          ", 5m gaps=" + continuity["5m"].suspiciousGaps +
+          ", 15m gaps=" + continuity["15m"].suspiciousGaps +
+          ", 1h gaps=" + continuity["1h"].suspiciousGaps +
+          ", 4h gaps=" + continuity["4h"].suspiciousGaps +
           "\n"
       );
   
@@ -591,6 +642,7 @@ try {
         coverage[instrument.key] = {
           status: "SKIPPED_INSUFFICIENT_HISTORY",
           counts,
+          continuity,
           from: first,
           to: last
         };
@@ -839,6 +891,7 @@ try {
       coverage[instrument.key] = {
         status: "COMPLETED",
         counts,
+        continuity,
         from: first,
         to: last,
         acceptedTrades: accepted.length
