@@ -25,6 +25,7 @@ export type PlatformStrategyInput = {
   market: string;
   price: number;
   reactionPrice?: number;
+  evaluationTime?: number;
   context4h: ChartCandle[];
   context1h: ChartCandle[];
   context15m: ChartCandle[];
@@ -124,6 +125,7 @@ export function evaluatePlatformStrategy(
   const simpleTradePlan = buildSimpleTradePlan({
     price: input.price,
     latestTime:
+      input.evaluationTime ??
       fastLatestTime ??
       input.context1h.at(-1)?.time ??
       null,
