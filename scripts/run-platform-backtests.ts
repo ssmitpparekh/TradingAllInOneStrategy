@@ -93,6 +93,13 @@ const pool = new Pool({
   connectionTimeoutMillis: 10_000
 });
 
+const requestedInstrument =
+  process.argv
+    .find((arg) => arg.startsWith("--instrument="))
+    ?.split("=")[1]
+    ?.trim()
+    .toUpperCase() ?? null;
+
 function resolutionSeconds(resolution: string) {
   if (resolution === "1D") return 86400;
   const minutes = Number(resolution);
@@ -360,6 +367,25 @@ async function insertTrades(
   }
 }
 
+function incrementCount(
+  map: Map<string, number>,
+  key: string
+) {
+  map.set(key, (map.get(key) ?? 0) + 1);
+}
+
+function topCounts(map: Map<string, number>, limit = 8) {
+  return [...map.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit);
+}
+
+function fmtEpoch(value: number | null) {
+  return value === null
+    ? "n/a"
+    : new Date(value * 1000).toISOString();
+}
+
 async function main() {
 try {
     const releaseResult = await pool.query(
@@ -398,7 +424,19 @@ try {
   
     const coverage: Record<string, unknown> = {};
   
-    for (const instrument of BACKTEST_INSTRUMENTS) {
+    const instruments = requestedInstrument
+      ? BACKTEST_INSTRUMENTS.filter(
+          (instrument) => instrument.key === requestedInstrument
+        )
+      : BACKTEST_INSTRUMENTS;
+
+    if (requestedInstrument && instruments.length === 0) {
+      throw new Error(
+        "Unsupported instrument filter: " + requestedInstrument
+      );
+    }
+
+    for (const instrument of instruments) {
       process.stdout.write("\nBacktesting " + instrument.key + "…\n");
   
       const [m1, m5, m15, h1, h4] = await Promise.all([
@@ -433,6 +471,18 @@ try {
       ].filter((value): value is number => Number.isFinite(value));
       const first = firstValues.length ? Math.min(...firstValues) : null;
       const last = lastValues.length ? Math.max(...lastValues) : null;
+
+      process.stdout.write(
+        "Data coverage: " +
+          "1m=" + counts["1m"] +
+          ", 5m=" + counts["5m"] +
+          ", 15m=" + counts["15m"] +
+          ", 1h=" + counts["1h"] +
+          ", 4h=" + counts["4h"] +
+          "\nFrom " + fmtEpoch(first) +
+          " to " + fmtEpoch(last) +
+          "\n"
+      );
   
       const indiaFastConfirmation =
         instrument.market === "NSE" || instrument.market === "BSE";
@@ -455,6 +505,15 @@ try {
       }
   
       const candidates = new Map<string, JournalTrade>();
+
+      const primaryStateCounts = new Map<string, number>();
+      const primaryReasonCounts = new Map<string, number>();
+      const reactionStateCounts = new Map<string, number>();
+      const reactionReasonCounts = new Map<string, number>();
+      let evaluatedWindows = 0;
+      let maxPrimaryScore = 0;
+      let maxReversalScore = 0;
+      let confirmedReversalWindows = 0;
   
       for (const candle of m15) {
         const evaluationTime = candle.time + 15 * 60;
@@ -518,7 +577,39 @@ try {
           derivatives: null
         });
   
-        const primary = evaluated.simpleTradePlan;
+        evaluatedWindows += 1;
+      maxPrimaryScore = Math.max(
+        maxPrimaryScore,
+        Number(evaluated.simpleTradePlan.score ?? 0)
+      );
+      maxReversalScore = Math.max(
+        maxReversalScore,
+        Number(evaluated.reversalEngine.selected.score ?? 0)
+      );
+      if (
+        evaluated.reversalEngine.selected.entryState === "CONFIRMED"
+      ) {
+        confirmedReversalWindows += 1;
+      }
+
+      incrementCount(
+        primaryStateCounts,
+        evaluated.simpleTradePlan.state
+      );
+      incrementCount(
+        primaryReasonCounts,
+        evaluated.simpleTradePlan.reason
+      );
+      incrementCount(
+        reactionStateCounts,
+        evaluated.reactionTradePlan.state
+      );
+      incrementCount(
+        reactionReasonCounts,
+        evaluated.reactionTradePlan.reason
+      );
+
+            const primary = evaluated.simpleTradePlan;
         if (
           primary.state === "READY" &&
           primary.signalTime !== null &&
@@ -613,7 +704,31 @@ try {
         }
       }
   
-      const accepted = [...candidates.values()]
+      process.stdout.write(
+        "Replay diagnostics: evaluated=" +
+          evaluatedWindows +
+          ", max primary score=" +
+          maxPrimaryScore +
+          ", max reversal score=" +
+          maxReversalScore +
+          ", confirmed reversal windows=" +
+          confirmedReversalWindows +
+          "\nPrimary states: " +
+          JSON.stringify(Object.fromEntries(primaryStateCounts)) +
+          "\nReaction states: " +
+          JSON.stringify(Object.fromEntries(reactionStateCounts)) +
+          "\nTop primary reasons:\n" +
+          topCounts(primaryReasonCounts)
+            .map(([reason, count]) => "  " + count + " × " + reason)
+            .join("\n") +
+          "\nTop reaction reasons:\n" +
+          topCounts(reactionReasonCounts)
+            .map(([reason, count]) => "  " + count + " × " + reason)
+            .join("\n") +
+          "\n"
+      );
+
+            const accepted = [...candidates.values()]
         .sort((a, b) => a.signalTime - b.signalTime)
         .map((trade) => {
           const fromIndex = lowerBound(m1, trade.signalTime);
