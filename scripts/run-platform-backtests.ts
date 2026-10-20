@@ -11,6 +11,10 @@ import {
   evaluatePlatformStrategy
 } from "../src/lib/analysis/platform-strategy";
 import {
+  evaluatePlatformStrategyV11Research,
+  RESEARCH_STRATEGY_V11_VERSION
+} from "../src/lib/analysis/platform-strategy-v11-research";
+import {
   makeTradeId,
   reconcileTradeWithCandles,
   type JournalTrade
@@ -99,6 +103,25 @@ const requestedInstrument =
     ?.split("=")[1]
     ?.trim()
     .toUpperCase() ?? null;
+
+const requestedStrategy =
+  process.argv
+    .find((arg) => arg.startsWith("--strategy="))
+    ?.split("=")[1]
+    ?.trim() ?? null;
+
+const researchV11 =
+  requestedStrategy === RESEARCH_STRATEGY_V11_VERSION;
+
+if (
+  requestedStrategy &&
+  requestedStrategy !== RESEARCH_STRATEGY_V11_VERSION &&
+  requestedStrategy !== "AIOV-1.0.0"
+) {
+  throw new Error(
+    "Unsupported backtest strategy: " + requestedStrategy
+  );
+}
 
 function resolutionSeconds(resolution: string) {
   if (resolution === "1D") return 86400;
@@ -580,9 +603,21 @@ try {
     }
   
     const release = releaseResult.rows[0];
-    const version = String(release.strategy_version);
+    const liveVersion = String(release.strategy_version);
+    const version = researchV11
+      ? RESEARCH_STRATEGY_V11_VERSION
+      : liveVersion;
     const cutoff = Math.floor(new Date(release.live_at).getTime() / 1000);
     runId = version + ":" + Date.now();
+
+    process.stdout.write(
+      "Strategy under test: " +
+        version +
+        (researchV11
+          ? " (research only; live " + liveVersion + " remains unchanged)"
+          : " (locked live baseline)") +
+        "\n"
+    );
   
     await pool.query(
       `insert into public.strategy_backtest_runs (
@@ -594,8 +629,12 @@ try {
         runId,
         version,
         new Date(cutoff * 1000).toISOString(),
-        "DETERMINISTIC_TECHNICAL_CORE_FROM_PROVIDER_CACHE",
-        "Uses the exact shared strategy evaluator with historical OHLCV. Historical live-only news/derivatives veto snapshots are not invented, so this run is explicitly not labelled full-strategy."
+        researchV11
+          ? "AIOV_1_1_RESEARCH_TECHNICAL_CORE"
+          : "DETERMINISTIC_TECHNICAL_CORE_FROM_PROVIDER_CACHE",
+        researchV11
+          ? "Research-only AIOV-1.1.0 candidate evaluated before the immutable AIOV-1.0.0 live cutoff. It removes correlated duplicate confirmation gates while keeping v1.0 score, stop-width and minimum-RR rules unchanged. Historical live-only news/derivatives veto snapshots are not invented."
+          : "Uses the exact shared strategy evaluator with historical OHLCV. Historical live-only news/derivatives veto snapshots are not invented, so this run is explicitly not labelled full-strategy."
       ]
     );
   
@@ -846,7 +885,7 @@ try {
           0;
         if (!(price > 0)) continue;
   
-        const evaluated = evaluatePlatformStrategy({
+        const strategyInput = {
           market: instrument.market,
           price,
           context4h,
@@ -856,7 +895,11 @@ try {
           context1m,
           evaluationTime,
           derivatives: null
-        });
+        };
+
+        const evaluated = researchV11
+          ? evaluatePlatformStrategyV11Research(strategyInput)
+          : evaluatePlatformStrategy(strategyInput);
   
         evaluatedWindows += 1;
       maxPrimaryScore = Math.max(
