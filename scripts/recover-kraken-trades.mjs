@@ -61,8 +61,26 @@ const pool = new Pool({
 });
 
 const INSERT_CHUNK_SIZE = 500;
+const STORAGE_SOFT_LIMIT_BYTES = Number(
+  process.env.NEON_STORAGE_SOFT_LIMIT_BYTES ?? 900 * 1024 * 1024
+);
+
+async function assertStorageHeadroom() {
+  const result = await pool.query(
+    "select pg_database_size(current_database())::bigint as bytes"
+  );
+  const bytes = Number(result.rows[0]?.bytes ?? 0);
+  if (bytes >= STORAGE_SOFT_LIMIT_BYTES) {
+    throw new Error(
+      `Neon storage safety stop during recovery: ${bytes} bytes >= soft limit ${STORAGE_SOFT_LIMIT_BYTES} bytes`
+    );
+  }
+}
 
 async function insertTrades(rows) {
+  if (!rows.length) return;
+  await assertStorageHeadroom();
+
   for (let offset = 0; offset < rows.length; offset += INSERT_CHUNK_SIZE) {
     const chunk = rows.slice(offset, offset + INSERT_CHUNK_SIZE);
     const values = [];
