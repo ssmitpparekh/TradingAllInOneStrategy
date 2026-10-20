@@ -20,14 +20,13 @@ create table if not exists public.market_candles (
   primary key (provider, market, symbol, resolution, candle_time)
 );
 
-create index if not exists market_candles_lookup_idx
-  on public.market_candles (
-    provider,
-    market,
-    symbol,
-    resolution,
-    candle_time desc
-  );
-
-create index if not exists market_candles_symbol_time_idx
-  on public.market_candles (symbol, resolution, candle_time desc);
+-- The primary key already provides a B-tree on
+-- (provider, market, symbol, resolution, candle_time). PostgreSQL can scan
+-- that index in either direction, so a second lookup index on the same
+-- columns is redundant and wastes substantial storage.
+--
+-- ALLINONEVIEW candle reads always include provider + market + symbol +
+-- resolution. Keep only the primary-key index unless a future measured query
+-- pattern demonstrates a need for another index.
+drop index if exists public.market_candles_lookup_idx;
+drop index if exists public.market_candles_symbol_time_idx;
