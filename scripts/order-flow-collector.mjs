@@ -80,44 +80,49 @@ function fallbackTradeId(item, epoch) {
     .digest("hex");
 }
 
+const INSERT_CHUNK_SIZE = 500;
+
 async function insertTrades(rows) {
   if (!rows.length) return;
 
-  const values = [];
-  const tuples = rows.map((row, index) => {
-    const start = index * 9;
+  for (let offset = 0; offset < rows.length; offset += INSERT_CHUNK_SIZE) {
+    const chunk = rows.slice(offset, offset + INSERT_CHUNK_SIZE);
+    const values = [];
+    const tuples = chunk.map((row, index) => {
+      const start = index * 9;
 
-    values.push(
-      row.provider,
-      row.market,
-      row.symbol,
-      row.trade_id,
-      row.trade_time,
-      row.trade_epoch,
-      row.price,
-      row.qty,
-      row.side
+      values.push(
+        row.provider,
+        row.market,
+        row.symbol,
+        row.trade_id,
+        row.trade_time,
+        row.trade_epoch,
+        row.price,
+        row.qty,
+        row.side
+      );
+
+      return `(${start + 1},${start + 2},${start + 3},${start + 4},${start + 5},${start + 6},${start + 7},${start + 8},${start + 9})`;
+    });
+
+    await pool.query(
+      `insert into public.market_trade_tape (
+         provider,
+         market,
+         symbol,
+         trade_id,
+         trade_time,
+         trade_epoch,
+         price,
+         qty,
+         side
+       )
+       values ${tuples.join(",")}
+       on conflict (provider, symbol, trade_id) do nothing`,
+      values
     );
-
-    return `($${start + 1},$${start + 2},$${start + 3},$${start + 4},$${start + 5},$${start + 6},$${start + 7},$${start + 8},$${start + 9})`;
-  });
-
-  await pool.query(
-    `insert into public.market_trade_tape (
-       provider,
-       market,
-       symbol,
-       trade_id,
-       trade_time,
-       trade_epoch,
-       price,
-       qty,
-       side
-     )
-     values ${tuples.join(",")}
-     on conflict (provider, symbol, trade_id) do nothing`,
-    values
-  );
+  }
 }
 
 async function refreshBars(symbol, fromEpoch, toEpoch) {
@@ -166,7 +171,10 @@ async function flush() {
       `[${new Date().toISOString()}] stored ${batch.length} exact Kraken trades\n`
     );
   } catch (error) {
-    pending = [...batch, ...pending].slice(-50000);
+    // Requeue the entire failed batch. Never silently discard exact trade tape.
+    // Successful chunks are safe to retry because the table has an idempotent
+    // provider/symbol/trade_id primary key with ON CONFLICT DO NOTHING.
+    pending = [...batch, ...pending];
 
     process.stderr.write(
       `[${new Date().toISOString()}] collector flush error: ${
