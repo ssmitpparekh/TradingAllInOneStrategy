@@ -104,3 +104,53 @@ export async function readKrakenCompactCandles(input: {
 export function krakenCompactPathHint() {
   return path.join(process.cwd(), ".data", "kraken-compact");
 }
+
+
+export async function readKrakenCompactOrderFlow(input: {
+  symbol: string;
+  from: number;
+  to: number;
+}) {
+  const filename = path.join(
+    process.cwd(),
+    ".data",
+    "kraken-compact",
+    symbolKey(input.symbol) + "-orderflow-1m.csv"
+  );
+
+  try {
+    const raw = await readFile(filename, "utf8");
+    return raw
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .flatMap((line) => {
+        const parts = line.split(",");
+        if (parts.length < 6) return [];
+
+        const time = Number(parts[0]);
+        if (
+          !Number.isFinite(time) ||
+          time < input.from ||
+          time > input.to
+        ) {
+          return [];
+        }
+
+        return [{
+          time,
+          buyVolume: Number(parts[1]),
+          sellVolume: Number(parts[2]),
+          trades: Number(parts[3]),
+          buyTrades: Number(parts[4]),
+          sellTrades: Number(parts[5]),
+          partial: false,
+          closed: true,
+          coverage: "full" as const,
+          quality: "exact" as const,
+          source: "Kraken official archive/REST compact local recovery"
+        }];
+      });
+  } catch {
+    return [];
+  }
+}
