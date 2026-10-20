@@ -5,6 +5,7 @@ import {
   type PlatformStrategyInput
 } from "./platform-strategy";
 import { buildSimpleTradePlan } from "./trade-plan";
+import { buildReactionTradePlan } from "./reaction-trade";
 
 export const RESEARCH_STRATEGY_V11_VERSION =
   "AIOV-1.1.0-RESEARCH";
@@ -117,9 +118,19 @@ export function evaluatePlatformStrategyV11Research(
     confirmation15m: base.confirmation15m
   });
 
+  const reactionTradePlan = buildReactionTradePlan({
+    price: input.reactionPrice ?? input.price,
+    candles15m: input.context15m,
+    imbalance15m: base.reactionImbalance15m,
+    structure15m: base.confirmation15m,
+    primaryPlan: simpleTradePlan,
+    atr15m: base.reactionFib15m.atr14
+  });
+
   return {
     ...base,
     simpleTradePlan,
+    reactionTradePlan,
     research: {
       version: RESEARCH_STRATEGY_V11_VERSION,
       fibUsable,
