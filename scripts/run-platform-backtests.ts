@@ -458,6 +458,47 @@ function incrementCount(
 ) {
   map.set(key, (map.get(key) ?? 0) + 1);
 }
+function classifyPrimaryGate(plan: {
+  state: string;
+  reason: string;
+}) {
+  const reason = plan.reason || "";
+
+  if (plan.state === "READY") return "READY";
+  if (plan.state === "WAIT_TREND") return "HTF_BIAS";
+  if (plan.state === "WAIT_RETRACE") return "WAIT_RETRACE";
+
+  if (/Confluence score is only/i.test(reason)) {
+    return "BASE_SCORE_LT_60";
+  }
+  if (/No qualifying sweep or Order Block trigger/i.test(reason)) {
+    return "MISSING_TRIGGER";
+  }
+  if (/15m structure confirmation is not complete|Fresh 15m structure confirmation is not complete/i.test(reason)) {
+    return "MISSING_15M_CONFIRMATION";
+  }
+  if (/invalidation level could not be established/i.test(reason)) {
+    return "NO_INVALIDATION";
+  }
+  if (/strict limit is 0\.65× ATR/i.test(reason)) {
+    return "STOP_TOO_WIDE";
+  }
+  if (/Confirmation threshold not met/i.test(reason)) {
+    return "SCORE_THRESHOLD";
+  }
+  if (/Best available target is only/i.test(reason)) {
+    return "RR_BELOW_3";
+  }
+
+  if (plan.state === "WAIT_CONFIRMATION") {
+    return "WAIT_CONFIRMATION_OTHER";
+  }
+  if (plan.state === "NO_TRADE") {
+    return "NO_TRADE_OTHER";
+  }
+  return "OTHER";
+}
+
 
 function topCounts(map: Map<string, number>, limit = 8) {
   return [...map.entries()]
@@ -865,6 +906,7 @@ try {
 
       const primaryStateCounts = new Map<string, number>();
       const primaryReasonCounts = new Map<string, number>();
+      const primaryGateCounts = new Map<string, number>();
       const reactionStateCounts = new Map<string, number>();
       const reactionReasonCounts = new Map<string, number>();
       let evaluatedWindows = 0;
@@ -972,6 +1014,10 @@ try {
       incrementCount(
         primaryReasonCounts,
         evaluated.simpleTradePlan.reason
+      );
+      incrementCount(
+        primaryGateCounts,
+        classifyPrimaryGate(evaluated.simpleTradePlan)
       );
       incrementCount(
         reactionStateCounts,
@@ -1090,6 +1136,14 @@ try {
           JSON.stringify(Object.fromEntries(primaryStateCounts)) +
           "\nReaction states: " +
           JSON.stringify(Object.fromEntries(reactionStateCounts)) +
+          "\nPrimary terminal gates: " +
+          JSON.stringify(
+            Object.fromEntries(
+              [...primaryGateCounts.entries()].sort(
+                (a, b) => b[1] - a[1]
+              )
+            )
+          ) +
           "\nTop primary reasons:\n" +
           topCounts(primaryReasonCounts)
             .map(([reason, count]) => "  " + count + " × " + reason)
