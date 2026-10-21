@@ -14,18 +14,15 @@ import {
   type VwapSettings
 } from "@/lib/analysis/volume";
 import { buildDailyTraditionalPivots } from "@/lib/analysis/pivots";
-import { buildReversalEngine } from "@/lib/analysis/confluence";
-import { buildSimpleTradePlan } from "@/lib/analysis/trade-plan";
-import { buildReactionTradePlan } from "@/lib/analysis/reaction-trade";
 import {
   buildNewsGate,
   type NewsImpactEvent
 } from "@/lib/news/impact";
 import {
-  buildOpeningConfirmation,
-  indianSessionOpenEpoch,
-  isIndianOpeningWindow
-} from "@/lib/analysis/opening-confirmation";
+  evaluatePlatformStrategy,
+  PLATFORM_STRATEGY_VERSION
+} from "@/lib/analysis/platform-strategy";
+import { isIndianOpeningWindow } from "@/lib/analysis/opening-confirmation";
 import {
   makeTradeId,
   reconcileTradeWithCandles,
@@ -230,16 +227,22 @@ const RESOLUTIONS: Array<{ value: Resolution; label: string }> = [
 ];
 
 const RANGES: RangeKey[] = ["1D", "5D", "1M", "3M", "6M", "1Y", "5Y", "MAX"];
-const MARKET_FILTERS = ["ALL", "NSE", "BSE", "MCX", "KRAKEN"];
+const MARKET_FILTERS = ["ALL", "NSE", "BSE", "MCX", "OANDA", "KRAKEN"];
 const TYPE_FILTERS = ["ALL", "INDEX", "EQUITY", "ETF", "SGB", "MF", "FUTURE", "OPTION", "COMMODITY", "CURRENCY", "CRYPTO"];
 
 const LAST_VIEW_KEY = "allinoneview:last-view:v1";
 const TRADE_JOURNAL_KEY = "allinoneview:trade-journal:v1";
 const THEME_KEY = "allinoneview:theme:v1";
-const ORDER_FLOW_LOCAL_KEY = "allinoneview:order-flow:v2";
+const ORDER_FLOW_LOCAL_KEY = "allinoneview:order-flow:v3";
+const ORDER_FLOW_CLIENT_MAX_BUCKETS = 200_000;
 
 const KRAKEN_RESOLUTIONS = new Set<Resolution>([
   "1", "5", "15", "30", "60", "240", "1D", "1W"
+]);
+
+const OANDA_RESOLUTIONS = new Set<Resolution>([
+  "1", "2", "3", "5", "10", "15", "30",
+  "60", "120", "180", "240", "1D", "1W", "1M"
 ]);
 
 const LIVE_GLOBAL_SHORTCUTS: Instrument[] = [
@@ -275,11 +278,23 @@ const LIVE_GLOBAL_SHORTCUTS: Instrument[] = [
     expiry: null,
     strike: null,
     optionType: null
+  },
+  {
+    symbol: "XAU_USD",
+    name: "Gold / USD",
+    market: "OANDA",
+    segment: "CFD",
+    type: "COMMODITY",
+    underlying: "XAU",
+    expiry: null,
+    strike: null,
+    optionType: null
   }
 ];
 
 function resolvePrimaryAnalysisSymbol(instrument: Instrument) {
   if (instrument.market === "KRAKEN") return instrument.symbol;
+  if (instrument.market === "OANDA") return instrument.symbol;
   if (instrument.market === "MCX") return instrument.symbol;
   if (instrument.type !== "FUTURE" && instrument.type !== "OPTION") {
     return instrument.symbol;
@@ -382,14 +397,28 @@ function mergeOrderFlowHistory(
       const normalized = {
         ...bucket,
         buyTrades: Number(bucket.buyTrades ?? 0),
-        sellTrades: Number(bucket.sellTrades ?? 0)
+        sellTrades: Number(bucket.sellTrades ?? 0),
+        closed: bucket.closed ?? !bucket.partial,
+        coverage:
+          bucket.coverage ?? (bucket.partial ? "partial" : "full")
       };
       const previous = byTime.get(normalized.time);
 
+      const previousRank = previous
+        ? (previous.closed ? 4 : 0) +
+          (previous.coverage === "full" ? 2 : 0) +
+          (!previous.partial ? 1 : 0)
+        : -1;
+      const normalizedRank =
+        (normalized.closed ? 4 : 0) +
+        (normalized.coverage === "full" ? 2 : 0) +
+        (!normalized.partial ? 1 : 0);
+
       if (
         !previous ||
-        (previous.partial && !normalized.partial) ||
-        normalized.trades > previous.trades
+        normalizedRank > previousRank ||
+        (normalizedRank === previousRank &&
+          normalized.trades > previous.trades)
       ) {
         byTime.set(normalized.time, normalized);
       }
@@ -398,7 +427,7 @@ function mergeOrderFlowHistory(
 
   return [...byTime.values()]
     .sort((a, b) => a.time - b.time)
-    .slice(-10000);
+    .slice(-ORDER_FLOW_CLIENT_MAX_BUCKETS);
 }
 
 function mergeLiveCandle(
@@ -422,8 +451,84 @@ function mergeLiveCandle(
   return base;
 }
 
+function liveBucketStart(time: number, resolution: Resolution) {
+  if (/^\d+$/.test(resolution)) {
+    const seconds = Number(resolution) * 60;
+    return Math.floor(time / seconds) * seconds;
+  }
+
+  if (resolution === "1D") {
+    const date = new Date(time * 1000);
+    return Math.floor(
+      Date.UTC(
+        date.getUTCFullYear(),
+        date.getUTCMonth(),
+        date.getUTCDate()
+      ) / 1000
+    );
+  }
+
+  if (resolution === "1W") {
+    const date = new Date(time * 1000);
+    const day = (date.getUTCDay() + 6) % 7;
+    return Math.floor(
+      Date.UTC(
+        date.getUTCFullYear(),
+        date.getUTCMonth(),
+        date.getUTCDate() - day
+      ) / 1000
+    );
+  }
+
+  const date = new Date(time * 1000);
+  return Math.floor(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1) / 1000
+  );
+}
+
+function nextOandaLiveCandle(
+  current: ChartCandle | null,
+  historical: ChartCandle[],
+  time: number,
+  price: number,
+  resolution: Resolution
+): ChartCandle {
+  const bucket = liveBucketStart(time, resolution);
+  const lastHistorical = historical[historical.length - 1] ?? null;
+
+  const seed =
+    current?.time === bucket
+      ? current
+      : lastHistorical?.time === bucket
+        ? lastHistorical
+        : null;
+
+  if (!seed) {
+    return {
+      time: bucket,
+      open: price,
+      high: price,
+      low: price,
+      close: price,
+      volume: 0
+    };
+  }
+
+  return {
+    ...seed,
+    high: Math.max(seed.high, price),
+    low: Math.min(seed.low, price),
+    close: price,
+    volume: seed.volume ?? 0
+  };
+}
+
 export default function Home() {
   const [connected, setConnected] = useState<boolean | null>(null);
+  const [oandaConnected, setOandaConnected] = useState(false);
+  const [oandaStatusLabel, setOandaStatusLabel] = useState("OANDA CHECKING");
+  const [krakenConnected, setKrakenConnected] = useState(false);
+  const [krakenStatusLabel, setKrakenStatusLabel] = useState("KRAKEN CHECKING");
   const [selected, setSelected] = useState<Instrument>(DEFAULT_INSTRUMENT);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [candles, setCandles] = useState<ChartCandle[]>([]);
@@ -488,6 +593,7 @@ export default function Home() {
   const [context5m, setContext5m] = useState<ChartCandle[]>([]);
   const [context1m, setContext1m] = useState<ChartCandle[]>([]);
   const [contextPrice, setContextPrice] = useState<number | null>(null);
+  const [offlineReplayNotice, setOfflineReplayNotice] = useState("");
   const [tradeJournal, setTradeJournal] = useState<JournalTrade[]>([]);
   const [journalReady, setJournalReady] = useState(false);
   const [loadingContext, setLoadingContext] = useState(false);
@@ -510,8 +616,12 @@ export default function Home() {
   const historyRequestId = useRef(0);
   const orderFlowNeedsPartialRef = useRef(true);
   const orderFlowPartialBucketRef = useRef<number | null>(null);
+  const orderFlowHistoryIdentityRef = useRef("");
+  const offlineReplayIdentityRef = useRef("");
 
   const selectedIsKraken = selected.market === "KRAKEN";
+  const selectedIsOanda = selected.market === "OANDA";
+  const selectedIsGlobal = selectedIsKraken || selectedIsOanda;
   const showEma = emaPeriods.length > 0;
   const liveAnalysisCandles = useMemo(
     () => mergeLiveCandle(candles, liveCandle),
@@ -564,18 +674,31 @@ export default function Home() {
   const dailyPivots = useMemo(
     () =>
       buildDailyTraditionalPivots(liveAnalysisCandles, {
-        timeZone: selectedIsKraken ? "UTC" : "Asia/Kolkata"
+        timeZone: selectedIsGlobal
+          ? selectedIsOanda
+            ? "America/New_York"
+            : "UTC"
+          : "Asia/Kolkata"
       }),
-    [liveAnalysisCandles, selectedIsKraken]
+    [liveAnalysisCandles, selectedIsGlobal, selectedIsOanda]
   );
 
   const volumeAnalytics = useMemo(
     () =>
       buildVolumeAnalytics(liveAnalysisCandles, {
-        timeZone: selectedIsKraken ? "UTC" : "Asia/Kolkata",
+        timeZone: selectedIsGlobal
+          ? selectedIsOanda
+            ? "America/New_York"
+            : "UTC"
+          : "Asia/Kolkata",
         anchorTime: fibonacci.anchorA?.time ?? null
       }),
-    [liveAnalysisCandles, selectedIsKraken, fibonacci.anchorA?.time]
+    [
+      liveAnalysisCandles,
+      selectedIsGlobal,
+      selectedIsOanda,
+      fibonacci.anchorA?.time
+    ]
   );
   const technicalContext = useMemo(
     () => buildTechnicalContext(liveAnalysisCandles),
@@ -643,70 +766,6 @@ export default function Home() {
     return context5m.filter((candle) => candle.time + 5 * 60 <= now);
   }, [context5m]);
 
-  const fastLatestTime =
-    closedContext1m[closedContext1m.length - 1]?.time ??
-    closedContext5m[closedContext5m.length - 1]?.time ??
-    null;
-  const openingSessionStart = useMemo(() => {
-    if (
-      fastLatestTime === null ||
-      (selected.market !== "NSE" && selected.market !== "BSE") ||
-      !isIndianOpeningWindow(fastLatestTime)
-    ) {
-      return null;
-    }
-
-    return indianSessionOpenEpoch(fastLatestTime);
-  }, [fastLatestTime, selected.market]);
-
-  const planContext4h = useMemo(() => {
-    if (openingSessionStart === null) return context4h;
-    const prior = context4h.filter(
-      (candle) => candle.time < openingSessionStart
-    );
-    return prior.length >= 30 ? prior : context4h;
-  }, [context4h, openingSessionStart]);
-
-  const planContext1h = useMemo(() => {
-    if (openingSessionStart === null) return context1h;
-    const prior = context1h.filter(
-      (candle) => candle.time < openingSessionStart
-    );
-    return prior.length >= 30 ? prior : context1h;
-  }, [context1h, openingSessionStart]);
-
-  const htfTechnical = useMemo(
-    () => buildTechnicalContext(planContext4h),
-    [planContext4h]
-  );
-  const htfFib = useMemo(
-    () => buildFibonacciSetup(planContext4h),
-    [planContext4h]
-  );
-  const htfStructure = useMemo(
-    () => buildMarketStructure(planContext4h),
-    [planContext4h]
-  );
-  const refineFib = useMemo(
-    () => buildFibonacciSetup(planContext1h),
-    [planContext1h]
-  );
-  const refineImbalance = useMemo(
-    () => buildImbalanceLiquiditySnapshot(planContext1h),
-    [planContext1h]
-  );
-  const refineOrderBlocks = useMemo(
-    () => buildOrderBlockSnapshot(planContext1h),
-    [planContext1h]
-  );
-  const refineVolume = useMemo(
-    () =>
-      buildVolumeAnalytics(planContext1h, {
-        timeZone: selectedIsKraken ? "UTC" : "Asia/Kolkata",
-        anchorTime: htfFib.anchorA?.time ?? null
-      }),
-    [planContext1h, selectedIsKraken, htfFib.anchorA?.time]
-  );
   const liveContext15m = useMemo(() => {
     const canUseSelectedLive =
       resolution === "15" &&
@@ -724,48 +783,24 @@ export default function Home() {
     selected.symbol
   ]);
 
-  const confirmation15m = useMemo(
-    () => buildMarketStructure(liveContext15m),
-    [liveContext15m]
-  );
-  const structure5m = useMemo(
-    () => buildMarketStructure(closedContext5m, { confirmationBars: 2 }),
-    [closedContext5m]
-  );
-  const structure1m = useMemo(
-    () => buildMarketStructure(closedContext1m, { confirmationBars: 2 }),
-    [closedContext1m]
-  );
-  const imbalance5m = useMemo(
-    () => buildImbalanceLiquiditySnapshot(closedContext5m),
-    [closedContext5m]
-  );
-  const imbalance1m = useMemo(
-    () => buildImbalanceLiquiditySnapshot(closedContext1m),
-    [closedContext1m]
-  );
-  const orderBlocks5m = useMemo(
-    () => buildOrderBlockSnapshot(closedContext5m),
-    [closedContext5m]
-  );
-  const reversalEngine = useMemo(
+  const strategyEvaluation = useMemo(
     () =>
-      buildReversalEngine({
+      evaluatePlatformStrategy({
+        market: selected.market,
         price:
           contextPrice ??
           context1h[context1h.length - 1]?.close ??
           quote?.lp ??
           0,
-        htfAtr: htfFib.atr14,
-        refineAtr: refineFib.atr14,
-        htfReady: planContext4h.length >= 30,
-        confirmation15mReady: context15m.length >= 30,
-        fibonacci: htfFib,
-        structure: htfStructure,
-        imbalance: refineImbalance,
-        orderBlocks: refineOrderBlocks,
-        volume: refineVolume,
-        confirmation15m,
+        reactionPrice:
+          primaryAnalysisSymbol === selected.symbol
+            ? quote?.lp ?? contextPrice ?? 0
+            : contextPrice ?? 0,
+        context4h,
+        context1h,
+        context15m: liveContext15m,
+        context5m: closedContext5m,
+        context1m: closedContext1m,
         derivatives: derivatives
           ? {
               available: derivatives.available,
@@ -788,118 +823,25 @@ export default function Home() {
           : null
       }),
     [
+      selected.market,
+      selected.symbol,
+      primaryAnalysisSymbol,
       contextPrice,
       context1h,
-      planContext4h,
-      context15m,
+      context4h,
+      liveContext15m,
+      closedContext5m,
+      closedContext1m,
       quote?.lp,
-      htfFib,
-      refineFib.atr14,
-      htfStructure,
-      refineImbalance,
-      refineOrderBlocks,
-      refineVolume,
-      confirmation15m,
       derivatives
     ]
   );
 
-  const openingConfirmation = useMemo(
-    () =>
-      buildOpeningConfirmation({
-        market: selected.market,
-        latestTime: fastLatestTime,
-        direction: reversalEngine.selected.direction,
-        structure1m,
-        structure5m,
-        imbalance1m,
-        imbalance5m,
-        orderBlocks5m
-      }),
-    [
-      selected.market,
-      fastLatestTime,
-      reversalEngine.selected.direction,
-      structure1m,
-      structure5m,
-      imbalance1m,
-      imbalance5m,
-      orderBlocks5m
-    ]
-  );
-
-  const simpleTradePlan = useMemo(
-    () =>
-      buildSimpleTradePlan({
-        price:
-          contextPrice ??
-          context1h[context1h.length - 1]?.close ??
-          quote?.lp ??
-          0,
-        latestTime:
-          fastLatestTime ??
-          context1h[context1h.length - 1]?.time ??
-          null,
-        htfTechnical,
-        htfStructure,
-        fibonacci: htfFib,
-        imbalance: refineImbalance,
-        orderBlocks: refineOrderBlocks,
-        reversal: reversalEngine.selected,
-        refineAtr: refineFib.atr14,
-        openingConfirmation,
-        confirmation15m
-      }),
-    [
-      contextPrice,
-      context1h,
-      fastLatestTime,
-      quote?.lp,
-      htfTechnical,
-      htfStructure,
-      htfFib,
-      refineImbalance,
-      refineOrderBlocks,
-      reversalEngine.selected,
-      refineFib.atr14,
-      openingConfirmation,
-      confirmation15m
-    ]
-  );
-
-  const reactionImbalance15m = useMemo(
-    () => buildImbalanceLiquiditySnapshot(liveContext15m),
-    [liveContext15m]
-  );
-  const reactionFib15m = useMemo(
-    () => buildFibonacciSetup(liveContext15m),
-    [liveContext15m]
-  );
-  const reactionTradePlan = useMemo(
-    () =>
-      buildReactionTradePlan({
-        price:
-          primaryAnalysisSymbol === selected.symbol
-            ? quote?.lp ?? contextPrice ?? 0
-            : contextPrice ?? 0,
-        candles15m: liveContext15m,
-        imbalance15m: reactionImbalance15m,
-        structure15m: confirmation15m,
-        primaryPlan: simpleTradePlan,
-        atr15m: reactionFib15m.atr14
-      }),
-    [
-      primaryAnalysisSymbol,
-      selected.symbol,
-      quote?.lp,
-      contextPrice,
-      liveContext15m,
-      reactionImbalance15m,
-      confirmation15m,
-      simpleTradePlan,
-      reactionFib15m.atr14
-    ]
-  );
+  const {
+    reversalEngine,
+    simpleTradePlan,
+    reactionTradePlan
+  } = strategyEvaluation;
 
   const newsGate = useMemo(
     () =>
@@ -1085,6 +1027,11 @@ export default function Home() {
         id: trade.id,
         time: trade.signalTime,
         price: trade.entry,
+        entry: trade.entry,
+        stop: trade.initialStop,
+        targets: trade.targets.map((target) => target.price),
+        endTime: trade.closedTime,
+        resultR: trade.resultR,
         direction: trade.direction,
         status: trade.status,
         outcome: trade.outcome,
@@ -1095,7 +1042,7 @@ export default function Home() {
   );
 
   async function fetchAnalysisContext(signal?: AbortSignal) {
-    if (!selectedIsKraken && !connected) {
+    if (!selectedIsGlobal && !connected) {
       setContext4h([]);
       setContext1h([]);
       setContext15m([]);
@@ -1108,21 +1055,20 @@ export default function Home() {
     setLoadingContext(true);
 
     try {
-      const endpoint =
-        selectedIsKraken
-          ? "/api/kraken/history"
-          : "/api/fyers/history";
+      const endpoint = "/api/market/history";
       const quoteEndpoint =
         selectedIsKraken
           ? "/api/kraken/quote"
-          : "/api/fyers/quote";
+          : selectedIsOanda
+            ? "/api/oanda/quote"
+            : "/api/fyers/quote";
 
       const historyRequest = (
         resolutionValue: string,
         rangeValue: string
       ) =>
         fetch(
-          `${endpoint}?symbol=${encodeURIComponent(primaryAnalysisSymbol)}&resolution=${encodeURIComponent(resolutionValue)}&range=${encodeURIComponent(rangeValue)}`,
+          `${endpoint}?market=${encodeURIComponent(selected.market)}&symbol=${encodeURIComponent(primaryAnalysisSymbol)}&resolution=${encodeURIComponent(resolutionValue)}&range=${encodeURIComponent(rangeValue)}`,
           { cache: "no-store", signal }
         ).then(async (response) => {
           const data = await response.json();
@@ -1183,11 +1129,13 @@ export default function Home() {
     }
 
     try {
-      const endpoint = "/api/fyers/history";
+      const endpoint = "/api/market/history";
       const request = (resolutionValue: string) =>
         fetch(
           endpoint +
-            "?symbol=" +
+            "?market=" +
+            encodeURIComponent(selected.market) +
+            "&symbol=" +
             encodeURIComponent(primaryAnalysisSymbol) +
             "&resolution=" +
             encodeURIComponent(resolutionValue) +
@@ -1218,7 +1166,7 @@ export default function Home() {
     silent = false,
     signal?: AbortSignal
   ) {
-    if (!viewReady || selectedIsKraken || !connected) {
+    if (!viewReady || selectedIsGlobal || !connected) {
       setDerivatives(null);
       return;
     }
@@ -1277,12 +1225,54 @@ export default function Home() {
       setConnected(isConnected);
       setMessage(
         isConnected
-          ? "FYERS connected. Market-data access is ready."
-          : "FYERS is not connected yet."
+          ? "FYERS connected. Market-data access is verified."
+          : data.reason || "FYERS is not connected yet."
       );
     } catch {
       setConnected(false);
       setMessage("Unable to read FYERS connection status.");
+    }
+  }
+
+  async function refreshOandaStatus() {
+    try {
+      const response = await fetch("/api/oanda/status", {
+        cache: "no-store"
+      });
+      const data = await response.json();
+      const isConnected = Boolean(data.connected);
+      setOandaConnected(isConnected);
+      setOandaStatusLabel(
+        isConnected
+          ? "OANDA CONNECTED"
+          : data.configured === false
+            ? "OANDA NOT CONFIGURED"
+            : "OANDA AUTH ERROR"
+      );
+    } catch {
+      setOandaConnected(false);
+      setOandaStatusLabel("OANDA STATUS ERROR");
+    }
+  }
+
+  async function refreshKrakenStatus() {
+    try {
+      const response = await fetch("/api/kraken/status", {
+        cache: "no-store"
+      });
+      const data = await response.json();
+      const isConnected = Boolean(data.connected);
+      setKrakenConnected(isConnected);
+      setKrakenStatusLabel(
+        isConnected
+          ? data.status === "online"
+            ? "KRAKEN READY"
+            : `KRAKEN ${String(data.status || "READY").toUpperCase()}`
+          : "KRAKEN OFFLINE"
+      );
+    } catch {
+      setKrakenConnected(false);
+      setKrakenStatusLabel("KRAKEN STATUS ERROR");
     }
   }
 
@@ -1297,7 +1287,9 @@ export default function Home() {
       const endpoint =
         market === "KRAKEN"
           ? "/api/kraken/quote"
-          : "/api/fyers/quote";
+          : market === "OANDA"
+            ? "/api/oanda/quote"
+            : "/api/fyers/quote";
 
       const response = await fetch(
         `${endpoint}?symbol=${encodeURIComponent(symbol)}`,
@@ -1310,12 +1302,12 @@ export default function Home() {
       }
 
       setQuote(data.quote);
-      if (market !== "KRAKEN") {
+      if (market !== "KRAKEN" && market !== "OANDA") {
         setConnected(true);
       }
       if (!silent) {
         setMessage(
-          `${market === "KRAKEN" ? "Kraken" : "FYERS"} quote received successfully.`
+          `${market === "KRAKEN" ? "Kraken" : market === "OANDA" ? "OANDA" : "FYERS"} quote received successfully.`
         );
       }
     } catch (error) {
@@ -1341,13 +1333,10 @@ export default function Home() {
     setHistoryMeta({ from: null, to: null, note: null });
 
     try {
-      const endpoint =
-        market === "KRAKEN"
-          ? "/api/kraken/history"
-          : "/api/fyers/history";
+      const endpoint = "/api/market/history";
 
       const response = await fetch(
-        `${endpoint}?symbol=${encodeURIComponent(symbol)}&resolution=${encodeURIComponent(nextResolution)}&range=${encodeURIComponent(nextRange)}`,
+        `${endpoint}?market=${encodeURIComponent(market)}&symbol=${encodeURIComponent(symbol)}&resolution=${encodeURIComponent(nextResolution)}&range=${encodeURIComponent(nextRange)}`,
         { cache: "no-store", signal }
       );
       const data = await response.json();
@@ -1371,6 +1360,16 @@ export default function Home() {
       if (requestId === historyRequestId.current) {
         setHistoryError(detail);
         setMessage(detail);
+
+        if (
+          market !== "KRAKEN" &&
+          market !== "OANDA" &&
+          /authenticate|access token|not connected|expired|invalid token/i.test(
+            detail
+          )
+        ) {
+          setConnected(false);
+        }
       }
     } finally {
       if (requestId === historyRequestId.current && !signal?.aborted) {
@@ -1386,7 +1385,7 @@ export default function Home() {
     setQuote(null);
     setCandles([]);
     setLiveCandle(null);
-    if (!selectedIsKraken) {
+    if (instrument.market !== "KRAKEN") {
       setOrderFlowBuckets([]);
     }
     orderFlowNeedsPartialRef.current = true;
@@ -1399,6 +1398,13 @@ export default function Home() {
     if (
       instrument.market === "KRAKEN" &&
       !KRAKEN_RESOLUTIONS.has(resolution)
+    ) {
+      setResolution("15");
+    }
+
+    if (
+      instrument.market === "OANDA" &&
+      !OANDA_RESOLUTIONS.has(resolution)
     ) {
       setResolution("15");
     }
@@ -1520,27 +1526,328 @@ export default function Home() {
   }, [viewReady, selected, resolution, range]);
 
   useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem(TRADE_JOURNAL_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setTradeJournal(parsed as JournalTrade[]);
+    if (
+      !viewReady ||
+      !primaryAnalysisSymbol ||
+      context4h.length < 30 ||
+      context1h.length < 30 ||
+      context15m.length < 30 ||
+      closedContext5m.length < 30 ||
+      closedContext1m.length < 30
+    ) {
+      return;
+    }
+
+    const latestProcessed =
+      closedContext1m.at(-1)?.time ??
+      closedContext5m.at(-1)?.time ??
+      context15m.at(-1)?.time ??
+      null;
+
+    if (latestProcessed === null) return;
+
+    const identity =
+      selected.market +
+      "|" +
+      primaryAnalysisSymbol +
+      "|" +
+      latestProcessed;
+
+    if (offlineReplayIdentityRef.current === identity) return;
+    offlineReplayIdentityRef.current = identity;
+
+    let cancelled = false;
+
+    const postCheckpoint = async (epoch: number) => {
+      await fetch("/api/strategy/checkpoint", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          strategyVersion: PLATFORM_STRATEGY_VERSION,
+          market: selected.market,
+          symbol: primaryAnalysisSymbol,
+          lastProcessedEpoch: epoch
+        })
+      }).catch(() => {
+        // Recovery remains non-authoritative if checkpoint persistence is down.
+      });
+    };
+
+    const replay = async () => {
+      try {
+        const params = new URLSearchParams({
+          strategyVersion: PLATFORM_STRATEGY_VERSION,
+          market: selected.market,
+          symbol: primaryAnalysisSymbol
+        });
+        const response = await fetch(
+          "/api/strategy/checkpoint?" + params.toString(),
+          { cache: "no-store" }
+        );
+        const data = await response.json();
+
+        if (cancelled) return;
+
+        const prior = Number(
+          data?.checkpoint?.lastProcessedEpoch ?? 0
+        );
+
+        if (!(prior > 0)) {
+          await postCheckpoint(latestProcessed);
+          return;
+        }
+
+        if (latestProcessed <= prior) return;
+
+        const gapSeconds = latestProcessed - prior;
+        const maxReplaySeconds = 5 * 24 * 60 * 60;
+
+        if (gapSeconds > maxReplaySeconds) {
+          setOfflineReplayNotice(
+            "Offline gap exceeded the exact 1m replay window. Nothing was added to live Trades; older missed setups remain excluded."
+          );
+          await postCheckpoint(latestProcessed);
+          return;
+        }
+
+        const evaluationTimes = new Set<number>();
+
+        for (const candle of context15m) {
+          const closeTime = candle.time + 15 * 60;
+          if (closeTime > prior && closeTime <= latestProcessed + 60) {
+            evaluationTimes.add(closeTime);
+          }
+        }
+
+        if (selected.market === "NSE" || selected.market === "BSE") {
+          for (const candle of closedContext5m) {
+            const closeTime = candle.time + 5 * 60;
+            if (
+              closeTime > prior &&
+              closeTime <= latestProcessed + 60 &&
+              isIndianOpeningWindow(candle.time)
+            ) {
+              evaluationTimes.add(closeTime);
+            }
+          }
+
+          for (const candle of closedContext1m) {
+            const closeTime = candle.time + 60;
+            if (
+              closeTime > prior &&
+              closeTime <= latestProcessed + 60 &&
+              isIndianOpeningWindow(candle.time)
+            ) {
+              evaluationTimes.add(closeTime);
+            }
+          }
+        }
+
+        const recovered = new Set<string>();
+
+        const closedThrough = (
+          rows: ChartCandle[],
+          seconds: number,
+          evaluationTime: number,
+          lookbackSeconds: number
+        ) =>
+          rows.filter(
+            (candle) =>
+              candle.time + seconds <= evaluationTime &&
+              candle.time >= evaluationTime - lookbackSeconds
+          );
+
+        for (const evaluationTime of [...evaluationTimes].sort(
+          (a, b) => a - b
+        )) {
+          if (cancelled) return;
+
+          const replay4h = closedThrough(
+            context4h,
+            4 * 60 * 60,
+            evaluationTime,
+            186 * 24 * 60 * 60
+          );
+          const replay1h = closedThrough(
+            context1h,
+            60 * 60,
+            evaluationTime,
+            93 * 24 * 60 * 60
+          );
+          const replay15m = closedThrough(
+            context15m,
+            15 * 60,
+            evaluationTime,
+            31 * 24 * 60 * 60
+          );
+          const replay5m = closedThrough(
+            context5m,
+            5 * 60,
+            evaluationTime,
+            5 * 24 * 60 * 60
+          );
+          const replay1m = closedThrough(
+            context1m,
+            60,
+            evaluationTime,
+            5 * 24 * 60 * 60
+          );
+
+          if (
+            replay4h.length < 30 ||
+            replay1h.length < 30 ||
+            replay15m.length < 30 ||
+            replay5m.length < 30 ||
+            replay1m.length < 30
+          ) {
+            continue;
+          }
+
+          const price =
+            replay1m.at(-1)?.close ??
+            replay15m.at(-1)?.close ??
+            0;
+          if (!(price > 0)) continue;
+
+          // Offline replay checks only historical technical inputs that can be
+          // reconstructed exactly from provider candles. It deliberately does
+          // not invent historical news/derivative veto snapshots.
+          const evaluated = evaluatePlatformStrategy({
+            market: selected.market,
+            price,
+            reactionPrice: price,
+            context4h: replay4h,
+            context1h: replay1h,
+            context15m: replay15m,
+            context5m: replay5m,
+            context1m: replay1m,
+            derivatives: null
+          });
+
+          const primary = evaluated.simpleTradePlan;
+          if (
+            primary.state === "READY" &&
+            primary.signalTime !== null
+          ) {
+            recovered.add(
+              "PRIMARY|" +
+                primary.trend +
+                "|" +
+                primary.signalTime
+            );
+          }
+
+          const reaction = evaluated.reactionTradePlan;
+          if (
+            reaction.state === "READY" &&
+            reaction.direction !== null &&
+            reaction.signalTime !== null
+          ) {
+            recovered.add(
+              "REACTION|" +
+                reaction.direction +
+                "|" +
+                reaction.signalTime
+            );
+          }
+        }
+
+        if (!cancelled) {
+          setOfflineReplayNotice(
+            recovered.size > 0
+              ? "Offline replay found " +
+                  recovered.size +
+                  " technical setup" +
+                  (recovered.size === 1 ? "" : "s") +
+                  " while the app was off. They are not counted as live trades."
+              : "Offline replay checked the missed window; no technical setup was promoted into live Trades."
+          );
+        }
+
+        await postCheckpoint(latestProcessed);
+      } catch {
+        if (!cancelled) {
+          setOfflineReplayNotice(
+            "Offline replay could not be verified. Nothing was added to live Trades."
+          );
         }
       }
-    } catch {
-      // A corrupt local journal must not break the market terminal.
-    } finally {
+    };
+
+    void replay();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    viewReady,
+    selected.market,
+    primaryAnalysisSymbol,
+    context4h,
+    context1h,
+    context15m,
+    context5m,
+    context1m,
+    closedContext5m,
+    closedContext1m
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadJournal = async () => {
+      let sharedTrades: JournalTrade[] = [];
+
+      try {
+        const response = await fetch("/api/signals/trades", {
+          cache: "no-store"
+        });
+        const data = await response.json();
+
+        if (response.ok && data?.ok && Array.isArray(data.trades)) {
+          sharedTrades = data.trades as JournalTrade[];
+        }
+      } catch {
+        sharedTrades = [];
+      }
+
+      if (cancelled) return;
+
+      // The server LIVE ledger is authoritative. Browser storage is only a
+      // disposable cache written after this load; it is never merged back in,
+      // so a stale/refused/offline record cannot leak into charts or analytics.
+      setTradeJournal(
+        sharedTrades
+          .slice()
+          .sort((a, b) => a.signalTime - b.signalTime)
+      );
       setJournalReady(true);
-    }
+    };
+
+    void loadJournal();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
     if (!journalReady) return;
+
     window.localStorage.setItem(
       TRADE_JOURNAL_KEY,
       JSON.stringify(tradeJournal)
     );
+
+    if (!tradeJournal.length) return;
+
+    void fetch("/api/signals/trades", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trades: tradeJournal })
+    }).catch(() => {
+      // Local history remains intact if shared persistence is unavailable.
+    });
   }, [journalReady, tradeJournal]);
 
   useEffect(() => {
@@ -1609,7 +1916,9 @@ export default function Home() {
         resultR: null,
         closedTime: null,
         ambiguityReason: null,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        origin: "LIVE",
+        strategyVersion: PLATFORM_STRATEGY_VERSION
       };
 
       return [...current, record];
@@ -1684,7 +1993,9 @@ export default function Home() {
         resultR: null,
         closedTime: null,
         ambiguityReason: null,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        origin: "LIVE",
+        strategyVersion: PLATFORM_STRATEGY_VERSION
       };
 
       return [...current, record];
@@ -2023,15 +2334,25 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    void refreshStatus();
+    const refreshProviders = () => {
+      void refreshStatus();
+      void refreshOandaStatus();
+      void refreshKrakenStatus();
+    };
+
+    refreshProviders();
+    const providerTimer = window.setInterval(refreshProviders, 60_000);
 
     const onFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener("fullscreenchange", onFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+    return () => {
+      window.clearInterval(providerTimer);
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+    };
   }, []);
 
   useEffect(() => {
-    if (!viewReady || (!selectedIsKraken && !connected)) return;
+    if (!viewReady || (!selectedIsGlobal && !connected)) return;
 
     const controller = new AbortController();
 
@@ -2056,12 +2377,34 @@ export default function Home() {
   ]);
 
   useEffect(() => {
+    if (!viewReady || !selectedIsOanda || !oandaConnected) return;
+
+    const refresh = () => {
+      void fetchQuote(true, selected.symbol, selected.market);
+    };
+
+    const timer = window.setInterval(refresh, 5000);
+    return () => window.clearInterval(timer);
+  }, [
+    viewReady,
+    selectedIsOanda,
+    oandaConnected,
+    selected.symbol,
+    selected.market
+  ]);
+
+  useEffect(() => {
     if (!viewReady || !selectedIsKraken) {
+      orderFlowHistoryIdentityRef.current = "";
       setOrderFlowBuckets([]);
       return;
     }
 
     let cancelled = false;
+    const identity = `${selected.symbol}|${resolution}`;
+    const identityChanged =
+      orderFlowHistoryIdentityRef.current !== identity;
+    orderFlowHistoryIdentityRef.current = identity;
     const key = orderFlowLocalKey(selected.symbol, resolution);
     let localBuckets: OrderFlowBucket[] = [];
 
@@ -2080,7 +2423,9 @@ export default function Home() {
     }
 
     setOrderFlowBuckets((current) =>
-      mergeOrderFlowHistory(localBuckets, current)
+      identityChanged
+        ? mergeOrderFlowHistory(localBuckets)
+        : mergeOrderFlowHistory(localBuckets, current)
     );
 
     const firstTime =
@@ -2090,42 +2435,60 @@ export default function Home() {
       Math.floor(Date.now() / 60_000) * 60;
     const to = currentMinute - 1;
 
-    void fetch(
-      "/api/order-flow/history?symbol=" +
-        encodeURIComponent(selected.symbol) +
-        "&market=KRAKEN&resolution=" +
-        encodeURIComponent(resolution) +
-        "&from=" +
-        encodeURIComponent(String(firstTime)) +
-        "&to=" +
-        encodeURIComponent(String(to)),
-      { cache: "no-store" }
-    )
-      .then((response) => response.json())
-      .then((data) => {
-        if (
-          cancelled ||
-          !data?.ok ||
-          !data.available ||
-          !Array.isArray(data.buckets)
-        ) {
-          return;
+    let recoveryTimer: number | null = null;
+
+    const loadOrderFlowPass = async (pass = 0) => {
+      try {
+        const response = await fetch(
+          "/api/order-flow/history?symbol=" +
+            encodeURIComponent(selected.symbol) +
+            "&market=KRAKEN&resolution=" +
+            encodeURIComponent(resolution) +
+            "&from=" +
+            encodeURIComponent(String(firstTime)) +
+            "&to=" +
+            encodeURIComponent(String(to)),
+          { cache: "no-store" }
+        );
+        const data = await response.json();
+
+        if (cancelled || !data?.ok) return;
+
+        if (data.available && Array.isArray(data.buckets)) {
+          setOrderFlowBuckets((current) =>
+            mergeOrderFlowHistory(
+              localBuckets,
+              data.buckets as OrderFlowBucket[],
+              current
+            )
+          );
         }
 
-        setOrderFlowBuckets((current) =>
-          mergeOrderFlowHistory(
-            localBuckets,
-            data.buckets as OrderFlowBucket[],
-            current
-          )
-        );
-      })
-      .catch(() => {
-        // Local exact history remains available.
-      });
+        // Each server pass intentionally limits Kraken recovery work so the
+        // chart becomes usable quickly. Continue older missing chunks in the
+        // background instead of blocking first paint after a long shutdown.
+        if (
+          !cancelled &&
+          Number(data?.recovery?.written ?? 0) > 0 &&
+          pass < 5
+        ) {
+          recoveryTimer = window.setTimeout(() => {
+            void loadOrderFlowPass(pass + 1);
+          }, 250);
+        }
+      } catch {
+        // Normal provider volume remains visible while exact recovery is
+        // unavailable; exact buy/sell data is never fabricated.
+      }
+    };
+
+    void loadOrderFlowPass();
 
     return () => {
       cancelled = true;
+      if (recoveryTimer !== null) {
+        window.clearTimeout(recoveryTimer);
+      }
     };
   }, [
     viewReady,
@@ -2146,11 +2509,13 @@ export default function Home() {
     const completed = orderFlowBuckets
       .filter(
         (bucket) =>
+          (bucket.closed ?? !bucket.partial) &&
+          (bucket.coverage ?? (bucket.partial ? "partial" : "full")) === "full" &&
           !bucket.partial &&
           (currentBucket === null ||
             bucket.time < currentBucket)
       )
-      .slice(-10000);
+      .slice(-ORDER_FLOW_CLIENT_MAX_BUCKETS);
 
     try {
       window.localStorage.setItem(
@@ -2169,12 +2534,20 @@ export default function Home() {
   ]);
 
   useEffect(() => {
-    if (!viewReady || (!selectedIsKraken && !connected)) return;
+    if (!viewReady || (!selectedIsGlobal && !connected)) return;
 
     setLiveCandle(null);
-    setOrderFlowBuckets([]);
+    if (!selectedIsKraken) {
+      setOrderFlowBuckets([]);
+    }
     orderFlowNeedsPartialRef.current = true;
     orderFlowPartialBucketRef.current = null;
+
+    if (selectedIsOanda && !oandaConnected) {
+      setStreamConnected(false);
+      setStreamMessage("OANDA is not connected.");
+      return;
+    }
 
     if (!selectedIsKraken) {
       void fetch("/api/fyers/socket-diagnostic", { cache: "no-store" })
@@ -2190,7 +2563,9 @@ export default function Home() {
 
     const endpoint = selectedIsKraken
       ? `/api/kraken/stream?symbol=${encodeURIComponent(selected.symbol)}&resolution=${encodeURIComponent(resolution)}`
-      : `/api/fyers/stream?symbol=${encodeURIComponent(selected.symbol)}`;
+      : selectedIsOanda
+        ? `/api/oanda/stream?symbol=${encodeURIComponent(selected.symbol)}`
+        : `/api/fyers/stream?symbol=${encodeURIComponent(selected.symbol)}`;
 
     const source = new EventSource(endpoint);
 
@@ -2198,13 +2573,17 @@ export default function Home() {
       try {
         const payload = JSON.parse(event.data);
         setStreamConnected(Boolean(payload.connected));
+        const provider = selectedIsKraken
+          ? "Kraken"
+          : selectedIsOanda
+            ? "OANDA"
+            : "FYERS";
         setStreamMessage(
           payload.connected
             ? `Live: ${selected.symbol}`
             : payload.opening
-              ? `Opening ${selectedIsKraken ? "Kraken" : "FYERS"} stream…`
-              : payload.error ||
-                `${selectedIsKraken ? "Kraken" : "FYERS"} stream disconnected`
+              ? `Opening ${provider} stream…`
+              : payload.error || `${provider} stream disconnected`
         );
       } catch {
         setStreamConnected(false);
@@ -2253,6 +2632,61 @@ export default function Home() {
         }
       } catch {
         // Keep last good quote.
+      }
+    };
+
+    const onOandaPrice = (event: MessageEvent<string>) => {
+      try {
+        const tick = JSON.parse(event.data) as {
+          symbol?: string;
+          time?: number;
+          bid?: number;
+          ask?: number;
+          mid?: number;
+        };
+
+        if (tick.symbol && tick.symbol !== selected.symbol) return;
+
+        const price = Number(tick.mid ?? 0);
+        const time = Number(tick.time ?? Math.floor(Date.now() / 1000));
+        if (!(price > 0) || !Number.isFinite(time)) return;
+
+        setQuote((current) => ({
+          symbol: selected.symbol,
+          lp: price,
+          ch: current?.ch ?? 0,
+          chp: current?.chp ?? 0,
+          open: current?.open || price,
+          high: Math.max(current?.high || price, price),
+          low:
+            current?.low && current.low > 0
+              ? Math.min(current.low, price)
+              : price,
+          previousClose: current?.previousClose || price,
+          volume: current?.volume ?? 0,
+          bid: Number(tick.bid ?? current?.bid ?? 0),
+          ask: Number(tick.ask ?? current?.ask ?? 0)
+        }));
+
+        setLiveCandle((current) => {
+          const next = nextOandaLiveCandle(
+            current,
+            candles,
+            time,
+            price,
+            resolution
+          );
+
+          if (current && next.time > current.time) {
+            setCandles((history) =>
+              mergeLiveCandle(history, current)
+            );
+          }
+
+          return next;
+        });
+      } catch {
+        // Keep the last good OANDA price.
       }
     };
 
@@ -2316,22 +2750,45 @@ export default function Home() {
         );
         if (bucketTime === null) return;
 
-        if (orderFlowNeedsPartialRef.current) {
+        const joinedMidBucket = orderFlowNeedsPartialRef.current;
+
+        if (joinedMidBucket) {
           orderFlowPartialBucketRef.current = bucketTime;
           orderFlowNeedsPartialRef.current = false;
         }
 
-        const isPartial =
-          orderFlowPartialBucketRef.current === bucketTime;
-
         setOrderFlowBuckets((current) => {
-          const next = [...current];
+          const next = current.map((bucket) => {
+            if (bucket.time >= bucketTime || bucket.closed) return bucket;
+
+            const coverage =
+              bucket.coverage ??
+              (bucket.partial ? "partial" : "full");
+
+            return {
+              ...bucket,
+              closed: true,
+              coverage,
+              partial: coverage === "partial"
+            };
+          });
+
           const existingIndex = next.findIndex(
             (bucket) => bucket.time === bucketTime
           );
 
+          const streamCoverage =
+            orderFlowPartialBucketRef.current === bucketTime
+              ? "partial"
+              : "full";
+
           if (existingIndex >= 0) {
             const existing = next[existingIndex];
+            const coverage =
+              joinedMidBucket || existing.coverage === "partial"
+                ? "partial"
+                : streamCoverage;
+
             next[existingIndex] = {
               ...existing,
               buyVolume:
@@ -2347,7 +2804,9 @@ export default function Home() {
               sellTrades:
                 (existing.sellTrades ?? 0) +
                 (trade.side === "sell" ? 1 : 0),
-              partial: existing.partial || isPartial
+              closed: false,
+              coverage,
+              partial: true
             };
           } else {
             next.push({
@@ -2357,14 +2816,16 @@ export default function Home() {
               trades: 1,
               buyTrades: trade.side === "buy" ? 1 : 0,
               sellTrades: trade.side === "sell" ? 1 : 0,
-              partial: isPartial,
+              closed: false,
+              coverage: streamCoverage,
+              partial: true,
               quality: "exact",
               source: "Kraken taker-side trades"
             });
           }
 
           next.sort((a, b) => a.time - b.time);
-          return next.slice(-10000);
+          return next.slice(-ORDER_FLOW_CLIENT_MAX_BUCKETS);
         });
 
         if (
@@ -2393,7 +2854,14 @@ export default function Home() {
           Number.isFinite(candle.low) &&
           Number.isFinite(candle.close)
         ) {
-          setLiveCandle(candle);
+          setLiveCandle((current) => {
+            if (current && candle.time > current.time) {
+              setCandles((history) =>
+                mergeLiveCandle(history, current)
+              );
+            }
+            return candle;
+          });
         }
       } catch {
         // Ignore malformed candle updates.
@@ -2406,6 +2874,8 @@ export default function Home() {
       source.addEventListener("ticker", onKrakenTicker as EventListener);
       source.addEventListener("candle", onKrakenCandle as EventListener);
       source.addEventListener("trade", onKrakenTrade as EventListener);
+    } else if (selectedIsOanda) {
+      source.addEventListener("price", onOandaPrice as EventListener);
     } else {
       source.addEventListener("tick", onFyersTick as EventListener);
     }
@@ -2416,7 +2886,13 @@ export default function Home() {
       }
       setStreamConnected(false);
       setStreamMessage(
-        `${selectedIsKraken ? "Kraken" : "FYERS"} live stream reconnecting…`
+        `${
+          selectedIsKraken
+            ? "Kraken"
+            : selectedIsOanda
+              ? "OANDA"
+              : "FYERS"
+        } live stream reconnecting…`
       );
     };
 
@@ -2431,11 +2907,13 @@ export default function Home() {
     selected.symbol,
     selected.market,
     selectedIsKraken,
+    selectedIsOanda,
+    oandaConnected,
     resolution
   ]);
 
   useEffect(() => {
-    if (!viewReady || selectedIsKraken || !connected) {
+    if (!viewReady || selectedIsGlobal || !connected) {
       setDerivatives(null);
       return;
     }
@@ -2465,7 +2943,7 @@ export default function Home() {
   ]);
 
   useEffect(() => {
-    if (!viewReady || (!selectedIsKraken && !connected)) return;
+    if (!viewReady || (!selectedIsGlobal && !connected)) return;
 
     const controller = new AbortController();
 
@@ -2482,7 +2960,8 @@ export default function Home() {
   }, [
     viewReady,
     connected,
-    selectedIsKraken,
+    selectedIsGlobal,
+    selectedIsOanda,
     primaryAnalysisSymbol
   ]);
 
@@ -2533,8 +3012,15 @@ export default function Home() {
         (marketFilter === "ALL" || marketFilter === "KRAKEN") &&
         (typeFilter === "ALL" || typeFilter === "CRYPTO");
 
+      const wantsOanda =
+        (marketFilter === "ALL" || marketFilter === "OANDA") &&
+        !["ETF", "SGB", "MF", "FUTURE", "OPTION", "EQUITY"].includes(
+          typeFilter
+        );
+
       const wantsFyers =
         marketFilter !== "KRAKEN" &&
+        marketFilter !== "OANDA" &&
         typeFilter !== "CRYPTO";
 
       const requests: Promise<Instrument[]>[] = [];
@@ -2565,9 +3051,81 @@ export default function Home() {
         );
       }
 
+      if (wantsOanda) {
+        requests.push(
+          fetch(
+            `/api/oanda/instruments?q=${encodeURIComponent(query)}&type=${encodeURIComponent(typeFilter)}`,
+            { cache: "no-store" }
+          )
+            .then((response) => response.json())
+            .then((data) => (data.ok ? data.instruments : []))
+            .catch(() => [])
+        );
+      }
+
       void Promise.all(requests)
         .then((groups) => {
           const merged = groups.flat();
+          const normalizedQuery = query
+            .toUpperCase()
+            .replace(/[^A-Z0-9]+/g, " ")
+            .trim();
+
+          const indexAliases: Record<string, string[]> = {
+            "NSE:NIFTY50-INDEX": ["NIFTY", "NIFTY 50", "NIFTY50"],
+            "NSE:NIFTYBANK-INDEX": ["BANK NIFTY", "NIFTY BANK", "NIFTYBANK"],
+            "NSE:FINNIFTY-INDEX": ["FINNIFTY", "NIFTY FINANCIAL SERVICES"],
+            "NSE:NIFTYIT-INDEX": ["NIFTY IT", "NIFTYIT"],
+            "NSE:NIFTYMIDCAP50-INDEX": [
+              "NIFTY MIDCAP 50",
+              "NIFTYMIDCAP50"
+            ],
+            "NSE:INDIAVIX-INDEX": ["INDIA VIX", "INDIAVIX"],
+            "BSE:SENSEX-INDEX": ["SENSEX", "BSE SENSEX"]
+          };
+
+          const localPriority = (item: Instrument) => {
+            const normalizedName = item.name
+              .toUpperCase()
+              .replace(/[^A-Z0-9]+/g, " ")
+              .trim();
+            const normalizedSymbol = item.symbol
+              .toUpperCase()
+              .replace(/[^A-Z0-9]+/g, " ")
+              .trim();
+
+            if (
+              item.market === "OANDA" &&
+              (normalizedName === normalizedQuery ||
+                normalizedSymbol === normalizedQuery)
+            ) {
+              return 9500;
+            }
+
+            const aliases = indexAliases[item.symbol] ?? [];
+            if (item.type === "INDEX") {
+              if (aliases.includes(normalizedQuery)) return 10000;
+              if (
+                aliases.some(
+                  (alias) =>
+                    alias.startsWith(normalizedQuery) ||
+                    normalizedQuery.startsWith(alias)
+                )
+              ) {
+                return 8000;
+              }
+
+              if (normalizedName === normalizedQuery) return 9000;
+              if (normalizedName.startsWith(normalizedQuery)) return 7000;
+              return 5000;
+            }
+
+            if (item.type === "OPTION") return 500;
+            if (item.type === "FUTURE") return 1000;
+            if (item.type === "EQUITY") return 2500;
+            return 2000;
+          };
+
           const unique = [
             ...new Map(
               merged.map((item) => [
@@ -2575,7 +3133,13 @@ export default function Home() {
                 item
               ])
             ).values()
-          ].slice(0, 100);
+          ]
+            .sort(
+              (a, b) =>
+                localPriority(b) - localPriority(a) ||
+                a.name.localeCompare(b.name)
+            )
+            .slice(0, 100);
 
           setSearchResults(unique);
         })
@@ -2645,21 +3209,52 @@ export default function Home() {
               <span className="dot" />
               {connected ? "FYERS CONNECTED" : "FYERS OFFLINE"}
             </div>
-            <div className={streamConnected ? "connectionPill online" : "connectionPill"}>
+            <div
+              className={
+                oandaConnected
+                  ? "connectionPill online"
+                  : "connectionPill"
+              }
+            >
+              <span className="dot" />
+              {oandaStatusLabel}
+            </div>
+            <div
+              className={
+                krakenConnected
+                  ? "connectionPill online"
+                  : "connectionPill"
+              }
+            >
+              <span className="dot" />
+              {krakenStatusLabel}
+            </div>
+            <div
+              className={
+                streamConnected
+                  ? "connectionPill online"
+                  : "connectionPill"
+              }
+              title={streamMessage}
+            >
               <span className="dot" />
               {streamConnected
                 ? selectedIsKraken
                   ? "KRAKEN LIVE"
-                  : "LIVE SOCKET"
+                  : selectedIsOanda
+                    ? "OANDA LIVE"
+                    : "FYERS SOCKET LIVE"
                 : selectedIsKraken
                   ? "KRAKEN WAITING"
-                  : "SOCKET WAITING"}
+                  : selectedIsOanda
+                    ? "OANDA STREAM WAITING"
+                    : "FYERS SOCKET WAITING"}
             </div>
           </div>
         </div>
       </section>
 
-      {!connected && !selectedIsKraken ? (
+      {!connected && !selectedIsGlobal ? (
         <section className="card">
           <div className="row">
             <div>
@@ -2674,7 +3269,13 @@ export default function Home() {
         </section>
       ) : null}
 
-      <section className="instrumentPanel">
+      <section
+        className={
+          searchQuery.trim()
+            ? "instrumentPanel searchOpen"
+            : "instrumentPanel"
+        }
+      >
         <div className="instrumentSearchRow">
           <div className="searchBox">
             <span className="searchIcon">⌕</span>
@@ -2700,21 +3301,29 @@ export default function Home() {
         </div>
 
         <div className="liveNowRow">
-          <span className="toolbarLabel">LIVE NOW · 24/7 GLOBAL TEST</span>
+          <span className="toolbarLabel">LIVE NOW · GLOBAL MARKETS</span>
           <div className="filterRow">
             {LIVE_GLOBAL_SHORTCUTS.map((instrument) => (
               <button
                 key={instrument.symbol}
                 className={
-                  selected.market === "KRAKEN" &&
+                  selected.market === instrument.market &&
                   selected.symbol === instrument.symbol
                     ? "liveShortcut active"
                     : "liveShortcut"
                 }
                 onClick={() => void selectInstrument(instrument)}
               >
-                <span className="liveDot" />
-                {instrument.symbol}
+                <span
+                  className={
+                    instrument.market === "OANDA" && !oandaConnected
+                      ? "liveDot offline"
+                      : "liveDot"
+                  }
+                />
+                {instrument.market === "OANDA" && instrument.symbol === "XAU_USD"
+                  ? "GOLD"
+                  : instrument.symbol}
               </button>
             ))}
           </div>
@@ -2851,14 +3460,19 @@ export default function Home() {
                   className={resolution === item.value ? "timeframe active" : "timeframe"}
                   onClick={() => setResolution(item.value)}
                   disabled={
-                    selectedIsKraken &&
-                    !KRAKEN_RESOLUTIONS.has(item.value)
+                    (selectedIsKraken &&
+                      !KRAKEN_RESOLUTIONS.has(item.value)) ||
+                    (selectedIsOanda &&
+                      !OANDA_RESOLUTIONS.has(item.value))
                   }
                   title={
                     selectedIsKraken &&
                     !KRAKEN_RESOLUTIONS.has(item.value)
-                      ? "Kraken does not stream this candle interval."
-                      : undefined
+                      ? "Kraken does not provide this candle interval."
+                      : selectedIsOanda &&
+                          !OANDA_RESOLUTIONS.has(item.value)
+                        ? "OANDA does not provide this candle interval."
+                        : undefined
                   }
                 >
                   {item.label}
@@ -3364,6 +3978,12 @@ export default function Home() {
           theme={resolvedTheme}
           instrumentKey={selected.market + ":" + selected.symbol}
         />
+
+        {offlineReplayNotice ? (
+          <div className="offlineReplayNotice">
+            {offlineReplayNotice}
+          </div>
+        ) : null}
 
         {quote ? (
           <div className="ohlcStrip">
@@ -4104,7 +4724,9 @@ export default function Home() {
                 ? streamConnected
                   ? "Exact taker-side volume is live"
                   : "Waiting for exact live trades"
-                : "Exact order flow unavailable from the current FYERS market feed"}
+                : selectedIsOanda
+                    ? "Exact aggressor-side order flow is not available from the current OANDA pricing feed"
+                    : "Exact order flow unavailable from the current FYERS market feed"}
             </h3>
           </div>
           <span
@@ -4157,13 +4779,21 @@ export default function Home() {
               <div>
                 <span>TRADES SEEN</span>
                 <strong>{latestOrderFlow.trades.toLocaleString("en-IN")}</strong>
-                <small>{latestOrderFlow.partial ? "PARTIAL CURRENT CANDLE" : "COMPLETE FROM CANDLE OPEN"}</small>
+                <small>
+                  {latestOrderFlow.closed
+                    ? latestOrderFlow.partial
+                      ? "CLOSED · PARTIAL COVERAGE"
+                      : "EXACT CLOSED BAR"
+                    : latestOrderFlow.coverage === "partial"
+                      ? "LIVE · PARTIAL COVERAGE"
+                      : "LIVE · COMPLETE FROM OPEN SO FAR"}
+                </small>
               </div>
             </div>
 
-            {latestOrderFlow.partial ? (
+            {latestOrderFlow.coverage === "partial" ? (
               <p className="orderFlowNote">
-                This candle started before ALLINONEVIEW joined the trade stream, so only trades observed after connection are shown. The next full candle will be complete.
+                ALLINONEVIEW joined or reconnected after this candle had already started, so this bucket has incomplete coverage and is not presented as exact closed history.
               </p>
             ) : null}
           </>
@@ -4173,7 +4803,9 @@ export default function Home() {
           </p>
         ) : (
           <p className="orderFlowNote">
-            FYERS does not expose an aggressor-side field for every market trade in the current market-data feed. ALLINONEVIEW therefore shows no buyer/seller percentage rather than inventing one. The chart, volume, OI, VWAP and other real data remain available.
+            {selectedIsOanda
+              ? "OANDA pricing provides real bid/ask and candle data, but this integration does not claim exchange-level aggressor-side trade flow. ALLINONEVIEW therefore does not invent buyer/seller percentages."
+              : "FYERS does not expose an aggressor-side field for every market trade in the current market-data feed. ALLINONEVIEW therefore shows no buyer/seller percentage rather than inventing one. The chart, volume, OI, VWAP and other real data remain available."}
           </p>
         )}
       </section>
@@ -5378,7 +6010,7 @@ export default function Home() {
         xStreaming={newsXStreaming}
       />
 
-      {!selectedIsKraken && connected && !streamConnected && socketDiagnostic ? (
+      {!selectedIsGlobal && connected && !streamConnected && socketDiagnostic ? (
         <section className={showAdvancedAnalysis ? "card" : "card advancedHidden"}>
           <p className="label">Safe socket diagnostic</p>
           <div className="quoteGrid">

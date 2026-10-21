@@ -9,7 +9,12 @@ export type OrderFlowBucket = {
   sellTrades: number;
   oi?: number | null;
   oiChange?: number | null;
+  // partial means the bucket is not safe to present as a complete closed bar.
+  // coverage distinguishes a live/open bar from a bucket where the stream
+  // actually missed the beginning because we joined/reconnected mid-candle.
   partial: boolean;
+  closed?: boolean;
+  coverage?: "full" | "partial";
   quality: OrderFlowQuality;
   source: string;
 };

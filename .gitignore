@@ -26,3 +26,6 @@ pnpm-debug.log*
 .neon
 *.tsbuildinfo
 .agents/
+
+# Local research/backtest outputs
+reports/*.json

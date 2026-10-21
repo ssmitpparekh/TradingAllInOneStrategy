@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import PwaRegister from "@/components/PwaRegister";
+import AppNavigation from "@/components/AppNavigation";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -52,6 +53,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <PwaRegister />
+        <AppNavigation />
         {children}
       </body>
     </html>
