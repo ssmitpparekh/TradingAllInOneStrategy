@@ -596,15 +596,21 @@ async function main() {
   );
   let expiries = await readJson<string[]>(expiryCache);
   if (!expiries) {
+    const lastEligibleExpiredDate = addDays(
+      isoTodayIndia(),
+      -1
+    );
     const expiredLookupTo =
-      to < isoTodayIndia() ? to : isoTodayIndia();
+      to < lastEligibleExpiredDate
+        ? to
+        : lastEligibleExpiredDate;
 
     process.stdout.write(
       "Fetching expired NIFTY option expiries " +
         addDays(from, -14) +
         " -> " +
         expiredLookupTo +
-        " (future expiries are intentionally excluded)\n"
+        " (current/future dates are intentionally excluded)\n"
     );
 
     expiries = await getExpiredFnoExpiryDates(accessToken, {
