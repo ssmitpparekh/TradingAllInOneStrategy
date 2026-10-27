@@ -23,7 +23,8 @@
     "kraken:prepare-exact": "node scripts/prepare-kraken-exact-history.mjs",
     "check:release-scripts": "node --check scripts/prepare-kraken-exact-history.mjs && node --check scripts/lock-platform-live.mjs",
     "release:official-local": "npm run db:setup && npm run kraken:prepare-exact && node scripts/lock-platform-live.mjs --confirm",
-    "backtest:research-v11": "tsx scripts/run-platform-backtests.ts --strategy=AIOV-1.1.0-RESEARCH"
+    "backtest:research-v11": "tsx scripts/run-platform-backtests.ts --strategy=AIOV-1.1.0-RESEARCH",
+    "backtest:nifty-options": "tsx scripts/backtest-nifty-options.ts"
   },
   "dependencies": {
     "@neon/config": "^1.9.2",
