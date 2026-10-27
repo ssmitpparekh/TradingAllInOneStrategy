@@ -294,9 +294,13 @@ export async function getExpiredFnoExpiryDates(
   const body = await response.json();
 
   if (!response.ok || body?.s !== "ok") {
+    const detail =
+      body?.data && typeof body.data === "object"
+        ? " " + JSON.stringify(body.data)
+        : "";
     const message = body?.message || `HTTP ${response.status}`;
     throw new Error(
-      `FYERS expired F&O expiry-dates request failed: ${message}`
+      `FYERS expired F&O expiry-dates request failed: ${message}${detail}`
     );
   }
 
