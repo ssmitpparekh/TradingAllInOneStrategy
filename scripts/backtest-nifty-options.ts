@@ -470,7 +470,7 @@ async function main() {
       "FYERS is not connected. Connect FYERS in the app first so .data/fyers-session.json exists."
     );
   }
-  const accessToken = accessToken;
+  const accessToken: string = session.accessToken;
 
   await mkdir(CACHE_DIR, { recursive: true });
   await mkdir(OUTPUT_DIR, { recursive: true });
