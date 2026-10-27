@@ -13,6 +13,8 @@ import { readFyersSession } from "../src/lib/fyers-session";
 
 const IST_OFFSET_MINUTES = 330;
 const NIFTY = "NSE:NIFTY50-INDEX";
+const TAKE_PROFIT_POINTS = 30;
+const STOP_LOSS_POINTS = 25;
 const CACHE_DIR = path.join(
   process.cwd(),
   ".data",
@@ -351,8 +353,8 @@ function evaluateTrade(
   const triggerIndex = session.findIndex(
     (row) => row.time === triggerTime
   );
-  const tp = entry + 50;
-  const sl = entry - 25;
+  const tp = entry + TAKE_PROFIT_POINTS;
+  const sl = entry - STOP_LOSS_POINTS;
   let reached100 = entry >= 100;
 
   if (triggerIndex < 0) {
@@ -574,7 +576,7 @@ async function main() {
       "Range: " + from + " to " + to,
       "09:15 source: 1-minute candle OPEN",
       "Trigger: first CE/PE 1-minute CLOSE crossing <=50 to >50",
-      "TP: +50 points | SL: -25 points",
+      "TP: +" + TAKE_PROFIT_POINTS + " points | SL: -" + STOP_LOSS_POINTS + " points",
       "Expiry: first actual NIFTY option expiry after the Tuesday of each calendar week",
       "Expired F&O request budget this run: " + maxExpiredRequests,
       ""
@@ -1005,7 +1007,7 @@ async function main() {
         "TP and SL were both inside the same post-entry 1-minute candle; tick order is unknown.";
     } else if (result.outcome === "EOD_OPEN") {
       base.notes =
-        "Neither +50 TP nor -25 SL was reached before session end; no invented EOD exit.";
+        "Neither +" + TAKE_PROFIT_POINTS + " TP nor -" + STOP_LOSS_POINTS + " SL was reached before session end; no invented EOD exit.";
     }
 
     rows.push(base);
