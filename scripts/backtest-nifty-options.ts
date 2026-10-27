@@ -470,6 +470,7 @@ async function main() {
       "FYERS is not connected. Connect FYERS in the app first so .data/fyers-session.json exists."
     );
   }
+  const accessToken = accessToken;
 
   await mkdir(CACHE_DIR, { recursive: true });
   await mkdir(OUTPUT_DIR, { recursive: true });
@@ -512,7 +513,7 @@ async function main() {
       process.stdout.write(
         "Fetching NIFTY spot " + cursor + " -> " + chunkTo + "\n"
       );
-      const rows = await getHistory(session.accessToken, {
+      const rows = await getHistory(accessToken, {
         symbol: NIFTY,
         resolution: "1",
         from: epochIst(cursor, 0, 0),
@@ -544,7 +545,7 @@ async function main() {
   );
   let expiries = await readJson<string[]>(expiryCache);
   if (!expiries) {
-    expiries = await getExpiredFnoExpiryDates(session.accessToken, {
+    expiries = await getExpiredFnoExpiryDates(accessToken, {
       symbol: NIFTY,
       from: addDays(from, -14),
       to: addDays(to, 14)
@@ -565,7 +566,7 @@ async function main() {
     const file = path.join(CACHE_DIR, "contracts-" + expiry + ".json");
     let values = await readJson<string[]>(file);
     if (!values) {
-      values = await getExpiredFnoContracts(session.accessToken, {
+      values = await getExpiredFnoContracts(accessToken, {
         symbol: NIFTY,
         expiryDate: expiry
       });
@@ -604,7 +605,7 @@ async function main() {
       );
 
       try {
-        rows = await getExpiredFnoHistory(session.accessToken, {
+        rows = await getExpiredFnoHistory(accessToken, {
           symbol,
           resolution: "1",
           from: addDays(expiry, -14),
