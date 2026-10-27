@@ -6,6 +6,7 @@ import {
   getExpiredFnoExpiryDates,
   getExpiredFnoHistory,
   getHistory,
+  getQuote,
   type FyersCandle
 } from "../src/lib/fyers";
 import { readFyersSession } from "../src/lib/fyers-session";
@@ -498,6 +499,29 @@ async function main() {
     );
   }
   const accessToken: string = session.accessToken;
+
+  try {
+    await getQuote(accessToken, NIFTY);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : String(error);
+
+    if (
+      /authenticate|expired|invalid access token|invalid token|unauthorized/i.test(
+        message
+      )
+    ) {
+      throw new Error(
+        "FYERS session is expired or invalid. FYERS requires a fresh daily authentication. " +
+          "Start the local app with 'npm run dev', open http://127.0.0.1:8080, click Connect FYERS, complete FYERS login/2FA, then rerun 'npm run backtest:nifty-options'. " +
+          "Do not paste any access token or secret into CMD."
+      );
+    }
+
+    throw error;
+  }
+
+  process.stdout.write("FYERS session verified for this run.\n");
 
   await mkdir(CACHE_DIR, { recursive: true });
   await mkdir(OUTPUT_DIR, { recursive: true });
