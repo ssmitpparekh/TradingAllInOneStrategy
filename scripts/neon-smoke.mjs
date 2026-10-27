@@ -56,6 +56,8 @@ try {
     select
       to_regclass('public.market_trade_tape') as trade_table,
       to_regclass('public.market_order_flow_1m') as bucket_table,
+      to_regclass('public.market_candles') as candle_table,
+      to_regclass('public.manual_trade_journal') as journal_table,
       to_regprocedure(
         'public.refresh_market_order_flow_1m(text,text,text,bigint,bigint)'
       ) as refresh_function
@@ -66,6 +68,8 @@ try {
   if (
     !objectRow?.trade_table ||
     !objectRow?.bucket_table ||
+    !objectRow?.candle_table ||
+    !objectRow?.journal_table ||
     !objectRow?.refresh_function
   ) {
     throw new Error(
@@ -116,6 +120,58 @@ try {
       limit 1`,
     ["SMOKE", "SMOKE", "SMOKE/TEST"]
   );
+
+  await client.query(
+    `insert into public.market_candles (
+       provider,
+       market,
+       symbol,
+       resolution,
+       candle_time,
+       open,
+       high,
+       low,
+       close,
+       volume,
+       quality,
+       source
+     )
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     on conflict (provider, market, symbol, resolution, candle_time)
+     do update set close = excluded.close`,
+    [
+      "SMOKE",
+      "SMOKE",
+      "SMOKE/TEST",
+      "1",
+      nowEpoch,
+      100,
+      101,
+      99,
+      100.5,
+      10,
+      "exact_ohlcv",
+      "Smoke test"
+    ]
+  );
+
+  const candleReadBack = await client.query(
+    `select close
+       from public.market_candles
+      where provider = $1
+        and market = $2
+        and symbol = $3
+        and resolution = $4
+        and candle_time = $5`,
+    ["SMOKE", "SMOKE", "SMOKE/TEST", "1", nowEpoch]
+  );
+
+  if (
+    !candleReadBack.rows[0] ||
+    Number(candleReadBack.rows[0].close) !== 100.5
+  ) {
+    throw new Error("Neon candle cache smoke test failed.");
+  }
 
   const row = readBack.rows[0];
 

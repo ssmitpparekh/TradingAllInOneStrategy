@@ -141,6 +141,9 @@ export async function GET(request: NextRequest) {
   const spotPrice = Number(
     request.nextUrl.searchParams.get("spotPrice") ?? 0
   );
+  const expiryTimestamp = Number(
+    request.nextUrl.searchParams.get("expiry") ?? 0
+  );
 
   if (!symbol) {
     return NextResponse.json(
@@ -178,7 +181,11 @@ export async function GET(request: NextRequest) {
     const [futuresResult, optionsResult] = await Promise.allSettled([
       getFuturesChain(session.accessToken, candidate),
       getOptionChain(session.accessToken, candidate, {
-        strikeCount: 12,
+        strikeCount: 24,
+        timestamp:
+          Number.isFinite(expiryTimestamp) && expiryTimestamp > 0
+            ? expiryTimestamp
+            : null,
         greeks: true
       })
     ]);
@@ -342,7 +349,14 @@ export async function GET(request: NextRequest) {
           putUnwinding: topBy(
             putLegs.filter((leg) => leg.oiChange < 0),
             (leg) => Math.abs(leg.oiChange)
-          )
+          ),
+          legs: optionChain.legs
+            .slice()
+            .sort(
+              (a, b) =>
+                a.strike - b.strike ||
+                a.optionType.localeCompare(b.optionType)
+            )
         }
       : null,
     diagnostics: errors.slice(-2)

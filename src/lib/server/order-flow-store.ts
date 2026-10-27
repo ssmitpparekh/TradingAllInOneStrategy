@@ -53,8 +53,7 @@ export async function readStoredOrderFlow(input: {
        and symbol = $3
        and bucket_time >= $4
        and bucket_time <= $5
-     order by bucket_time asc
-     limit 100000`,
+     order by bucket_time asc`,
     [
       input.provider,
       input.market,
@@ -83,4 +82,71 @@ export async function readStoredOrderFlow(input: {
     ),
     reason: null
   };
+}
+
+
+export async function upsertStoredOrderFlow(input: {
+  provider: string;
+  market: string;
+  symbol: string;
+  buckets: OrderFlowBucket[];
+}) {
+  if (!orderFlowStoreConfigured() || !input.buckets.length) {
+    return 0;
+  }
+
+  const pool = getPostgresPool();
+  const chunkSize = 400;
+  let written = 0;
+
+  for (
+    let offset = 0;
+    offset < input.buckets.length;
+    offset += chunkSize
+  ) {
+    const chunk = input.buckets.slice(offset, offset + chunkSize);
+    const values: unknown[] = [];
+    const tuples = chunk.map((bucket, index) => {
+      const start = index * 11;
+      values.push(
+        input.provider,
+        input.market,
+        input.symbol,
+        Math.floor(bucket.time),
+        bucket.buyVolume,
+        bucket.sellVolume,
+        bucket.trades,
+        bucket.buyTrades,
+        bucket.sellTrades,
+        bucket.quality,
+        bucket.source
+      );
+
+      return `($${start + 1},$${start + 2},$${start + 3},$${start + 4},$${start + 5},$${start + 6},$${start + 7},$${start + 8},$${start + 9},$${start + 10},$${start + 11},now())`;
+    });
+
+    await pool.query(
+      `insert into public.market_order_flow_1m (
+         provider, market, symbol, bucket_time,
+         buy_volume, sell_volume, trades, buy_trades, sell_trades,
+         quality, source, refreshed_at
+       )
+       values ${tuples.join(",")}
+       on conflict (provider, market, symbol, bucket_time)
+       do update set
+         buy_volume = excluded.buy_volume,
+         sell_volume = excluded.sell_volume,
+         trades = excluded.trades,
+         buy_trades = excluded.buy_trades,
+         sell_trades = excluded.sell_trades,
+         quality = excluded.quality,
+         source = excluded.source,
+         refreshed_at = now()`,
+      values
+    );
+
+    written += chunk.length;
+  }
+
+  return written;
 }

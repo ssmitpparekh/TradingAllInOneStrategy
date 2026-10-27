@@ -8,8 +8,23 @@
     "start": "next start -H 127.0.0.1 -p 8080",
     "typecheck": "tsc --noEmit",
     "collector:orderflow": "node scripts/order-flow-collector.mjs",
+    "recover:kraken": "node scripts/recover-kraken-trades.mjs",
+    "backfill:market": "node scripts/backfill-market-data.mjs",
+    "backfill:oanda": "node scripts/backfill-oanda.mjs",
+    "backtest:smart-flow": "node scripts/backtest-smart-flow.mjs",
     "db:setup": "node scripts/apply-neon-schema.mjs",
-    "db:smoke": "node scripts/neon-smoke.mjs"
+    "db:smoke": "node scripts/neon-smoke.mjs",
+    "db:storage": "node scripts/database-storage-report.mjs",
+    "db:guard": "node scripts/neon-storage-guard.mjs",
+    "db:optimize:candles": "node scripts/optimize-market-candle-storage.mjs",
+    "sync:history": "node scripts/continuous-history-sync.mjs",
+    "strategy:go-live": "node scripts/lock-platform-live.mjs",
+    "backtest:platform": "tsx scripts/run-platform-backtests.ts",
+    "kraken:prepare-exact": "node scripts/prepare-kraken-exact-history.mjs",
+    "check:release-scripts": "node --check scripts/prepare-kraken-exact-history.mjs && node --check scripts/lock-platform-live.mjs",
+    "release:official-local": "npm run db:setup && npm run kraken:prepare-exact && node scripts/lock-platform-live.mjs --confirm",
+    "backtest:research-v11": "tsx scripts/run-platform-backtests.ts --strategy=AIOV-1.1.0-RESEARCH",
+    "backtest:nifty-options": "tsx scripts/backtest-nifty-options.ts"
   },
   "dependencies": {
     "@neon/config": "^1.9.2",
@@ -26,6 +41,7 @@
     "@types/pg": "^8.23.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "tsx": "^4.20.6"
   }
 }

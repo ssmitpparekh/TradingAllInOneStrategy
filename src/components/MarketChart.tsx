@@ -11,6 +11,7 @@ import {
   CandlestickSeries,
   ColorType,
   CrosshairMode,
+  HistogramSeries,
   LineSeries,
   createChart,
   type CandlestickData,
@@ -69,6 +70,11 @@ export type TradeChartMarker = {
   id: string;
   time: number;
   price: number;
+  entry?: number;
+  stop?: number;
+  targets?: number[];
+  endTime?: number | null;
+  resultR?: number | null;
   direction: "long" | "short";
   status: "OPEN" | "CLOSED";
   outcome?: string;
@@ -137,8 +143,14 @@ function chartHeightForHost(host: HTMLDivElement) {
   return Math.max(520, host.clientHeight || 560);
 }
 
+function marketTimeZone(market: string) {
+  if (market === "KRAKEN") return "UTC";
+  if (market === "OANDA") return "America/New_York";
+  return "Asia/Kolkata";
+}
+
 function sessionKey(timestamp: number, market: string) {
-  const timeZone = market === "KRAKEN" ? "UTC" : "Asia/Kolkata";
+  const timeZone = marketTimeZone(market);
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
     year: "numeric",
@@ -203,6 +215,15 @@ function indianMarketMinute(timestamp: number) {
   };
 }
 
+function marketWeekday(timestamp: number, timeZone: string) {
+  return (
+    new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      weekday: "short"
+    }).format(new Date(timestamp * 1000)) || ""
+  );
+}
+
 function futureAxisTimes(
   lastTime: number,
   market: string,
@@ -236,6 +257,17 @@ function futureAxisTimes(
       continue;
     }
 
+    if (market === "OANDA") {
+      const weekday = marketWeekday(
+        candidate,
+        "America/New_York"
+      );
+      if (weekday !== "Sat" && weekday !== "Sun") {
+        output.push(candidate);
+      }
+      continue;
+    }
+
     const local = indianMarketMinute(candidate);
     const weekdayOkay =
       local.weekday !== "Sat" && local.weekday !== "Sun";
@@ -256,7 +288,7 @@ function formatAxisTick(
   market: string,
   resolution: string
 ) {
-  const timeZone = market === "KRAKEN" ? "UTC" : "Asia/Kolkata";
+  const timeZone = marketTimeZone(market);
 
   if (isIntradayResolution(resolution)) {
     return new Intl.DateTimeFormat("en-GB", {
@@ -333,6 +365,7 @@ export default function MarketChart({
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const vwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const futureAxisSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const futureAxisAnchorRef = useRef<string | null>(null);
   const overlayRafRef = useRef<number | null>(null);
@@ -462,6 +495,8 @@ export default function MarketChart({
       buyHeight: number;
       sellHeight: number;
       partial: boolean;
+      closed: boolean;
+      coverage: "full" | "partial";
       buyPercent: number;
       sellPercent: number;
       buyTrades: number;
@@ -477,6 +512,25 @@ export default function MarketChart({
   >([]);
   const [tradeMarkerPositions, setTradeMarkerPositions] = useState<
     Array<TradeChartMarker & { x: number; y: number }>
+  >([]);
+  const [tradePositionZones, setTradePositionZones] = useState<
+    Array<{
+      id: string;
+      left: number;
+      width: number;
+      entryY: number;
+      rewardTop: number;
+      rewardHeight: number;
+      riskTop: number;
+      riskHeight: number;
+      targetLines: Array<{ label: string; top: number }>;
+      direction: "long" | "short";
+      status: "OPEN" | "CLOSED";
+      outcome?: string;
+      resultR: number | null;
+      setupType?: "PRIMARY" | "REACTION";
+      moveClass?: "TACTICAL" | "MAJOR";
+    }>
   >([]);
   const [drawingTool, setDrawingTool] = useState<DrawingTool>("cursor");
   const [drawings, setDrawings] = useState<ChartDrawing[]>([]);
@@ -525,6 +579,25 @@ export default function MarketChart({
     }
 
     return map;
+  }, [orderFlowBuckets]);
+
+  const exactOrderFlowTimes = useMemo(() => {
+    const times = new Set<number>();
+
+    for (const bucket of orderFlowBuckets) {
+      const coverage =
+        bucket.coverage ?? (bucket.partial ? "partial" : "full");
+      const closed = bucket.closed ?? !bucket.partial;
+
+      if (
+        bucket.quality === "exact" &&
+        (coverage === "full" || !closed)
+      ) {
+        times.add(bucket.time);
+      }
+    }
+
+    return times;
   }, [orderFlowBuckets]);
 
   const latest = useMemo(
@@ -645,6 +718,19 @@ export default function MarketChart({
       priceLineVisible: true
     });
 
+    const volumeSeries = chart.addSeries(HistogramSeries, {
+      priceScaleId: "volume",
+      priceFormat: { type: "volume" },
+      priceLineVisible: false,
+      lastValueVisible: false
+    });
+    volumeSeries.priceScale().applyOptions({
+      scaleMargins: {
+        top: 0.82,
+        bottom: 0
+      }
+    });
+
     const vwapSeries = chart.addSeries(LineSeries, {
       color: "#f5b942",
       lineWidth: 2,
@@ -664,6 +750,7 @@ export default function MarketChart({
 
     chartRef.current = chart;
     seriesRef.current = series;
+    volumeSeriesRef.current = volumeSeries;
     vwapSeriesRef.current = vwapSeries;
     futureAxisSeriesRef.current = futureAxisSeries;
 
@@ -680,12 +767,21 @@ export default function MarketChart({
         return;
       }
 
+      const volumeItem = param.seriesData.get(volumeSeries);
+      const fallbackVolume =
+        volumeItem && "value" in volumeItem
+          ? Number(volumeItem.value)
+          : undefined;
+
       setHovered({
         time: epoch,
         open: Number(item.open),
         high: Number(item.high),
         low: Number(item.low),
-        close: Number(item.close)
+        close: Number(item.close),
+        ...(Number.isFinite(fallbackVolume)
+          ? { volume: fallbackVolume }
+          : {})
       });
     });
 
@@ -784,6 +880,7 @@ export default function MarketChart({
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      volumeSeriesRef.current = null;
       vwapSeriesRef.current = null;
       futureAxisSeriesRef.current = null;
       futureAxisAnchorRef.current = null;
@@ -837,7 +934,7 @@ export default function MarketChart({
     const chart = chartRef.current;
     if (!chart) return;
 
-    const timeZone = market === "KRAKEN" ? "UTC" : "Asia/Kolkata";
+    const timeZone = marketTimeZone(market);
 
     chart.applyOptions({
       localization: {
@@ -932,6 +1029,48 @@ export default function MarketChart({
   }, [candles, rangeKey]);
 
   useEffect(() => {
+    const volumeSeries = volumeSeriesRef.current;
+    if (!volumeSeries) return;
+
+    volumeSeries.applyOptions({ visible: true });
+
+    const source =
+      liveCandle &&
+      (!candles.length ||
+        liveCandle.time >= candles[candles.length - 1].time)
+        ? liveCandle.time === candles[candles.length - 1]?.time
+          ? [...candles.slice(0, -1), liveCandle]
+          : [...candles, liveCandle]
+        : candles;
+
+    volumeSeries.setData(
+      source
+        .filter(
+          (candle) =>
+            Number.isFinite(Number(candle.volume)) &&
+            Number(candle.volume) >= 0 &&
+            !(
+              showOrderFlow &&
+              exactOrderFlowTimes.has(candle.time)
+            )
+        )
+        .map((candle) => ({
+          time: candle.time as Time,
+          value: Number(candle.volume ?? 0),
+          color:
+            candle.close >= candle.open
+              ? "rgba(40, 199, 111, 0.72)"
+              : "rgba(234, 84, 85, 0.72)"
+        }))
+    );
+  }, [
+    candles,
+    liveCandle,
+    showOrderFlow,
+    exactOrderFlowTimes
+  ]);
+
+  useEffect(() => {
     const futureSeries = futureAxisSeriesRef.current;
     if (!futureSeries) return;
 
@@ -1006,16 +1145,52 @@ export default function MarketChart({
 
     if (!chart || !host || !series || tradeMarkers.length === 0) {
       setTradeMarkerPositions([]);
+      setTradePositionZones([]);
       return;
     }
 
     const updateMarkers = () => {
       const width = host.clientWidth;
       const height = host.clientHeight;
+      const chartTimes = [
+        ...candles.map((candle) => candle.time),
+        ...(liveCandle ? [liveCandle.time] : [])
+      ].sort((a, b) => a - b);
+
+      const nearestChartTime = (timestamp: number) => {
+        if (!chartTimes.length) return timestamp;
+
+        let low = 0;
+        let high = chartTimes.length - 1;
+
+        while (low < high) {
+          const mid = Math.floor((low + high) / 2);
+          if (chartTimes[mid] < timestamp) {
+            low = mid + 1;
+          } else {
+            high = mid;
+          }
+        }
+
+        const after = chartTimes[low];
+        const before = low > 0 ? chartTimes[low - 1] : after;
+
+        return Math.abs(after - timestamp) < Math.abs(timestamp - before)
+          ? after
+          : before;
+      };
+
+      const latestTime =
+        liveCandle?.time ?? candles[candles.length - 1]?.time ?? null;
+      const latestX =
+        latestTime === null
+          ? null
+          : chart.timeScale().timeToCoordinate(latestTime as Time);
 
       setTradeMarkerPositions(
         tradeMarkers.flatMap((marker) => {
-          const x = chart.timeScale().timeToCoordinate(marker.time as Time);
+          const displayTime = nearestChartTime(marker.time);
+          const x = chart.timeScale().timeToCoordinate(displayTime as Time);
           const y = series.priceToCoordinate(marker.price);
 
           if (
@@ -1038,10 +1213,105 @@ export default function MarketChart({
           ];
         })
       );
+
+      setTradePositionZones(
+        tradeMarkers.flatMap((marker) => {
+          const entry = Number(marker.entry ?? marker.price);
+          const stop = Number(marker.stop ?? 0);
+          const targets = (marker.targets ?? []).filter((value) =>
+            Number.isFinite(Number(value))
+          );
+          const finalTarget = Number(targets.at(-1) ?? 0);
+
+          if (!(entry > 0) || !(stop > 0) || !(finalTarget > 0)) {
+            return [];
+          }
+
+          const startDisplayTime = nearestChartTime(marker.time);
+          const startX = chart.timeScale().timeToCoordinate(
+            startDisplayTime as Time
+          );
+          const requestedEndTime =
+            marker.status === "CLOSED" && marker.endTime
+              ? marker.endTime
+              : latestTime;
+          const requestedEndX =
+            requestedEndTime === null
+              ? null
+              : chart.timeScale().timeToCoordinate(
+                  requestedEndTime as Time
+                );
+
+          const entryY = series.priceToCoordinate(entry);
+          const stopY = series.priceToCoordinate(stop);
+          const targetY = series.priceToCoordinate(finalTarget);
+
+          if (
+            startX === null ||
+            entryY === null ||
+            stopY === null ||
+            targetY === null
+          ) {
+            return [];
+          }
+
+          const rawLeft = Number(startX);
+          const rawRight =
+            requestedEndX !== null
+              ? Number(requestedEndX)
+              : latestX !== null
+                ? Number(latestX)
+                : width - plotRightInset;
+
+          const left = Math.max(0, Math.min(rawLeft, rawRight));
+          const right = Math.min(
+            width - plotRightInset,
+            Math.max(rawLeft, rawRight)
+          );
+
+          if (right - left < 4) return [];
+
+          const entryPx = Number(entryY);
+          const stopPx = Number(stopY);
+          const targetPx = Number(targetY);
+
+          return [{
+            id: marker.id,
+            left,
+            width: Math.max(4, right - left),
+            entryY: entryPx,
+            rewardTop: Math.min(entryPx, targetPx),
+            rewardHeight: Math.max(2, Math.abs(entryPx - targetPx)),
+            riskTop: Math.min(entryPx, stopPx),
+            riskHeight: Math.max(2, Math.abs(entryPx - stopPx)),
+            targetLines: targets.flatMap((target, index) => {
+              const y = series.priceToCoordinate(Number(target));
+              return y === null
+                ? []
+                : [{
+                    label: `T${index + 1}`,
+                    top: Number(y)
+                  }];
+            }),
+            direction: marker.direction,
+            status: marker.status,
+            outcome: marker.outcome,
+            resultR: marker.resultR ?? null,
+            setupType: marker.setupType,
+            moveClass: marker.moveClass
+          }];
+        })
+      );
     };
 
     updateMarkers();
-  }, [tradeMarkers, candles, liveCandle, drawingRevision]);
+  }, [
+    tradeMarkers,
+    candles,
+    liveCandle,
+    drawingRevision,
+    plotRightInset
+  ]);
 
   useEffect(() => {
     if (!liveCandle || !seriesRef.current) return;
@@ -1820,6 +2090,9 @@ export default function MarketChart({
             buyHeight,
             sellHeight,
             partial: bucket.partial,
+            closed: bucket.closed ?? !bucket.partial,
+            coverage:
+              bucket.coverage ?? (bucket.partial ? "partial" : "full"),
             buyPercent,
             sellPercent,
             buyTrades: bucket.buyTrades,
@@ -1879,7 +2152,7 @@ export default function MarketChart({
     const overlay = calculateVwapOverlay(
       source,
       vwapSettings,
-      market === "KRAKEN" ? "UTC" : "Asia/Kolkata"
+      marketTimeZone(market)
     );
 
     vwapSeries.setData(
@@ -2107,6 +2380,18 @@ export default function MarketChart({
   });
 
   const readout = hovered ?? latest;
+  const readoutHasExactOrderFlow =
+    readout !== null &&
+    readout !== undefined &&
+    showOrderFlow &&
+    exactOrderFlowTimes.has(readout.time);
+  const readoutFallbackVolume =
+    readout !== null &&
+    readout !== undefined &&
+    !readoutHasExactOrderFlow &&
+    Number.isFinite(Number(readout.volume))
+      ? Number(readout.volume)
+      : null;
 
   return (
     <div
@@ -2124,6 +2409,21 @@ export default function MarketChart({
           <span>H <strong>{readout.high.toLocaleString("en-IN")}</strong></span>
           <span>L <strong>{readout.low.toLocaleString("en-IN")}</strong></span>
           <span>C <strong>{readout.close.toLocaleString("en-IN")}</strong></span>
+          {readoutFallbackVolume !== null ? (
+            <>
+              <span>
+                V{" "}
+                <strong>
+                  {readoutFallbackVolume.toLocaleString("en-IN", {
+                    maximumFractionDigits: 6
+                  })}
+                </strong>
+              </span>
+              <span>
+                Couldn&apos;t fetch exact buy/sell volume data for this candle.
+              </span>
+            </>
+          ) : null}
         </div>
       ) : null}
       <div className="chartToolRail" aria-label="Chart tools">
@@ -2499,6 +2799,68 @@ export default function MarketChart({
           ))}
         </div>
       ) : null}
+      {tradePositionZones.length ? (
+        <div className="tradePositionLayer" aria-hidden="true">
+          {tradePositionZones.map((zone) => (
+            <div
+              className={
+                "tradePositionZone " +
+                zone.direction +
+                " " +
+                zone.status.toLowerCase()
+              }
+              key={zone.id}
+              style={{
+                left: zone.left,
+                width: zone.width
+              }}
+            >
+              <span
+                className="tradePositionReward"
+                style={{
+                  top: zone.rewardTop,
+                  height: zone.rewardHeight
+                }}
+              />
+              <span
+                className="tradePositionRisk"
+                style={{
+                  top: zone.riskTop,
+                  height: zone.riskHeight
+                }}
+              />
+              <span
+                className="tradePositionEntry"
+                style={{ top: zone.entryY }}
+              />
+              {zone.targetLines.map((target) => (
+                <span
+                  className="tradePositionTarget"
+                  key={target.label}
+                  style={{ top: target.top }}
+                >
+                  <b>{target.label}</b>
+                </span>
+              ))}
+              <span
+                className="tradePositionBadge"
+                style={{ top: zone.entryY }}
+              >
+                {zone.direction === "long" ? "LONG" : "SHORT"}
+                {" · "}
+                {zone.setupType ?? "PRIMARY"}
+                {zone.status === "CLOSED"
+                  ? " · " +
+                    (zone.outcome ?? "CLOSED") +
+                    (zone.resultR !== null
+                      ? ` · ${zone.resultR >= 0 ? "+" : ""}${zone.resultR.toFixed(2)}R`
+                      : "")
+                  : " · OPEN"}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {tradeMarkerPositions.length ? (
         <div className="tradeMarkerLayer" aria-hidden="true">
           {tradeMarkerPositions.map((marker) => (
@@ -2668,7 +3030,13 @@ export default function MarketChart({
                   </span>
                 ) : null}
                 <small>
-                  {bar.partial ? "LIVE PARTIAL BAR" : "EXACT CLOSED BAR"}
+                  {bar.closed
+                    ? bar.coverage === "partial"
+                      ? "CLOSED · PARTIAL COVERAGE"
+                      : "EXACT CLOSED BAR"
+                    : bar.coverage === "partial"
+                      ? "LIVE · PARTIAL COVERAGE"
+                      : "LIVE · EXACT FROM OPEN SO FAR"}
                 </small>
               </div>
             </div>

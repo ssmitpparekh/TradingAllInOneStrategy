@@ -91,6 +91,59 @@ export async function exchangeAuthCode(
   };
 }
 
+export async function getQuotes(
+  accessToken: string,
+  symbols: string[]
+): Promise<FyersQuote[]> {
+  const unique = [...new Set(symbols.map((symbol) => symbol.trim()).filter(Boolean))];
+  if (!unique.length) return [];
+  if (unique.length > 50) {
+    throw new Error("FYERS quotes accepts up to 50 symbols per request.");
+  }
+
+  const { appId } = getFyersConfig();
+  const url = new URL(`${FYERS_DATA_BASE}/quotes`);
+  url.searchParams.set("symbols", unique.join(","));
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `${appId}:${accessToken}`,
+      Accept: "application/json"
+    },
+    cache: "no-store"
+  });
+
+  const body = await response.json();
+
+  if (!response.ok || body?.s !== "ok" || !Array.isArray(body?.d)) {
+    const message = body?.message || `HTTP ${response.status}`;
+    throw new Error(`FYERS quotes request failed: ${message}`);
+  }
+
+  return body.d.flatMap((entry: Record<string, unknown>) => {
+    if (entry?.s !== "ok" || !entry?.v) return [];
+    const v = entry.v as Record<string, unknown>;
+    const symbol = String(entry.n ?? "");
+    if (!symbol) return [];
+
+    return [{
+      symbol,
+      lp: Number(v.lp ?? 0),
+      ch: Number(v.ch ?? 0),
+      chp: Number(v.chp ?? 0),
+      open: Number(v.open_price ?? 0),
+      high: Number(v.high_price ?? 0),
+      low: Number(v.low_price ?? 0),
+      previousClose: Number(v.prev_close_price ?? 0),
+      volume: Number(v.volume ?? 0),
+      bid: Number(v.bid ?? 0),
+      ask: Number(v.ask ?? 0),
+      timestamp: (v.tt ?? 0) as number | string
+    } satisfies FyersQuote];
+  });
+}
+
 export async function getQuote(
   accessToken: string,
   symbol = "NSE:NIFTY50-INDEX"
@@ -169,8 +222,11 @@ export async function getHistory(
   url.searchParams.set("date_format", "0");
   url.searchParams.set("range_from", String(options.from));
   url.searchParams.set("range_to", String(options.to));
-  url.searchParams.set("cont_flag", "1");
-  if (options.includeOi) {
+  const derivativeSymbol = /(?:FUT|CE|PE)$/.test(symbol);
+  if (derivativeSymbol) {
+    url.searchParams.set("cont_flag", "1");
+  }
+  if (options.includeOi && derivativeSymbol) {
     url.searchParams.set("oi_flag", "1");
   }
 
@@ -185,9 +241,19 @@ export async function getHistory(
 
   const body = await response.json();
 
+  if (body?.s === "no_data" && Array.isArray(body?.candles)) {
+    return [];
+  }
+
   if (!response.ok || body?.s !== "ok" || !Array.isArray(body?.candles)) {
+    const detail =
+      body?.data && typeof body.data === "object"
+        ? " " + JSON.stringify(body.data)
+        : "";
     const message = body?.message || `HTTP ${response.status}`;
-    throw new Error(`FYERS history request failed: ${message}`);
+    throw new Error(
+      `FYERS history request failed: ${message}${detail}`
+    );
   }
 
   return body.candles.map((row: unknown[]) => ({
@@ -201,6 +267,134 @@ export async function getHistory(
   }));
 }
 
+
+
+export async function getExpiredFnoExpiryDates(
+  accessToken: string,
+  options: {
+    symbol?: string;
+    from: string;
+    to: string;
+  }
+): Promise<string[]> {
+  const symbol = options.symbol ?? "NSE:NIFTY50-INDEX";
+  const url = new URL(
+    `${FYERS_DATA_BASE}/history/fno/expired/expiry-dates`
+  );
+  url.searchParams.set("symbol", symbol);
+  url.searchParams.set("range_from", options.from);
+  url.searchParams.set("range_to", options.to);
+  url.searchParams.set("date_format", "1");
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: fyersHeaders(accessToken),
+    cache: "no-store"
+  });
+  const body = await response.json();
+
+  if (!response.ok || body?.s !== "ok") {
+    const detail =
+      body?.data && typeof body.data === "object"
+        ? " " + JSON.stringify(body.data)
+        : "";
+    const message = body?.message || `HTTP ${response.status}`;
+    throw new Error(
+      `FYERS expired F&O expiry-dates request failed: ${message}${detail}`
+    );
+  }
+
+  const values = body?.data?.expiry_dates?.options;
+  return Array.isArray(values)
+    ? values.map((value: unknown) => String(value))
+    : [];
+}
+
+export async function getExpiredFnoContracts(
+  accessToken: string,
+  options: {
+    symbol?: string;
+    expiryDate: string;
+  }
+): Promise<string[]> {
+  const symbol = options.symbol ?? "NSE:NIFTY50-INDEX";
+  const url = new URL(
+    `${FYERS_DATA_BASE}/history/fno/expired/underlying-symbols`
+  );
+  url.searchParams.set("symbol", symbol);
+  url.searchParams.set("expiry_date", options.expiryDate);
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: fyersHeaders(accessToken),
+    cache: "no-store"
+  });
+  const body = await response.json();
+
+  if (!response.ok || body?.s !== "ok") {
+    const message = body?.message || `HTTP ${response.status}`;
+    throw new Error(
+      `FYERS expired F&O contracts request failed: ${message}`
+    );
+  }
+
+  const values = body?.data?.contracts?.options;
+  return Array.isArray(values)
+    ? values.map((value: unknown) => String(value))
+    : [];
+}
+
+export async function getExpiredFnoHistory(
+  accessToken: string,
+  options: {
+    symbol: string;
+    resolution?: string;
+    from: string;
+    to: string;
+  }
+): Promise<FyersCandle[]> {
+  const url = new URL(
+    `${FYERS_DATA_BASE}/history/fno/expired/historical-data`
+  );
+  url.searchParams.set("symbol", options.symbol);
+  url.searchParams.set("resolution", options.resolution ?? "1");
+  url.searchParams.set("date_format", "1");
+  url.searchParams.set("range_from", options.from);
+  url.searchParams.set("range_to", options.to);
+  url.searchParams.set("include_oi", "0");
+  url.searchParams.set("include_greeks", "0");
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: fyersHeaders(accessToken),
+    cache: "no-store"
+  });
+  const body = await response.json();
+
+  if (body?.s === "no_data" && Array.isArray(body?.candles)) {
+    return [];
+  }
+
+  if (!response.ok || body?.s !== "ok" || !Array.isArray(body?.candles)) {
+    const detail =
+      body?.data && typeof body.data === "object"
+        ? " " + JSON.stringify(body.data)
+        : "";
+    const message = body?.message || `HTTP ${response.status}`;
+    throw new Error(
+      `FYERS expired F&O history request failed for ${options.symbol}: ${message}${detail}`
+    );
+  }
+
+  return body.candles.map((row: unknown[]) => ({
+    time: Number(row[0]),
+    open: Number(row[1]),
+    high: Number(row[2]),
+    low: Number(row[3]),
+    close: Number(row[4]),
+    volume: Number(row[5] ?? 0)
+  }));
+}
 
 export type FyersFuturesChainEntry = {
   symbol: string;

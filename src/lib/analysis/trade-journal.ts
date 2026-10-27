@@ -38,6 +38,9 @@ export type JournalTrade = {
   closedTime: number | null;
   ambiguityReason?: string | null;
   createdAt: number;
+  origin?: "LIVE";
+  strategyVersion?: string;
+  lockedAt?: string | null;
 };
 
 export type TradeStats = {
