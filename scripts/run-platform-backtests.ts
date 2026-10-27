@@ -22,6 +22,31 @@ import {
 
 const { Pool } = pg;
 
+// Backtest-only fixed exit policy. This does not change the live strategy.
+const BACKTEST_TAKE_PROFIT_POINTS = 30;
+const BACKTEST_STOP_LOSS_POINTS = 25;
+const BACKTEST_FIXED_R =
+  BACKTEST_TAKE_PROFIT_POINTS / BACKTEST_STOP_LOSS_POINTS;
+
+function fixedBacktestExit(
+  direction: "long" | "short",
+  entry: number
+) {
+  const sign = direction === "long" ? 1 : -1;
+  return {
+    stop: entry - sign * BACKTEST_STOP_LOSS_POINTS,
+    target: {
+      // The journal reconciler closes immediately when a T3-labelled target
+      // is touched. A single T3 target therefore gives one fixed TP with no
+      // T1/T2 stop movement, breakeven, or trailing behaviour.
+      label: "T3" as const,
+      price: entry + sign * BACKTEST_TAKE_PROFIT_POINTS,
+      rr: BACKTEST_FIXED_R,
+      source: "Fixed backtest exit: TP 30 points / SL 25 points"
+    }
+  };
+}
+
 type Candle = {
   time: number;
   open: number;
@@ -657,7 +682,8 @@ try {
         (researchV11
           ? " (research only; live " + liveVersion + " remains unchanged)"
           : " (locked live baseline)") +
-        "\n"
+        "\n" +
+        "Backtest exits: fixed TP=30 points, SL=25 points (1.20R); no trailing/breakeven.\n"
     );
   
     await pool.query(
@@ -1048,6 +1074,7 @@ try {
             signalTime: primary.signalTime
           });
           if (!candidates.has(id)) {
+            const fixedExit = fixedBacktestExit(direction, primary.entry);
             candidates.set(id, {
               id,
               symbol: instrument.symbol,
@@ -1059,9 +1086,9 @@ try {
               signalTime: primary.signalTime,
               confirmationTimeframe: primary.confirmationTimeframe,
               entry: primary.entry,
-              initialStop: primary.stopLoss,
-              currentStop: primary.stopLoss,
-              targets: primary.targets.slice(0, 3),
+              initialStop: fixedExit.stop,
+              currentStop: fixedExit.stop,
+              targets: [fixedExit.target],
               trigger: primary.trigger,
               score: primary.score,
               status: "OPEN",
@@ -1095,6 +1122,7 @@ try {
             signalTime: reaction.signalTime
           });
           if (!candidates.has(id)) {
+            const fixedExit = fixedBacktestExit(direction, reaction.entry);
             candidates.set(id, {
               id,
               symbol: instrument.symbol,
@@ -1106,9 +1134,9 @@ try {
               signalTime: reaction.signalTime,
               confirmationTimeframe: "15m",
               entry: reaction.entry,
-              initialStop: reaction.stopLoss,
-              currentStop: reaction.stopLoss,
-              targets: reaction.targets.slice(0, 3),
+              initialStop: fixedExit.stop,
+              currentStop: fixedExit.stop,
+              targets: [fixedExit.target],
               trigger: reaction.trigger,
               score: reaction.score,
               status: "OPEN",
