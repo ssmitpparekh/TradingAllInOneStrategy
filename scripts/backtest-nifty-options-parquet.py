@@ -211,7 +211,7 @@ def load_universe_and_915(
         WHERE underlying='NIFTY'
           AND granularity='1min'
           AND CAST("date" AS DATE) BETWEEN DATE {qstr(from_date)} AND DATE {qstr(to_date)}
-          AND CAST(timestamp AS TIME) = TIME '09:15:00'
+          AND CAST(timezone('Asia/Kolkata', timestamp) AS TIME) = TIME '09:15:00'
           AND option_type IN ('CE','PE')
         """
     ).fetchall()
@@ -353,7 +353,7 @@ def load_selected_candles(
           CAST(p.expiry AS DATE) AS expiry,
           CAST(p.strike AS DOUBLE) AS strike,
           p.option_type,
-          p.timestamp,
+          timezone('Asia/Kolkata', p.timestamp) AS local_timestamp,
           CAST(p.open AS DOUBLE),
           CAST(p.high AS DOUBLE),
           CAST(p.low AS DOUBLE),
@@ -366,7 +366,8 @@ def load_selected_candles(
          AND p.option_type=s.option_type
         WHERE p.underlying='NIFTY'
           AND p.granularity='1min'
-          AND CAST(p.timestamp AS TIME) BETWEEN TIME '09:15:00' AND TIME '15:30:00'
+          AND CAST(timezone('Asia/Kolkata', p.timestamp) AS TIME)
+              BETWEEN TIME '09:15:00' AND TIME '15:30:00'
         ORDER BY trading_date, expiry, strike, option_type, p.timestamp
         """
     ).fetchall()
@@ -592,25 +593,36 @@ def main() -> int:
         print("No NIFTY 1-minute rows found in this Parquet file.", file=sys.stderr)
         return 2
 
+    effective_from = max(args.from_date, info["min_date"])
+    effective_to = min(args.to_date, info["max_date"])
+
     if args.from_date < info["min_date"] or args.to_date > info["max_date"]:
         print(
             "\nWARNING: requested period is not fully covered by this public file. "
             "Days outside dataset coverage will not be fabricated."
         )
+        print(
+            "This run will use only the exact public-data overlap: "
+            f"{effective_from} -> {effective_to}"
+        )
+
+    if effective_from > effective_to:
+        print("Requested period has no overlap with this Parquet dataset.", file=sys.stderr)
+        return 2
 
     spot_cache = locate_spot_cache(args.from_date, args.to_date, args.spot_cache)
-    spot915 = load_spot_915(spot_cache, args.from_date, args.to_date)
+    spot915 = load_spot_915(spot_cache, effective_from, effective_to)
     print(f"Spot cache: {spot_cache}")
-    print(f"FYERS NIFTY 09:15 spot days available: {len(spot915)}")
+    print(f"FYERS NIFTY 09:15 spot days available in exact overlap: {len(spot915)}")
 
     expiries, paired, open915 = load_universe_and_915(
-        con, parquet, args.from_date, args.to_date
+        con, parquet, effective_from, effective_to
     )
     print(f"Public dataset expiries seen in requested window: {len(expiries)}")
     print(f"09:15 option candles loaded: {len(open915):,}")
 
     plans, selected_keys = build_day_plans(
-        spot915, expiries, paired, open915, args.from_date, args.to_date
+        spot915, expiries, paired, open915, effective_from, effective_to
     )
     print(f"Trading days planned: {len(plans)}")
     print(f"Selected CE/PE day-contracts needing intraday candles: {len(selected_keys)}")
@@ -618,7 +630,7 @@ def main() -> int:
     candles = load_selected_candles(con, parquet, selected_keys)
     complete_plans(plans, candles)
 
-    csv_path, md_path = write_outputs(plans, args.from_date, args.to_date)
+    csv_path, md_path = write_outputs(plans, effective_from, effective_to)
 
     tp = sum(r["outcome"] == "TP" for r in plans)
     sl = sum(r["outcome"] == "SL" for r in plans)
