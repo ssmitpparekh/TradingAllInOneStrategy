@@ -25,6 +25,29 @@ const OUTPUT_DIR = path.join(
   "nifty-options-backtest"
 );
 
+function expiredQuotaLockPath() {
+  return path.join(
+    OUTPUT_DIR,
+    "expired-fno-quota-" + isoTodayIndia() + ".json"
+  );
+}
+
+async function readExpiredQuotaLock() {
+  return readJson<{
+    date: string;
+    reachedAt: string;
+    reason: string;
+  }>(expiredQuotaLockPath());
+}
+
+async function writeExpiredQuotaLock(reason: string) {
+  await writeJson(expiredQuotaLockPath(), {
+    date: isoTodayIndia(),
+    reachedAt: new Date().toISOString(),
+    reason
+  });
+}
+
 function loadLocalEnv() {
   const file = path.join(process.cwd(), ".env.local");
   if (!existsSync(file)) return;
@@ -532,6 +555,18 @@ async function main() {
     0,
     Number(arg("max-expired-requests") ?? "10")
   );
+  const ignoreDailyLimitLock =
+    process.argv.includes("--ignore-daily-limit-lock");
+
+  const quotaLock = await readExpiredQuotaLock();
+  if (quotaLock && !ignoreDailyLimitLock) {
+    throw new Error(
+      "FYERS expired-F&O daily quota was already exhausted on " +
+        quotaLock.date +
+        ". No new 1-minute expired-option data can be fetched until FYERS resets the daily allowance. " +
+        "Cached progress is safe. Rerun after the provider reset, or use --ignore-daily-limit-lock only if your FYERS plan/allowance has changed."
+    );
+  }
 
   process.stdout.write(
     [
@@ -686,8 +721,9 @@ async function main() {
           /rate|limit|too many|quota|requests per day/i.test(message)
         ) {
           providerBudgetHit = true;
+          await writeExpiredQuotaLock(message);
           process.stderr.write(
-            "FYERS expired-F&O intraday limit reached. Cached progress is safe; rerun later to continue.\n"
+            "FYERS expired-F&O intraday daily limit reached. Cached progress is safe. Further same-day reruns are now blocked locally until the next India calendar date, unless you explicitly pass --ignore-daily-limit-lock after your FYERS allowance changes.\n"
           );
           return null;
         }
